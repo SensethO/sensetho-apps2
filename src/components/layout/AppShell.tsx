@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
+import ThemeToggle from '@/components/ui/ThemeToggle'
 import Sidebar from './Sidebar'
 import Footer from './Footer'
 import { useAuth } from '@/hooks/useAuth'
@@ -98,6 +99,9 @@ export default function AppShell({ children }: AppShellProps) {
           </button>
 
           <div className="flex-1" />
+
+          {/* Toggle thème */}
+          <ThemeToggle />
 
           {/* Badges admin */}
           {isAdmin && ticketCount > 0 && (

@@ -7,6 +7,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import Footer from '@/components/layout/Footer'
 import OrganisationsSidebar from './OrganisationsSidebar'
 import RseHeader from './RseHeader'
+import ThemeToggle from '@/components/ui/ThemeToggle'
 import { useAuth } from '@/hooks/useAuth'
 import { useApps } from '@/hooks/useApps'
 import { useAdminNotifications } from '@/hooks/useAdminNotifications'
@@ -24,6 +25,8 @@ export interface RseContext {
 interface RseAppShellProps {
   /** Slug unique de l'app (ex: 'bpi-excellence', 'iso26000') */
   appSlug: string
+  /** Titre affiché dans le bandeau supérieur */
+  title?: string
   children: (ctx: RseContext) => React.ReactNode
 }
 
@@ -32,7 +35,7 @@ interface RseAppShellProps {
  * Fournit : navigation principale + sidebar Organisations + header avec sélecteur d'années.
  * Le contenu reçoit l'organisation sélectionnée et l'année active via le render prop.
  */
-export default function RseAppShell({ appSlug, children }: RseAppShellProps) {
+export default function RseAppShell({ appSlug, title, children }: RseAppShellProps) {
   const { profile, isAdmin, signOut } = useAuth()
   const { categories } = useApps(isAdmin)
   const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
@@ -121,7 +124,15 @@ export default function RseAppShell({ appSlug, children }: RseAppShellProps) {
             onClick={() => setMobileOpen(true)} style={{ color: 'var(--text-muted)' }}>
             <Icon name="menu" size={20} />
           </button>
+          {/* Titre de l'application */}
+          {title && (
+            <span className="hidden md:block text-sm font-semibold" style={{ color: 'var(--text)' }}>
+              {title}
+            </span>
+          )}
           <div className="flex-1" />
+          {/* Toggle thème */}
+          <ThemeToggle />
           {isAdmin && ticketCount > 0 && (
             <a href="/admin/tickets"
               className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full text-xs font-medium hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors">

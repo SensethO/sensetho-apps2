@@ -652,35 +652,56 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   if (view === 'summary') {
     return (
       <div className="space-y-6 max-w-3xl mx-auto">
+        {/* Bouton retour questionnaire */}
+        <button onClick={() => setView('step')}
+          className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+          <Icon name="chevronLeft" size={14} />
+          Retour au questionnaire
+        </button>
+
         {/* Scores globaux */}
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color: 'var(--text)' }}>
+          <h3 className="font-semibold text-sm mb-1" style={{ color: 'var(--text)' }}>
             Synthèse — {evaluatedCount}/{DOMAINS.length} domaines évalués
-            {evaluatedCount > 0 && <span className="ml-2 text-green-500 font-bold">Moyenne {avgScore.toFixed(1)}/5</span>}
           </h3>
+          {evaluatedCount > 0 && (
+            <p className="text-xs mb-4 font-semibold text-green-600 dark:text-green-400">
+              Score moyen : {avgScore.toFixed(1)}/5 — {SCORE_LABELS[Math.round(avgScore)]}
+            </p>
+          )}
+          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+            Cliquez sur un domaine pour l&apos;évaluer ou le modifier.
+          </p>
           {PHASES.map(phase => {
             const pDomains = DOMAINS.filter(d => d.phase === phase.id)
             return (
-              <div key={phase.id} className="mb-4">
-                <div className="text-xs font-semibold mb-1.5" style={{ color: phase.color }}>{phase.label}</div>
-                <div className="space-y-1.5">
+              <div key={phase.id} className="mb-5">
+                <div className="text-xs font-bold mb-2 uppercase tracking-wide" style={{ color: phase.color }}>
+                  Phase {phase.id} — {phase.label}
+                </div>
+                <div className="space-y-2">
                   {pDomains.map(d => {
                     const s = scores[d.id] ?? 0
                     return (
-                      <div key={d.id} className="flex items-center gap-3">
-                        <button onClick={() => { setActiveDomainId(d.id); setActivePhase(d.phase); setView('step') }}
-                          className="text-xs truncate text-left hover:underline flex-1" style={{ color: 'var(--text)' }}>
+                      <button
+                        key={d.id}
+                        onClick={() => { setActiveDomainId(d.id); setActivePhase(d.phase); setView('step') }}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors hover:bg-gray-50 dark:hover:bg-slate-700/60 group"
+                        style={{ border: '1px solid var(--border)' }}>
+                        <span className="text-xs flex-1 font-medium group-hover:underline" style={{ color: 'var(--text)' }}>
                           {d.qcIcone} {d.nom}
-                        </button>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <div className="w-24 h-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                        </span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="w-20 h-1.5 rounded-full overflow-hidden bg-gray-200 dark:bg-slate-600">
                             <div className="h-full rounded-full transition-all" style={{ width: `${(s / 5) * 100}%`, backgroundColor: scoreColor(s) }} />
                           </div>
-                          <span className="text-xs font-medium w-8 tabular-nums text-right" style={{ color: scoreColor(s) }}>
+                          <span className="text-xs font-semibold w-10 tabular-nums text-right" style={{ color: s > 0 ? scoreColor(s) : 'var(--text-muted)' }}>
                             {s > 0 ? `${s}/5` : '—'}
                           </span>
                         </div>
-                      </div>
+                        <Icon name="chevronRight" size={12} style={{ color: 'var(--text-subtle)', flexShrink: 0 }} />
+                      </button>
                     )
                   })}
                 </div>
@@ -831,21 +852,24 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
                 <>
                   <button onClick={() => { if (prev) { setActiveDomainId(prev.id); setActivePhase(prev.phase) } }}
                     disabled={!prev}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-colors disabled:opacity-30"
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg border transition-colors disabled:opacity-30 hover:bg-gray-50 dark:hover:bg-slate-700"
                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                    ← Précédent
+                    <Icon name="chevronLeft" size={14} />
+                    {prev ? `${prev.qcIcone} ${prev.nom}`.substring(0, 24) + '…' : 'Précédent'}
                   </button>
                   {next ? (
                     <button onClick={() => { setActiveDomainId(next.id); setActivePhase(next.phase) }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-white transition-colors"
+                      className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white transition-colors"
                       style={{ backgroundColor: phaseForActive.color }}>
-                      Suivant →
+                      {`${next.qcIcone} ${next.nom}`.substring(0, 24) + '…'}
+                      <Icon name="chevronRight" size={14} />
                     </button>
                   ) : (
                     <button onClick={() => setView('summary')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-white transition-colors"
-                      style={{ backgroundColor: '#6366f1' }}>
-                      📊 Voir la synthèse
+                      className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white transition-colors"
+                      style={{ backgroundColor: 'var(--accent)' }}>
+                      Voir la synthèse
+                      <Icon name="barChart" size={14} />
                     </button>
                   )}
                 </>
