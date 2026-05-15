@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import AccountSettings from '@/components/account/AccountSettings'
@@ -13,7 +14,9 @@ export default async function AccountPage({ searchParams }: Props) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
-  const { data: profile } = await supabase
+  // Utilise le service role pour bypass les problèmes RLS côté serveur
+  const adminClient = createAdminClient()
+  const { data: profile } = await adminClient
     .from('profiles')
     .select('*')
     .eq('id', user.id)
