@@ -40,9 +40,9 @@ export function useApps(isAdmin: boolean) {
     const { data: apps } = await appQuery
 
     // Associer apps aux catégories
-    const result: AppCategory[] = cats.map(cat => ({
+    const result: AppCategory[] = cats.map((cat: AppCategory) => ({
       ...cat,
-      apps: (apps ?? []).filter(a => a.category_id === cat.id)
+      apps: (apps ?? []).filter((a: App) => a.category_id === cat.id)
     }))
 
     setCategories(result)
