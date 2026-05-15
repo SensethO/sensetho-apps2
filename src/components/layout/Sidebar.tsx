@@ -51,7 +51,7 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
 
       {/* Catégories & Apps */}
       {categories.map(cat => {
-        const isOpen = collapsed || (openCats[cat.id] !== false)
+        const isOpen = collapsed || (openCats[cat.id] === true)
         const hasActiveBadge = (cat.apps ?? []).some(
           a => (a.route === '/admin/tickets' && ticketCount > 0) || (a.route === '/admin/quotes' && quoteCount > 0)
         )
