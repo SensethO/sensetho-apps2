@@ -12,13 +12,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Le mot de passe doit contenir au moins 8 caractères.' }, { status: 400 })
   }
 
-  // Utilise le client admin pour changer le mot de passe
   const admin = createAdminClient()
-  const { error } = await admin.auth.admin.updateUserById(user.id, { password })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Réinitialise le flag must_change_password (service role pour bypass RLS)
-  await admin.from('profiles').update({ must_change_password: false }).eq('id', user.id)
+  // Change le mot de passe via l'API admin
+  const { error: pwdError } = await admin.auth.admin.updateUserById(user.id, { password })
+  if (pwdError) return NextResponse.json({ error: pwdError.message }, { status: 500 })
+
+  // Réinitialise le flag must_change_password
+  const { error: profileError } = await admin
+    .from('profiles')
+    .update({ must_change_password: false })
+    .eq('id', user.id)
+
+  if (profileError) {
+    console.error('[change-password] profile update error:', profileError)
+    // On retourne quand même ok=true car le mdp a changé
+    // mais on log l'erreur pour debug
+  }
 
   return NextResponse.json({ ok: true })
 }
