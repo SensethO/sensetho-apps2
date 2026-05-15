@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
 import type { AppCategory, Profile } from '@/types'
@@ -22,10 +22,16 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
   const pathname = usePathname()
   const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
 
-  // Toutes les catégories rétractées par défaut
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(categories.map(c => [c.id, false]))
-  )
+  // Rétracté par défaut — false explicite à chaque nouvelle catégorie chargée
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    setOpenCats(prev => {
+      const next = { ...prev }
+      categories.forEach(c => { if (!(c.id in next)) next[c.id] = false })
+      return next
+    })
+  }, [categories])
 
   function toggleCat(id: string) {
     setOpenCats(prev => ({ ...prev, [id]: !prev[id] }))
