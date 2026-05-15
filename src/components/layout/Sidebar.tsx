@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useState } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
 import type { AppCategory, Profile } from '@/types'
@@ -20,6 +21,15 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteCount = 0, profile, isAdmin, onSignOut, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
+
+  // Toutes les catégories ouvertes par défaut
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(categories.map(c => [c.id, true]))
+  )
+
+  function toggleCat(id: string) {
+    setOpenCats(prev => ({ ...prev, [id]: !prev[id] }))
+  }
 
   return (
     <nav className="flex flex-col h-full py-4 overflow-y-auto">
@@ -40,46 +50,70 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
       </div>
 
       {/* Catégories & Apps */}
-      {categories.map(cat => (
-        <div key={cat.id} className="px-3 mb-4">
-          {!collapsed && (
-            <div className="flex items-center gap-2 px-2 mb-1">
-              <Icon name={cat.icon} size={14} className="flex-shrink-0" style={{ color: 'var(--text-subtle)' }} />
-              <span className="text-[11px] font-semibold uppercase tracking-wider truncate" style={{ color: 'var(--text-subtle)' }}>
-                {cat.name}
-              </span>
-              {cat.is_admin_only && (
-                <span className="ml-auto text-[9px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
-                  Admin
+      {categories.map(cat => {
+        const isOpen = collapsed || (openCats[cat.id] !== false)
+        const hasActiveBadge = (cat.apps ?? []).some(
+          a => (a.route === '/admin/tickets' && ticketCount > 0) || (a.route === '/admin/quotes' && quoteCount > 0)
+        )
+
+        return (
+          <div key={cat.id} className="px-3 mb-2">
+            {/* En-tête de catégorie cliquable */}
+            {!collapsed ? (
+              <button
+                onClick={() => toggleCat(cat.id)}
+                className="w-full flex items-center gap-2 px-2 py-1 mb-1 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors group"
+              >
+                <Icon name={cat.icon} size={13} className="flex-shrink-0" style={{ color: 'var(--text-subtle)' }} />
+                <span className="text-[11px] font-semibold uppercase tracking-wider truncate flex-1 text-left" style={{ color: 'var(--text-subtle)' }}>
+                  {cat.name}
                 </span>
-              )}
-            </div>
-          )}
-          {collapsed && (
-            <div className="flex justify-center mb-1">
-              <Icon name={cat.icon} size={14} style={{ color: 'var(--text-subtle)' }} />
-            </div>
-          )}
-          <div className="space-y-0.5">
-            {(cat.apps ?? []).map(app => (
-              <NavItem
-                key={app.id}
-                href={app.route}
-                icon={app.icon}
-                label={app.name}
-                active={pathname === app.route || pathname.startsWith(app.route + '/')}
-                collapsed={collapsed}
-                onClick={onNavigate}
-                badge={
-                  app.route === '/admin/tickets' && ticketCount > 0 ? ticketCount
-                  : app.route === '/admin/quotes' && quoteCount > 0 ? quoteCount
-                  : undefined
-                }
-              />
-            ))}
+                {cat.is_admin_only && (
+                  <span className="text-[9px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                    Admin
+                  </span>
+                )}
+                {/* Badge notification si catégorie fermée */}
+                {!isOpen && hasActiveBadge && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                )}
+                <Icon
+                  name={isOpen ? 'chevronDown' : 'chevronRight'}
+                  size={12}
+                  className="flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity"
+                  style={{ color: 'var(--text-subtle)' }}
+                />
+              </button>
+            ) : (
+              <div className="flex justify-center mb-1 py-1">
+                <Icon name={cat.icon} size={14} style={{ color: 'var(--text-subtle)' }} />
+              </div>
+            )}
+
+            {/* Apps de la catégorie */}
+            {isOpen && (
+              <div className="space-y-0.5">
+                {(cat.apps ?? []).map(app => (
+                  <NavItem
+                    key={app.id}
+                    href={app.route}
+                    icon={app.icon}
+                    label={app.name}
+                    active={pathname === app.route || pathname.startsWith(app.route + '/')}
+                    collapsed={collapsed}
+                    onClick={onNavigate}
+                    badge={
+                      app.route === '/admin/tickets' && ticketCount > 0 ? ticketCount
+                      : app.route === '/admin/quotes' && quoteCount > 0 ? quoteCount
+                      : undefined
+                    }
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
 
       <div className="flex-1" />
 
