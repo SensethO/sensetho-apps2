@@ -6,22 +6,33 @@ import Icon from '@/components/ui/Icon'
 import Sidebar from '@/components/layout/Sidebar'
 import Footer from '@/components/layout/Footer'
 import OrganisationsSidebar from './OrganisationsSidebar'
+import RseHeader from './RseHeader'
 import { useAuth } from '@/hooks/useAuth'
 import { useApps } from '@/hooks/useApps'
 import { useAdminNotifications } from '@/hooks/useAdminNotifications'
 import { useOrganisations } from '@/hooks/useOrganisations'
+import { useRseYears } from '@/hooks/useRseYears'
 import type { Organisation } from '@/types/organisation'
 
+export interface RseContext {
+  org: Organisation | null
+  year: number
+  /** Slot pour injecter le bouton Enregistrer dans le header */
+  setActions: (node: React.ReactNode) => void
+}
+
 interface RseAppShellProps {
-  /** Contenu de l'application RSE (reçoit l'organisation sélectionnée) */
-  children: (org: Organisation | null) => React.ReactNode
+  /** Slug unique de l'app (ex: 'bpi-excellence', 'iso26000') */
+  appSlug: string
+  children: (ctx: RseContext) => React.ReactNode
 }
 
 /**
  * Layout pour toutes les applications RSE.
- * = AppShell (sidebar navigation gauche + topbar) + OrganisationsSidebar (sidebar RSE) + contenu
+ * Fournit : navigation principale + sidebar Organisations + header avec sélecteur d'années.
+ * Le contenu reçoit l'organisation sélectionnée et l'année active via le render prop.
  */
-export default function RseAppShell({ children }: RseAppShellProps) {
+export default function RseAppShell({ appSlug, children }: RseAppShellProps) {
   const { profile, isAdmin, signOut } = useAuth()
   const { categories } = useApps(isAdmin)
   const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
@@ -30,8 +41,20 @@ export default function RseAppShell({ children }: RseAppShellProps) {
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedOrg, setSelectedOrg] = useState<Organisation | null>(null)
+  const [headerActions, setHeaderActions] = useState<React.ReactNode>(null)
+
+  const { years, selectedYear, setSelectedYear, addYear } = useRseYears({
+    organisationId: selectedOrg?.id ?? null,
+    appSlug,
+  })
 
   const NAV_W = navCollapsed ? 'w-16' : 'w-60'
+
+  const ctx: RseContext = {
+    org: selectedOrg,
+    year: selectedYear,
+    setActions: setHeaderActions,
+  }
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
@@ -98,9 +121,7 @@ export default function RseAppShell({ children }: RseAppShellProps) {
             onClick={() => setMobileOpen(true)} style={{ color: 'var(--text-muted)' }}>
             <Icon name="menu" size={20} />
           </button>
-
           <div className="flex-1" />
-
           {isAdmin && ticketCount > 0 && (
             <a href="/admin/tickets"
               className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full text-xs font-medium hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors">
@@ -117,7 +138,7 @@ export default function RseAppShell({ children }: RseAppShellProps) {
           )}
         </header>
 
-        {/* Contenu RSE : OrganisationsSidebar + page */}
+        {/* Contenu RSE : OrganisationsSidebar + colonne droite */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <OrganisationsSidebar
             organisations={organisations}
@@ -129,9 +150,20 @@ export default function RseAppShell({ children }: RseAppShellProps) {
             loading={loading}
           />
 
-          <main className="flex-1 overflow-y-auto p-6">
-            {children(selectedOrg)}
-          </main>
+          {/* Colonne contenu : header org/années + contenu app */}
+          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+            <RseHeader
+              organisation={selectedOrg}
+              years={years}
+              selectedYear={selectedYear}
+              onSelectYear={setSelectedYear}
+              onAddYear={addYear}
+              actions={headerActions}
+            />
+            <main className="flex-1 overflow-y-auto p-6">
+              {children(ctx)}
+            </main>
+          </div>
         </div>
 
         <Footer />
