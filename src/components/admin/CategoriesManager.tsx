@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAllApps } from '@/hooks/useApps'
 import Icon from '@/components/ui/Icon'
 import clsx from 'clsx'
-import type { AppCategory, App } from '@/types'
+import type { AppCategory, App, PricingType } from '@/types'
 
 export default function CategoriesManager() {
   const { categories, apps, loading, reload } = useAllApps()
@@ -57,12 +57,20 @@ export default function CategoriesManager() {
   async function saveApp() {
     if (!editApp?.name || !editApp?.slug || !editApp?.route) return
     setSaving(true)
+    const pricingFields = {
+      pricing_type: editApp.pricing_type ?? 'free',
+      price_monthly: editApp.price_monthly ?? null,
+      price_annual: editApp.price_annual ?? null,
+      annual_discount_pct: editApp.annual_discount_pct ?? 0,
+      price_perpetual: editApp.price_perpetual ?? null,
+    }
     if (editApp.id) {
       await supabase.from('apps').update({
         name: editApp.name, slug: editApp.slug, description: editApp.description,
         icon: editApp.icon ?? 'app', route: editApp.route,
         category_id: editApp.category_id ?? null, order_index: editApp.order_index ?? 0,
         is_admin_only: editApp.is_admin_only ?? false, is_active: editApp.is_active ?? true,
+        ...pricingFields,
       }).eq('id', editApp.id)
     } else {
       await supabase.from('apps').insert({
@@ -70,6 +78,7 @@ export default function CategoriesManager() {
         icon: editApp.icon ?? 'app', route: editApp.route,
         category_id: editApp.category_id ?? null, order_index: editApp.order_index ?? apps.length,
         is_admin_only: editApp.is_admin_only ?? false, is_active: true,
+        ...pricingFields,
       })
     }
     setEditApp(null); setSaving(false); reload()
@@ -199,8 +208,8 @@ export default function CategoriesManager() {
 
       {/* Modal app */}
       {editApp !== null && (
-        <Modal title={editApp.id ? 'Modifier l\'application' : 'Nouvelle application'} onClose={() => setEditApp(null)}>
-          <div className="space-y-3">
+        <Modal title={editApp.id ? "Modifier l'application" : 'Nouvelle application'} onClose={() => setEditApp(null)}>
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
             <Field label="Nom *" value={editApp.name ?? ''} onChange={v => setEditApp(e => ({ ...e!, name: v }))} />
             <Field label="Slug *" value={editApp.slug ?? ''} onChange={v => setEditApp(e => ({ ...e!, slug: v }))} />
             <Field label="Route *" value={editApp.route ?? ''} onChange={v => setEditApp(e => ({ ...e!, route: v }))} placeholder="/apps/mon-app" />
@@ -217,6 +226,57 @@ export default function CategoriesManager() {
             <Field label="Ordre" type="number" value={String(editApp.order_index ?? 0)} onChange={v => setEditApp(e => ({ ...e!, order_index: parseInt(v) || 0 }))} />
             <Checkbox label="Réservé aux admins" checked={editApp.is_admin_only ?? false} onChange={v => setEditApp(e => ({ ...e!, is_admin_only: v }))} />
             <Checkbox label="Actif" checked={editApp.is_active ?? true} onChange={v => setEditApp(e => ({ ...e!, is_active: v }))} />
+
+            {/* ── Section Tarification ── */}
+            <div className="border-t border-gray-100 pt-3 mt-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tarification</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([
+                    { v: 'free', l: 'Gratuit' },
+                    { v: 'subscription', l: 'Abonnement' },
+                    { v: 'perpetual', l: 'Perpétuel' },
+                    { v: 'quote', l: 'Sur devis' },
+                  ] as { v: PricingType; l: string }[]).map(({ v, l }) => (
+                    <button key={v} type="button"
+                      onClick={() => setEditApp(e => ({ ...e!, pricing_type: v }))}
+                      className={clsx('py-1.5 px-2 rounded-lg text-xs font-medium border transition-colors text-center',
+                        (editApp.pricing_type ?? 'free') === v
+                          ? 'bg-gray-900 text-white border-gray-900'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50')}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {editApp.pricing_type === 'subscription' && (
+                <div className="mt-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Prix mensuel (€)" type="number" value={String(editApp.price_monthly ?? '')}
+                      onChange={v => setEditApp(e => ({ ...e!, price_monthly: v ? parseFloat(v) : null }))} />
+                    <Field label="Prix annuel (€)" type="number" value={String(editApp.price_annual ?? '')}
+                      onChange={v => setEditApp(e => ({ ...e!, price_annual: v ? parseFloat(v) : null }))} />
+                  </div>
+                  <Field label="Remise annuelle (%)" type="number" value={String(editApp.annual_discount_pct ?? 0)}
+                    onChange={v => setEditApp(e => ({ ...e!, annual_discount_pct: parseInt(v) || 0 }))} />
+                  {(editApp.price_monthly ?? 0) > 0 && (editApp.annual_discount_pct ?? 0) > 0 && (
+                    <p className="text-xs text-green-600">
+                      Prix annuel calculé : {((editApp.price_monthly! * 12) * (1 - (editApp.annual_discount_pct ?? 0) / 100)).toFixed(2)} €/an
+                      (au lieu de {(editApp.price_monthly! * 12).toFixed(2)} €)
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {editApp.pricing_type === 'perpetual' && (
+                <div className="mt-3">
+                  <Field label="Prix perpétuel (€)" type="number" value={String(editApp.price_perpetual ?? '')}
+                    onChange={v => setEditApp(e => ({ ...e!, price_perpetual: v ? parseFloat(v) : null }))} />
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <button onClick={() => setEditApp(null)} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">Annuler</button>

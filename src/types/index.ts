@@ -1,4 +1,5 @@
 export type UserRole = 'user' | 'admin'
+export type PricingType = 'free' | 'subscription' | 'perpetual' | 'quote'
 
 export interface Profile {
   id: string
@@ -36,6 +37,11 @@ export interface App {
   order_index: number
   is_active: boolean
   is_admin_only: boolean
+  pricing_type: PricingType
+  price_monthly: number | null
+  price_annual: number | null
+  annual_discount_pct: number
+  price_perpetual: number | null
   created_at: string
   updated_at: string
   category?: AppCategory
@@ -78,4 +84,43 @@ export interface Ticket {
   updated_at: string
   resolved_at: string | null
   profile?: Pick<Profile, 'email' | 'full_name'>
+}
+
+// ── Billing ──────────────────────────────────────────────────────────────────
+
+export type SubscriptionPlan = 'monthly' | 'annual' | 'perpetual'
+export type SubscriptionStatus = 'active' | 'cancelled' | 'expired'
+export type QuoteStatus = 'pending' | 'processing' | 'accepted' | 'rejected'
+
+export interface AppSubscription {
+  id: string
+  user_id: string
+  app_id: string
+  plan: SubscriptionPlan
+  status: SubscriptionStatus
+  price_paid: number | null
+  notes: string | null
+  started_at: string
+  expires_at: string | null
+  cancelled_at: string | null
+  created_at: string
+  updated_at: string
+  profile?: Pick<Profile, 'email' | 'full_name'>
+  app?: Pick<App, 'name' | 'slug' | 'icon'>
+}
+
+export interface AppQuote {
+  id: string
+  user_id: string | null
+  app_id: string
+  email: string
+  company: string | null
+  users_count: number | null
+  message: string | null
+  status: QuoteStatus
+  admin_notes: string | null
+  created_at: string
+  updated_at: string
+  profile?: Pick<Profile, 'email' | 'full_name'>
+  app?: Pick<App, 'name' | 'slug' | 'icon' | 'pricing_type'>
 }

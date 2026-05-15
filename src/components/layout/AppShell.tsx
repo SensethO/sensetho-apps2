@@ -7,7 +7,7 @@ import Sidebar from './Sidebar'
 import Footer from './Footer'
 import { useAuth } from '@/hooks/useAuth'
 import { useApps } from '@/hooks/useApps'
-import { useTicketCount } from '@/hooks/useTicketCount'
+import { useAdminNotifications } from '@/hooks/useAdminNotifications'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -16,7 +16,7 @@ interface AppShellProps {
 export default function AppShell({ children }: AppShellProps) {
   const { profile, isAdmin, signOut } = useAuth()
   const { categories } = useApps(isAdmin)
-  const ticketCount = useTicketCount(isAdmin)
+  const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
 
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -51,6 +51,7 @@ export default function AppShell({ children }: AppShellProps) {
           collapsed={collapsed}
           categories={categories}
           ticketCount={ticketCount}
+          quoteCount={quoteCount}
           profile={profile}
           isAdmin={isAdmin}
           onSignOut={signOut}
@@ -74,6 +75,7 @@ export default function AppShell({ children }: AppShellProps) {
                 collapsed={false}
                 categories={categories}
                 ticketCount={ticketCount}
+                quoteCount={quoteCount}
                 profile={profile}
                 isAdmin={isAdmin}
                 onSignOut={signOut}
@@ -97,12 +99,19 @@ export default function AppShell({ children }: AppShellProps) {
 
           <div className="flex-1" />
 
-          {/* Badge tickets admin */}
+          {/* Badges admin */}
           {isAdmin && ticketCount > 0 && (
             <a href="/admin/tickets"
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full text-xs font-medium hover:bg-red-100 transition-colors">
-              <Icon name="bell" size={13} />
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full text-xs font-medium hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors">
+              <Icon name="ticket" size={13} />
               {ticketCount} ticket{ticketCount > 1 ? 's' : ''}
+            </a>
+          )}
+          {isAdmin && quoteCount > 0 && (
+            <a href="/admin/quotes"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full text-xs font-medium hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors">
+              <Icon name="fileText" size={13} />
+              {quoteCount} devis
             </a>
           )}
         </header>

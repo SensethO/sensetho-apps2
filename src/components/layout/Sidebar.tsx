@@ -10,13 +10,14 @@ interface SidebarProps {
   collapsed: boolean
   categories: AppCategory[]
   ticketCount?: number
+  quoteCount?: number
   profile?: Profile | null
   isAdmin?: boolean
   onSignOut?: () => void
   onNavigate?: () => void
 }
 
-export default function Sidebar({ collapsed, categories, ticketCount = 0, profile, isAdmin, onSignOut, onNavigate }: SidebarProps) {
+export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteCount = 0, profile, isAdmin, onSignOut, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
 
@@ -69,7 +70,11 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, profil
                 active={pathname === app.route || pathname.startsWith(app.route + '/')}
                 collapsed={collapsed}
                 onClick={onNavigate}
-                badge={app.route === '/admin/tickets' && ticketCount > 0 ? ticketCount : undefined}
+                badge={
+                  app.route === '/admin/tickets' && ticketCount > 0 ? ticketCount
+                  : app.route === '/admin/quotes' && quoteCount > 0 ? quoteCount
+                  : undefined
+                }
               />
             ))}
           </div>
