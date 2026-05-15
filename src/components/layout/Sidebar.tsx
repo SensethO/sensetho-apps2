@@ -22,9 +22,9 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
   const pathname = usePathname()
   const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
 
-  // Toutes les catégories ouvertes par défaut
+  // Toutes les catégories rétractées par défaut
   const [openCats, setOpenCats] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(categories.map(c => [c.id, true]))
+    () => Object.fromEntries(categories.map(c => [c.id, false]))
   )
 
   function toggleCat(id: string) {
