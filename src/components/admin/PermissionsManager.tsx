@@ -20,6 +20,7 @@ export default function PermissionsManager() {
 
   const supabase = createClient()
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
   async function load() {
@@ -39,7 +40,7 @@ export default function PermissionsManager() {
       permMap[p.user_id][p.app_id] = p.can_access
     }
 
-    setRows((profiles ?? []).map(u => ({
+    setRows((profiles ?? []).map((u: Profile) => ({
       user: u,
       permissions: permMap[u.id] ?? {},
     })))

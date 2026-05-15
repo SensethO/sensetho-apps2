@@ -8,9 +8,8 @@ export function useApps(isAdmin: boolean) {
   const [categories, setCategories] = useState<AppCategory[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadApps()
-  }, [isAdmin])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadApps() }, [isAdmin])
 
   async function loadApps() {
     const supabase = createClient()
@@ -58,6 +57,7 @@ export function useAllApps() {
   const [apps, setApps] = useState<App[]>([])
   const [loading, setLoading] = useState(true)
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
   async function load() {
