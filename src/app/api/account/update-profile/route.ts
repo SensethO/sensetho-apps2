@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -8,7 +9,8 @@ export async function POST(request: NextRequest) {
 
   const { full_name } = await request.json()
 
-  const { error } = await supabase
+  const admin = createAdminClient()
+  const { error } = await admin
     .from('profiles')
     .update({ full_name: full_name ?? null })
     .eq('id', user.id)

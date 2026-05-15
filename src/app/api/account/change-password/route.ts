@@ -17,8 +17,8 @@ export async function POST(request: NextRequest) {
   const { error } = await admin.auth.admin.updateUserById(user.id, { password })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Réinitialise le flag must_change_password
-  await supabase.from('profiles').update({ must_change_password: false }).eq('id', user.id)
+  // Réinitialise le flag must_change_password (service role pour bypass RLS)
+  await admin.from('profiles').update({ must_change_password: false }).eq('id', user.id)
 
   return NextResponse.json({ ok: true })
 }

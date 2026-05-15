@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { Theme } from '@/types'
 
 export async function POST(request: NextRequest) {
@@ -12,7 +13,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Thème invalide' }, { status: 400 })
   }
 
-  await supabase.from('user_preferences').upsert({ user_id: user.id, theme }, { onConflict: 'user_id' })
+  const admin = createAdminClient()
+  await admin.from('user_preferences').upsert({ user_id: user.id, theme }, { onConflict: 'user_id' })
 
   return NextResponse.json({ ok: true })
 }
