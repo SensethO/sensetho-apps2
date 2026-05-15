@@ -60,7 +60,7 @@ export async function middleware(request: NextRequest) {
   if (user && !isPublic && !isAuthPage && !isApiRoute) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, must_change_password')
+      .select('*')
       .eq('id', user.id)
       .single()
 
