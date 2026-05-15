@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 const PUBLIC_ROUTES = [
   '/',
@@ -58,9 +59,16 @@ export async function middleware(request: NextRequest) {
 
   // Vérifie le profil pour les routes protégées (pas les API ni les routes publiques)
   if (user && !isPublic && !isAuthPage && !isApiRoute) {
-    const { data: profile } = await supabase
+    // Utilise le service role pour bypass RLS (le client anon ne propage pas
+    // correctement auth.uid() dans le contexte middleware Edge)
+    const adminClient = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+    const { data: profile } = await adminClient
       .from('profiles')
-      .select('*')
+      .select('role, must_change_password')
       .eq('id', user.id)
       .single()
 

@@ -51,6 +51,9 @@ export default function AppShell({ children }: AppShellProps) {
           collapsed={collapsed}
           categories={categories}
           ticketCount={ticketCount}
+          profile={profile}
+          isAdmin={isAdmin}
+          onSignOut={signOut}
         />
       </aside>
 
@@ -71,6 +74,9 @@ export default function AppShell({ children }: AppShellProps) {
                 collapsed={false}
                 categories={categories}
                 ticketCount={ticketCount}
+                profile={profile}
+                isAdmin={isAdmin}
+                onSignOut={signOut}
                 onNavigate={() => setMobileOpen(false)}
               />
             </div>
@@ -99,29 +105,6 @@ export default function AppShell({ children }: AppShellProps) {
               {ticketCount} ticket{ticketCount > 1 ? 's' : ''}
             </a>
           )}
-
-          {/* Utilisateur */}
-          <div className="flex items-center gap-3">
-            {profile && (
-              <div className="hidden sm:flex flex-col items-end">
-                <span className="text-sm font-medium leading-tight" style={{ color: 'var(--text)' }}>
-                  {profile.full_name ?? profile.email}
-                </span>
-                {isAdmin && <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">Administrateur</span>}
-              </div>
-            )}
-            <a href="/account"
-              className="w-8 h-8 rounded-full bg-gray-900 dark:bg-slate-600 flex items-center justify-center hover:opacity-80 transition-opacity"
-              title="Mon compte">
-              <span className="text-white text-xs font-semibold">
-                {(profile?.full_name ?? profile?.email ?? 'U')[0].toUpperCase()}
-              </span>
-            </a>
-            <button onClick={signOut} title="Se déconnecter"
-              className="p-1.5 rounded-lg hover:opacity-70 transition-colors" style={{ color: 'var(--text-muted)' }}>
-              <Icon name="logout" size={18} />
-            </button>
-          </div>
         </header>
 
         {/* Contenu + Footer */}

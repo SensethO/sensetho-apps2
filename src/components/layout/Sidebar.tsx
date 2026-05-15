@@ -4,17 +4,21 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
-import type { AppCategory } from '@/types'
+import type { AppCategory, Profile } from '@/types'
 
 interface SidebarProps {
   collapsed: boolean
   categories: AppCategory[]
   ticketCount?: number
+  profile?: Profile | null
+  isAdmin?: boolean
+  onSignOut?: () => void
   onNavigate?: () => void
 }
 
-export default function Sidebar({ collapsed, categories, ticketCount = 0, onNavigate }: SidebarProps) {
+export default function Sidebar({ collapsed, categories, ticketCount = 0, profile, isAdmin, onSignOut, onNavigate }: SidebarProps) {
   const pathname = usePathname()
+  const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
 
   return (
     <nav className="flex flex-col h-full py-4 overflow-y-auto">
@@ -74,11 +78,55 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, onNavi
 
       <div className="flex-1" />
 
-      {/* Mon compte */}
+      {/* Zone utilisateur en bas */}
       <div className="px-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-        <NavItem href="/account" icon="user" label="Mon compte"
-          active={pathname === '/account' || pathname.startsWith('/account/')}
-          collapsed={collapsed} onClick={onNavigate} />
+        {collapsed ? (
+          /* Vue compacte */
+          <div className="flex flex-col items-center gap-2 py-2">
+            <Link href="/account" title="Mon compte" onClick={onNavigate}
+              className={clsx(
+                'w-8 h-8 rounded-full bg-gray-900 dark:bg-slate-600 flex items-center justify-center hover:opacity-80 transition-opacity',
+                (pathname === '/account' || pathname.startsWith('/account/')) && 'ring-2 ring-offset-1 ring-gray-400'
+              )}>
+              <span className="text-white text-xs font-semibold">{initials}</span>
+            </Link>
+            <button onClick={onSignOut} title="Se déconnecter"
+              className="p-1.5 rounded-lg hover:opacity-70 transition-colors" style={{ color: 'var(--text-muted)' }}>
+              <Icon name="logout" size={16} />
+            </button>
+          </div>
+        ) : (
+          /* Vue étendue */
+          <div className="py-2 space-y-1">
+            <Link href="/account" onClick={onNavigate}
+              className={clsx(
+                'flex items-center gap-3 px-2 py-2 rounded-lg transition-colors group',
+                (pathname === '/account' || pathname.startsWith('/account/'))
+                  ? 'bg-gray-900 dark:bg-slate-600 text-white'
+                  : 'hover:bg-gray-100 dark:hover:bg-slate-700'
+              )}
+              style={(pathname === '/account' || pathname.startsWith('/account/')) ? undefined : { color: 'var(--text-muted)' }}
+            >
+              <div className="w-7 h-7 rounded-full bg-gray-900 dark:bg-slate-500 flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-xs font-semibold">{initials}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {profile?.full_name ?? profile?.email ?? 'Mon compte'}
+                </p>
+                {isAdmin && (
+                  <p className="text-[11px] text-amber-500 dark:text-amber-400 font-medium">Administrateur</p>
+                )}
+              </div>
+            </Link>
+            <button onClick={onSignOut}
+              className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-sm transition-colors hover:bg-gray-100 dark:hover:bg-slate-700"
+              style={{ color: 'var(--text-muted)' }}>
+              <Icon name="logout" size={18} className="flex-shrink-0" />
+              <span>Se déconnecter</span>
+            </button>
+          </div>
+        )}
       </div>
     </nav>
   )
