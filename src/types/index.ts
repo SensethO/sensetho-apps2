@@ -6,6 +6,7 @@ export interface Profile {
   full_name: string | null
   avatar_url: string | null
   role: UserRole
+  must_change_password: boolean
   created_at: string
   updated_at: string
 }
@@ -50,4 +51,31 @@ export interface UserAppPermission {
 
 export interface UserWithPermissions extends Profile {
   permissions: { app_id: string; can_access: boolean }[]
+}
+
+export type Theme = 'light' | 'dark' | 'system'
+
+export interface UserPreferences {
+  user_id: string
+  theme: Theme
+  updated_at: string
+}
+
+export type TicketType = 'support' | 'password_reset' | 'forgot_password'
+export type TicketStatus = 'open' | 'in_progress' | 'closed'
+export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent'
+
+export interface Ticket {
+  id: string
+  user_id: string | null
+  email: string | null
+  type: TicketType
+  subject: string
+  message: string | null
+  status: TicketStatus
+  priority: TicketPriority
+  created_at: string
+  updated_at: string
+  resolved_at: string | null
+  profile?: Pick<Profile, 'email' | 'full_name'>
 }

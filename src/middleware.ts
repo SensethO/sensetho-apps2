@@ -39,6 +39,8 @@ export async function middleware(request: NextRequest) {
   const isPublic = PUBLIC_ROUTES.some(r => pathname === r || (r !== '/' && pathname.startsWith(r)))
   const isAuthPage = AUTH_PAGES.some(r => pathname.startsWith(r))
   const isAdminRoute = ADMIN_ROUTES.some(r => pathname.startsWith(r))
+  const isApiRoute = pathname.startsWith('/api/')
+  const isAccountRoute = pathname === '/account' || pathname.startsWith('/account/')
 
   // Non connecté → login
   if (!user && !isPublic) {
@@ -54,11 +56,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(destination, request.url))
   }
 
-  // Route admin → vérifier le rôle
-  if (user && isAdminRoute) {
+  // Vérifie le profil pour les routes protégées (pas les API ni les routes publiques)
+  if (user && !isPublic && !isAuthPage && !isApiRoute) {
     const { data: profile } = await supabase
-      .from('profiles').select('role').eq('id', user.id).single()
-    if (profile?.role !== 'admin') {
+      .from('profiles')
+      .select('role, must_change_password')
+      .eq('id', user.id)
+      .single()
+
+    // Forcer le changement de mot de passe (sauf si déjà sur /account)
+    if (profile?.must_change_password && !isAccountRoute) {
+      const url = new URL('/account', request.url)
+      url.searchParams.set('forced', 'true')
+      return NextResponse.redirect(url)
+    }
+
+    // Route admin → vérifier le rôle admin
+    if (isAdminRoute && profile?.role !== 'admin') {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }

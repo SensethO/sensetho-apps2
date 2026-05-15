@@ -15,8 +15,15 @@ export default function PermissionsManager() {
   const [apps, setApps] = useState<App[]>([])
   const [rows, setRows] = useState<PermRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState<string | null>(null) // `${userId}-${appId}`
+  const [saving, setSaving] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+
+  // Reset password
+  const [resetUser, setResetUser] = useState<Profile | null>(null)
+  const [tempPwd, setTempPwd] = useState('')
+  const [resetting, setResetting] = useState(false)
+  const [resetMsg, setResetMsg] = useState('')
+  const [resetError, setResetError] = useState('')
 
   const supabase = createClient()
 
@@ -93,6 +100,25 @@ export default function PermissionsManager() {
     setSaving(null)
   }
 
+  async function resetPassword() {
+    if (!resetUser || !tempPwd) return
+    setResetting(true); setResetMsg(''); setResetError('')
+    const res = await fetch('/api/admin/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: resetUser.id, password: tempPwd }),
+    })
+    setResetting(false)
+    if (res.ok) {
+      setResetMsg(`Mot de passe temporaire défini pour ${resetUser.email}.`)
+      setTempPwd('')
+      setTimeout(() => { setResetUser(null); setResetMsg('') }, 2000)
+    } else {
+      const d = await res.json()
+      setResetError(d.error ?? 'Erreur lors de la réinitialisation.')
+    }
+  }
+
   const filtered = rows.filter(r =>
     r.user.email.toLowerCase().includes(search.toLowerCase()) ||
     (r.user.full_name ?? '').toLowerCase().includes(search.toLowerCase())
@@ -152,6 +178,12 @@ export default function PermissionsManager() {
                       {row.user.role === 'admin' && (
                         <span className="ml-auto text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">Admin</span>
                       )}
+                      <button
+                        onClick={() => { setResetUser(row.user); setTempPwd(''); setResetMsg(''); setResetError('') }}
+                        title="Réinitialiser le mot de passe"
+                        className="ml-auto p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                        <Icon name="key" size={12} />
+                      </button>
                     </div>
                   </td>
                   {apps.map(app => {
@@ -194,8 +226,46 @@ export default function PermissionsManager() {
       </div>
 
       <p className="text-xs text-gray-400">
-        🟡 Amber = accès lié au rôle admin (non modifiable) · 🟢 Vert = accès autorisé · 🔴 Rouge = accès bloqué
+        🟡 Amber = accès lié au rôle admin · 🟢 Vert = accès autorisé · 🔴 Rouge = accès bloqué · 🔑 = Réinitialiser le MDP
       </p>
+
+      {/* Modal reset MDP */}
+      {resetUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setResetUser(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-sm mx-4 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Icon name="key" size={18} className="text-gray-600" />
+              <h3 className="font-semibold text-gray-900">Mot de passe temporaire</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Définir un mot de passe temporaire pour <strong>{resetUser.email}</strong>.
+              L&apos;utilisateur devra le changer à sa prochaine connexion.
+            </p>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={tempPwd}
+                onChange={e => setTempPwd(e.target.value)}
+                placeholder="Mot de passe temporaire (8 car. min.)"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+              {resetError && <p className="text-sm text-red-600">{resetError}</p>}
+              {resetMsg && <p className="text-sm text-green-600">{resetMsg}</p>}
+              <div className="flex gap-2">
+                <button onClick={() => setResetUser(null)}
+                  className="flex-1 px-3 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-50">
+                  Annuler
+                </button>
+                <button onClick={resetPassword} disabled={resetting || tempPwd.length < 8}
+                  className="flex-1 px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50">
+                  {resetting ? 'Envoi…' : 'Confirmer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
