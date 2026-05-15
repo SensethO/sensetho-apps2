@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
 import clsx from 'clsx'
-import type { App, Profile } from '@/types'
+import type { App, Profile, UserAppPermission } from '@/types'
 
 interface PermRow {
   user: Profile
@@ -26,21 +26,25 @@ export default function PermissionsManager() {
   async function load() {
     setLoading(true)
 
-    const [{ data: appsData }, { data: profiles }, { data: perms }] = await Promise.all([
+    const [{ data: appsRaw }, { data: profilesRaw }, { data: permsRaw }] = await Promise.all([
       supabase.from('apps').select('*').eq('is_active', true).order('order_index'),
       supabase.from('profiles').select('*').order('email'),
       supabase.from('user_app_permissions').select('*'),
     ])
 
-    setApps(appsData ?? [])
+    const appsData = (appsRaw ?? []) as App[]
+    const profiles = (profilesRaw ?? []) as Profile[]
+    const perms = (permsRaw ?? []) as UserAppPermission[]
+
+    setApps(appsData)
 
     const permMap: Record<string, Record<string, boolean>> = {}
-    for (const p of perms ?? []) {
+    for (const p of perms) {
       if (!permMap[p.user_id]) permMap[p.user_id] = {}
       permMap[p.user_id][p.app_id] = p.can_access
     }
 
-    setRows((profiles ?? []).map((u: Profile) => ({
+    setRows(profiles.map(u => ({
       user: u,
       permissions: permMap[u.id] ?? {},
     })))

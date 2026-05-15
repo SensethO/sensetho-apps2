@@ -15,7 +15,6 @@ export function useApps(isAdmin: boolean) {
     const supabase = createClient()
     setLoading(true)
 
-    // Charger catégories actives
     let catQuery = supabase
       .from('app_categories')
       .select('*')
@@ -24,11 +23,6 @@ export function useApps(isAdmin: boolean) {
 
     if (!isAdmin) catQuery = catQuery.eq('is_admin_only', false)
 
-    const { data: cats } = await catQuery
-
-    if (!cats) { setLoading(false); return }
-
-    // Charger apps actives
     let appQuery = supabase
       .from('apps')
       .select('*')
@@ -37,12 +31,14 @@ export function useApps(isAdmin: boolean) {
 
     if (!isAdmin) appQuery = appQuery.eq('is_admin_only', false)
 
-    const { data: apps } = await appQuery
+    const [{ data: catsRaw }, { data: appsRaw }] = await Promise.all([catQuery, appQuery])
 
-    // Associer apps aux catégories
-    const result: AppCategory[] = cats.map((cat: AppCategory) => ({
+    const cats = (catsRaw ?? []) as AppCategory[]
+    const apps = (appsRaw ?? []) as App[]
+
+    const result: AppCategory[] = cats.map(cat => ({
       ...cat,
-      apps: (apps ?? []).filter((a: App) => a.category_id === cat.id)
+      apps: apps.filter(a => a.category_id === cat.id),
     }))
 
     setCategories(result)
@@ -62,12 +58,12 @@ export function useAllApps() {
 
   async function load() {
     const supabase = createClient()
-    const [{ data: cats }, { data: appsData }] = await Promise.all([
+    const [{ data: catsRaw }, { data: appsRaw }] = await Promise.all([
       supabase.from('app_categories').select('*').order('order_index'),
-      supabase.from('apps').select('*, category:app_categories(name, slug)').order('order_index'),
+      supabase.from('apps').select('*').order('order_index'),
     ])
-    setCategories(cats ?? [])
-    setApps(appsData ?? [])
+    setCategories((catsRaw ?? []) as AppCategory[])
+    setApps((appsRaw ?? []) as App[])
     setLoading(false)
   }
 
