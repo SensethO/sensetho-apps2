@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
+import PageContainer from '@/components/layout/PageContainer'
 import CategoriesManager from '@/components/admin/CategoriesManager'
 
 export default async function AdminCategoriesPage() {
@@ -11,18 +12,13 @@ export default async function AdminCategoriesPage() {
 
   const { data: profile } = await createAdminClient()
     .from('profiles').select('role').eq('id', user.id).single()
-
   if (profile?.role !== 'admin') redirect('/dashboard')
 
   return (
     <AppShell>
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Catégories d&apos;applications</h1>
-          <p className="text-sm text-gray-500 mt-1">Gérez les catégories et l&apos;ordre d&apos;apparition des applications dans le menu.</p>
-        </div>
+      <PageContainer title="Catégories d'applications" description="Gérez les catégories et l'ordre d'apparition des applications dans le menu.">
         <CategoriesManager />
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }

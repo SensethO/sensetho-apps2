@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
+import PageContainer from '@/components/layout/PageContainer'
 import PermissionsManager from '@/components/admin/PermissionsManager'
 
 export default async function AdminPermissionsPage() {
@@ -11,18 +12,13 @@ export default async function AdminPermissionsPage() {
 
   const { data: profile } = await createAdminClient()
     .from('profiles').select('role').eq('id', user.id).single()
-
   if (profile?.role !== 'admin') redirect('/dashboard')
 
   return (
     <AppShell>
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Droits d&apos;accès</h1>
-          <p className="text-sm text-gray-500 mt-1">Gérez les droits d&apos;accès de chaque utilisateur pour toutes les applications.</p>
-        </div>
+      <PageContainer title="Droits d'accès" description="Gérez les droits d'accès de chaque utilisateur pour toutes les applications." maxWidth="xl">
         <PermissionsManager />
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }
