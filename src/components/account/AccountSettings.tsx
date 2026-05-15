@@ -1,17 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useTheme } from '@/components/providers/ThemeProvider'
 import Icon from '@/components/ui/Icon'
 import type { Profile, Theme } from '@/types'
 
 type Tab = 'info' | 'password' | 'appearance' | '2fa'
 
-export default function AccountSettings({ profile }: { profile: Profile }) {
+export default function AccountSettings({ profile, forced = false }: { profile: Profile; forced?: boolean }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const forced = searchParams.get('forced') === 'true'
   const [tab, setTab] = useState<Tab>(forced ? 'password' : 'info')
   const { theme, setTheme } = useTheme()
 
