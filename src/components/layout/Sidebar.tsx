@@ -9,11 +9,10 @@ import type { AppCategory } from '@/types'
 interface SidebarProps {
   collapsed: boolean
   categories: AppCategory[]
-  isAdmin: boolean
   onNavigate?: () => void
 }
 
-export default function Sidebar({ collapsed, categories, isAdmin, onNavigate }: SidebarProps) {
+export default function Sidebar({ collapsed, categories, onNavigate }: SidebarProps) {
   const pathname = usePathname()
 
   return (

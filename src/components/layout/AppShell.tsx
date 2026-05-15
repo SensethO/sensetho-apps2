@@ -53,7 +53,6 @@ export default function AppShell({ children }: AppShellProps) {
         <Sidebar
           collapsed={collapsed}
           categories={categories}
-          isAdmin={isAdmin}
         />
       </aside>
 
@@ -81,7 +80,6 @@ export default function AppShell({ children }: AppShellProps) {
               <Sidebar
                 collapsed={false}
                 categories={categories}
-                isAdmin={isAdmin}
                 onNavigate={() => setMobileOpen(false)}
               />
             </div>

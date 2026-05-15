@@ -151,7 +151,7 @@ export default function CategoriesManager() {
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-            {apps.map((app, i) => {
+            {apps.map((app) => {
               const catApps = apps.filter(a => a.category_id === app.category_id)
               const idxInCat = catApps.findIndex(a => a.id === app.id)
               return (
@@ -163,7 +163,7 @@ export default function CategoriesManager() {
                       {app.is_admin_only && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Admin</span>}
                       {!app.is_active && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Inactif</span>}
                     </div>
-                    <p className="text-xs text-gray-400">{app.route} · {(app as any).category?.name ?? 'Sans catégorie'}</p>
+                    <p className="text-xs text-gray-400">{app.route} · {categories.find(c => c.id === app.category_id)?.name ?? 'Sans catégorie'}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <button disabled={idxInCat === 0} onClick={() => moveApp(app.id, 'up')} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"><Icon name="arrowUp" size={14} /></button>
