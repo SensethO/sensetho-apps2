@@ -35,11 +35,11 @@ interface SharePointBrowserProps {
 }
 
 export default function SharePointBrowser({
-  rootFolderId: _rootFolderId,
+  rootFolderId,
   rootFolderName = 'General',
   maxHeight = '400px',
 }: SharePointBrowserProps) {
-  const sp = useSharePointBrowser({ apiBase: '/api/sharepoint', rootFolderName })
+  const sp = useSharePointBrowser({ apiBase: '/api/sharepoint', rootFolderName, rootFolderId })
 
   const handleDownload = useCallback((item: SPItem) => {
     const a = document.createElement('a')

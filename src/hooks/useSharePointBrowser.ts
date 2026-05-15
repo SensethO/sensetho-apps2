@@ -29,6 +29,7 @@ interface UploadState {
 interface UseSharePointBrowserOptions {
   apiBase?: string
   rootFolderName?: string
+  rootFolderId?: string | null
 }
 
 const CHUNK = 10 * 1024 * 1024
@@ -62,9 +63,11 @@ async function uploadChunked(
   throw new Error('Upload incomplet')
 }
 
-export function useSharePointBrowser({ apiBase = '/api/sharepoint', rootFolderName = 'General' }: UseSharePointBrowserOptions = {}) {
+export function useSharePointBrowser({ apiBase = '/api/sharepoint', rootFolderName = 'General', rootFolderId }: UseSharePointBrowserOptions = {}) {
   // Navigation stack: array of { id, name } — null id = root
-  const [stack, setStack] = useState<Crumb[]>([])
+  const [stack, setStack] = useState<Crumb[]>(
+    rootFolderId ? [{ id: rootFolderId, name: rootFolderName }] : []
+  )
   const [items, setItems] = useState<SPItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
