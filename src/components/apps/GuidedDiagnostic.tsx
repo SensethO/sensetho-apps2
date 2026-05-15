@@ -290,8 +290,8 @@ function progressColor(p: number) {
 
 // ─── ActionItem ───────────────────────────────────────────────────────────────
 
-function ActionItem({ actionKey, text, progress, na, note, isOpen, readOnly, onToggle, onSetProgress, onToggleNa, onNoteChange }: {
-  actionKey: string; text: string; progress: number; na: boolean; note: string; isOpen: boolean
+function ActionItem({ text, progress, na, note, isOpen, readOnly, onToggle, onSetProgress, onToggleNa, onNoteChange }: {
+  text: string; progress: number; na: boolean; note: string; isOpen: boolean
   readOnly: boolean
   onToggle: () => void; onSetProgress: (v: number) => void; onToggleNa: () => void
   onNoteChange: (v: string) => void
@@ -702,7 +702,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             )}
           </div>
           {aiError && <p className="text-xs text-red-500 mb-2">{aiError}</p>}
-          {evaluatedCount === 0 && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Évaluez au moins un domaine pour générer l'analyse.</p>}
+          {evaluatedCount === 0 && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Évaluez au moins un domaine pour générer l&apos;analyse.</p>}
           {aiAnalysis ? (
             <div className="prose prose-sm dark:prose-invert max-w-none">
               {aiAnalysis.split('\n').map((line, i) => (
@@ -713,7 +713,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             </div>
           ) : (
             !generatingAI && evaluatedCount > 0 && (
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cliquez sur "Générer" pour obtenir une analyse personnalisée.</p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cliquez sur &quot;Générer&quot; pour obtenir une analyse personnalisée.</p>
             )
           )}
         </div>
@@ -806,7 +806,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
                 .map(i => {
                   const key = `${activeDomain.id}_${i}`
                   return (
-                    <ActionItem key={key} actionKey={key} text={activeDomain.actions[i]}
+                    <ActionItem key={key} text={activeDomain.actions[i]}
                       progress={actionProgress[key] ?? 0}
                       na={actionNa[key] ?? false}
                       note={notes[key] ?? ''}

@@ -41,7 +41,7 @@ export default function RequireSubscription({ appSlug, appName, children }: Requ
             {appName
               ? `L'application "${appName}" nécessite un abonnement actif.`
               : 'Cette application nécessite un abonnement actif.'}
-            {' '}Contactez l'administrateur pour obtenir un accès.
+            {' '}Contactez l&apos;administrateur pour obtenir un accès.
           </p>
         </div>
 
