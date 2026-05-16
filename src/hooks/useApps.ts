@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AppCategory, App } from '@/types'
 
@@ -8,10 +8,7 @@ export function useApps(isAdmin: boolean) {
   const [categories, setCategories] = useState<AppCategory[]>([])
   const [loading, setLoading] = useState(true)
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadApps() }, [isAdmin])
-
-  async function loadApps() {
+  const loadApps = useCallback(async () => {
     const supabase = createClient()
     setLoading(true)
 
@@ -43,7 +40,21 @@ export function useApps(isAdmin: boolean) {
 
     setCategories(result)
     setLoading(false)
-  }
+  }, [isAdmin])
+
+  useEffect(() => {
+    loadApps()
+
+    // Rechargement automatique quand app_categories ou apps sont modifiés
+    const supabase = createClient()
+    const channel = supabase
+      .channel('menu-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_categories' }, loadApps)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'apps' }, loadApps)
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [loadApps])
 
   return { categories, loading, reload: loadApps }
 }
@@ -53,10 +64,7 @@ export function useAllApps() {
   const [apps, setApps] = useState<App[]>([])
   const [loading, setLoading] = useState(true)
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load() }, [])
-
-  async function load() {
+  const load = useCallback(async () => {
     const supabase = createClient()
     const [{ data: catsRaw }, { data: appsRaw }] = await Promise.all([
       supabase.from('app_categories').select('*').order('order_index'),
@@ -65,7 +73,11 @@ export function useAllApps() {
     setCategories((catsRaw ?? []) as AppCategory[])
     setApps((appsRaw ?? []) as App[])
     setLoading(false)
-  }
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   return { categories, apps, loading, reload: load }
 }
