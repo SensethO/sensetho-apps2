@@ -900,16 +900,14 @@ export async function exportGuidedPDF(
         'padding:12px 0',
       ].join(';')
 
-      // Cloner les cartes (pour ne pas déplacer les originaux)
-      const clones = group.map(card => {
+      // Cloner les cartes dans le wrapper (pour ne pas déplacer les originaux)
+      group.forEach(card => {
         const clone = card.cloneNode(true) as HTMLElement
         wrapper.appendChild(clone)
-        return clone
       })
 
       document.body.appendChild(wrapper)
       await addElementAsPage(wrapper)
-      clones // référencé pour éviter warning lint
       document.body.removeChild(wrapper)
     }
   }
