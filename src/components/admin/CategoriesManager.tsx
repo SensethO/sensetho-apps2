@@ -1,11 +1,114 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAllApps } from '@/hooks/useApps'
 import Icon from '@/components/ui/Icon'
 import clsx from 'clsx'
 import type { AppCategory, App, PricingType } from '@/types'
+
+// ── Liste complète des icônes disponibles ────────────────────────────────────
+// Doit rester synchronisée avec src/components/ui/Icon.tsx
+const ALL_ICONS = [
+  'app', 'alertTriangle', 'arrowDown', 'arrowUp', 'barChart', 'bell',
+  'calendarDays', 'check', 'chevronDown', 'chevronLeft', 'chevronRight',
+  'clock', 'creditCard', 'download', 'eye', 'eyeOff', 'file', 'fileText',
+  'folder', 'folderOpen', 'folderPlus', 'grid', 'home', 'image',
+  'infinity', 'info', 'key', 'list', 'lock', 'logout', 'menu',
+  'monitor', 'moon', 'moreVertical', 'move', 'pencil', 'plus',
+  'search', 'send', 'settings', 'share', 'shield', 'shieldCheck',
+  'sun', 'tag', 'ticket', 'trash', 'upload', 'user', 'video', 'x',
+] as const
+
+// ── IconPicker ───────────────────────────────────────────────────────────────
+
+function IconPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Fermer au clic extérieur
+  useEffect(() => {
+    if (!open) return
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const filtered = ALL_ICONS.filter(n => n.toLowerCase().includes(search.toLowerCase()))
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Icône</label>
+
+      {/* Bouton d'ouverture — affiche l'icône sélectionnée */}
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-2 border rounded-lg px-3 py-1.5 text-sm text-left hover:opacity-80 transition-opacity"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text)' }}
+      >
+        <Icon name={value} size={16} style={{ color: 'var(--accent, #6366f1)', flexShrink: 0 }} />
+        <span className="flex-1 font-mono text-xs">{value}</span>
+        <Icon name="chevronDown" size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      </button>
+
+      {/* Popover grille d'icônes */}
+      {open && (
+        <div
+          className="absolute left-0 right-0 z-50 mt-1 rounded-xl border shadow-xl p-3 flex flex-col gap-2"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', maxHeight: '320px' }}
+        >
+          {/* Recherche */}
+          <div className="relative flex-shrink-0">
+            <Icon name="search" size={13} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+            <input
+              autoFocus
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Filtrer…"
+              className="w-full pl-7 pr-2 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            />
+          </div>
+
+          {/* Grille */}
+          <div className="overflow-y-auto flex-1">
+            <div className="grid grid-cols-6 gap-1">
+              {filtered.map(name => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => { onChange(name); setOpen(false); setSearch('') }}
+                  title={name}
+                  className={clsx(
+                    'flex flex-col items-center justify-center gap-1 p-2 rounded-lg transition-colors text-[9px] font-mono leading-none',
+                    value === name
+                      ? 'bg-indigo-600 text-white'
+                      : 'hover:bg-gray-100 dark:hover:bg-slate-700'
+                  )}
+                  style={value !== name ? { color: 'var(--text-muted)' } : undefined}
+                >
+                  <Icon name={name} size={18} />
+                  <span className="truncate w-full text-center">{name}</span>
+                </button>
+              ))}
+              {filtered.length === 0 && (
+                <p className="col-span-6 text-center text-xs py-4" style={{ color: 'var(--text-muted)' }}>
+                  Aucune icône trouvée
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── CategoriesManager ────────────────────────────────────────────────────────
 
 export default function CategoriesManager() {
   const { categories, apps, loading, reload } = useAllApps()
@@ -196,7 +299,7 @@ export default function CategoriesManager() {
             <Field label="Nom *" value={editCat.name ?? ''} onChange={v => setEditCat(e => ({ ...e!, name: v }))} />
             <Field label="Slug *" value={editCat.slug ?? ''} onChange={v => setEditCat(e => ({ ...e!, slug: v }))} />
             <Field label="Description" value={editCat.description ?? ''} onChange={v => setEditCat(e => ({ ...e!, description: v }))} />
-            <Field label="Icône" value={editCat.icon ?? 'grid'} onChange={v => setEditCat(e => ({ ...e!, icon: v }))} />
+            <IconPicker value={editCat.icon ?? 'grid'} onChange={v => setEditCat(e => ({ ...e!, icon: v }))} />
             <Field label="Ordre" type="number" value={String(editCat.order_index ?? 0)} onChange={v => setEditCat(e => ({ ...e!, order_index: parseInt(v) || 0 }))} />
             <Checkbox label="Réservé aux admins" checked={editCat.is_admin_only ?? false} onChange={v => setEditCat(e => ({ ...e!, is_admin_only: v }))} />
             <Checkbox label="Actif" checked={editCat.is_active ?? true} onChange={v => setEditCat(e => ({ ...e!, is_active: v }))} />
@@ -216,7 +319,7 @@ export default function CategoriesManager() {
             <Field label="Slug *" value={editApp.slug ?? ''} onChange={v => setEditApp(e => ({ ...e!, slug: v }))} />
             <Field label="Route *" value={editApp.route ?? ''} onChange={v => setEditApp(e => ({ ...e!, route: v }))} placeholder="/apps/mon-app" />
             <Field label="Description" value={editApp.description ?? ''} onChange={v => setEditApp(e => ({ ...e!, description: v }))} />
-            <Field label="Icône" value={editApp.icon ?? 'app'} onChange={v => setEditApp(e => ({ ...e!, icon: v }))} />
+            <IconPicker value={editApp.icon ?? 'app'} onChange={v => setEditApp(e => ({ ...e!, icon: v }))} />
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Catégorie</label>
               <select
