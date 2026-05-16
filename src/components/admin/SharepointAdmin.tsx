@@ -1100,18 +1100,45 @@ export default function SharepointAdmin() {
   const [configs, setConfigs] = useState<SpConfig[]>([])
   const [routes, setRoutes] = useState<SpAppRoute[]>([])
   const [loading, setLoading] = useState(true)
+  const [schemaError, setSchemaError] = useState(false)
+  const [initRunning, setInitRunning] = useState(false)
+  const [initResult, setInitResult] = useState<{ ok?: boolean; message?: string; error?: string; hint?: string } | null>(null)
 
   const loadAll = useCallback(async () => {
     const [cfgRes, rtRes] = await Promise.all([
       fetch('/api/admin/sp/configs'),
       fetch('/api/admin/sp/routes'),
     ])
-    if (cfgRes.ok) setConfigs(await cfgRes.json() as SpConfig[])
+    if (cfgRes.ok) {
+      setConfigs(await cfgRes.json() as SpConfig[])
+      setSchemaError(false)
+    } else {
+      // Tables likely don't exist yet
+      setSchemaError(true)
+    }
     if (rtRes.ok) setRoutes(await rtRes.json() as SpAppRoute[])
     setLoading(false)
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])
+
+  async function runInitSchema() {
+    setInitRunning(true)
+    setInitResult(null)
+    try {
+      const res = await fetch('/api/admin/sp/init-schema', { method: 'POST' })
+      const json = await res.json() as { ok?: boolean; message?: string; error?: string; hint?: string }
+      setInitResult(json)
+      if (json.ok) {
+        setSchemaError(false)
+        await loadAll()
+      }
+    } catch (e) {
+      setInitResult({ error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setInitRunning(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -1123,6 +1150,39 @@ export default function SharepointAdmin() {
 
   return (
     <div className="space-y-6">
+
+      {/* ── Initialisation schéma ─────────────────────────────────────────── */}
+      {(schemaError || initResult) && (
+        <div className={`rounded-xl border p-4 space-y-3 ${initResult?.ok ? 'border-green-300 bg-green-50 dark:bg-green-900/10 dark:border-green-800' : 'border-amber-300 bg-amber-50 dark:bg-amber-900/10 dark:border-amber-800'}`}>
+          {schemaError && !initResult?.ok && (
+            <>
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                ⚠️ Les tables SharePoint n&apos;existent pas encore dans la base de données.
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Cliquez sur &quot;Initialiser le schéma&quot; pour créer les tables. Requiert DATABASE_URL dans les variables d&apos;environnement Vercel
+                (Supabase → Project Settings → Database → Connection string → Direct).
+              </p>
+            </>
+          )}
+          {initResult && (
+            <div className={`text-sm ${initResult.ok ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'}`}>
+              {initResult.ok && <p>✅ {initResult.message}</p>}
+              {initResult.error && <p>❌ {initResult.error}</p>}
+              {initResult.hint && <p className="text-xs mt-1 opacity-80">{initResult.hint}</p>}
+            </div>
+          )}
+          {!initResult?.ok && (
+            <button
+              onClick={runInitSchema}
+              disabled={initRunning}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50 transition"
+            >
+              {initRunning ? 'Initialisation…' : '🔧 Initialiser le schéma'}
+            </button>
+          )}
+        </div>
+      )}
       {/* Tabs */}
       <div className="flex gap-6 border-b" style={{ borderColor: 'var(--border)' }}>
         {TABS.map(t => (
