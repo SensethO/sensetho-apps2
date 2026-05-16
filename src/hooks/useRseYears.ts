@@ -26,7 +26,6 @@ export function useRseYears({ organisationId, appSlug }: UseRseYearsOptions) {
     const list = (data ?? []).map((r: { year: number }) => r.year)
     setYears(list)
     setLoading(false)
-    // Sélectionner la plus récente si l'année en cours n'est pas dans la liste
     if (list.length > 0 && !list.includes(selectedYear)) {
       setSelectedYear(list[0])
     }
@@ -35,6 +34,7 @@ export function useRseYears({ organisationId, appSlug }: UseRseYearsOptions) {
 
   useEffect(() => { load() }, [load])
 
+  /** Ajoute une année spécifique (usage interne ou première année) */
   async function addYear(year: number, orgId?: string) {
     const id = orgId ?? organisationId
     if (!id) return
@@ -54,21 +54,45 @@ export function useRseYears({ organisationId, appSlug }: UseRseYearsOptions) {
     }
   }
 
-  async function removeYear(year: number) {
-    if (!organisationId) return
-    const supabase = createClient()
-    await supabase
-      .from('rse_years')
-      .delete()
-      .eq('organisation_id', organisationId)
-      .eq('app_slug', appSlug)
-      .eq('year', year)
-    setYears(prev => {
-      const next = prev.filter(y => y !== year)
-      if (selectedYear === year && next.length > 0) setSelectedYear(next[0])
-      return next
-    })
+  /** Ajoute l'année suivante (max + 1). Si aucune année, ajoute l'année courante. */
+  async function addNextYear() {
+    const nextYear = years.length > 0
+      ? Math.max(...years) + 1
+      : new Date().getFullYear()
+    await addYear(nextYear)
   }
 
-  return { years, selectedYear, setSelectedYear, addYear, removeYear, loading, reload: load }
+  /**
+   * Modifie l'année de départ (min).
+   * Toutes les années existantes sont décalées du même delta.
+   */
+  async function changeStartYear(newStartYear: number) {
+    if (!organisationId || years.length === 0) return
+    const minYear = Math.min(...years)
+    const delta = newStartYear - minYear
+    if (delta === 0) return
+
+    const newYears = years.map(y => y + delta)
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    // Supprimer toutes les années existantes puis réinsérer avec le décalage
+    await supabase.from('rse_years').delete()
+      .eq('organisation_id', organisationId)
+      .eq('app_slug', appSlug)
+
+    for (const y of newYears) {
+      await supabase.from('rse_years').upsert(
+        { organisation_id: organisationId, app_slug: appSlug, year: y, user_id: user.id },
+        { onConflict: 'organisation_id,app_slug,year', ignoreDuplicates: true }
+      )
+    }
+
+    const sorted = newYears.sort((a, b) => b - a)
+    setYears(sorted)
+    setSelectedYear(sorted[sorted.length - 1]) // sélectionner la nouvelle année de départ
+  }
+
+  return { years, selectedYear, setSelectedYear, addYear, addNextYear, changeStartYear, loading, reload: load }
 }

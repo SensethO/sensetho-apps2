@@ -9,42 +9,38 @@ interface RseHeaderProps {
   years: number[]
   selectedYear: number
   onSelectYear: (year: number) => void
-  onAddYear: (year: number) => void
-  onRemoveYear: (year: number) => void
+  /** Ajoute max+1 directement, sans saisie */
+  onAddNextYear: () => void
+  /** Modifie l'année de départ — toutes les années se décalent */
+  onChangeStartYear: (newYear: number) => void
   /** Slot pour le bouton Enregistrer fourni par l'app */
   actions?: React.ReactNode
 }
 
 export default function RseHeader({
-  organisation, years, selectedYear, onSelectYear, onAddYear, onRemoveYear, actions
+  organisation, years, selectedYear, onSelectYear,
+  onAddNextYear, onChangeStartYear, actions,
 }: RseHeaderProps) {
-  const [showYearPicker, setShowYearPicker] = useState(false)
-  const [yearInput, setYearInput] = useState('')
-  const [hoveredYear, setHoveredYear] = useState<number | null>(null)
+  const [editingStart, setEditingStart] = useState(false)
+  const [startInput, setStartInput] = useState('')
+  const [hoveredStart, setHoveredStart] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const currentYear = new Date().getFullYear()
 
-  // Ouvrir automatiquement le picker si aucune année n'existe pour cette org
-  useEffect(() => {
-    if (organisation && years.length === 0) {
-      setShowYearPicker(true)
-    }
-  }, [organisation, years.length])
+  const startYear = years.length > 0 ? Math.min(...years) : null
 
   useEffect(() => {
-    if (showYearPicker) {
-      setYearInput(String(currentYear))
+    if (editingStart && startYear !== null) {
+      setStartInput(String(startYear))
       setTimeout(() => inputRef.current?.focus(), 50)
     }
-  }, [showYearPicker, currentYear])
+  }, [editingStart, startYear])
 
-  function handleAddYear() {
-    const y = parseInt(yearInput)
+  function handleConfirmStart() {
+    const y = parseInt(startInput)
     if (!isNaN(y) && y >= 2000 && y <= 2100) {
-      onAddYear(y)
-      setShowYearPicker(false)
-      setYearInput('')
+      onChangeStartYear(y)
     }
+    setEditingStart(false)
   }
 
   if (!organisation) {
@@ -69,74 +65,93 @@ export default function RseHeader({
 
       {/* Sélecteur d'années */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        {years.map(y => (
-          <div
-            key={y}
-            className="relative flex items-center"
-            onMouseEnter={() => setHoveredYear(y)}
-            onMouseLeave={() => setHoveredYear(null)}
-          >
-            <button
-              onClick={() => onSelectYear(y)}
-              className="px-3 py-1 rounded-full text-xs font-semibold transition-colors"
-              style={y === selectedYear
-                ? { backgroundColor: 'var(--accent, #6366f1)', color: '#fff', paddingRight: hoveredYear === y ? '20px' : undefined }
-                : { backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border)', paddingRight: hoveredYear === y ? '20px' : undefined }
-              }>
-              {y}
-            </button>
-            {hoveredYear === y && (
-              <button
-                onClick={e => { e.stopPropagation(); onRemoveYear(y) }}
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full w-3.5 h-3.5 flex items-center justify-center hover:opacity-80"
-                style={{ backgroundColor: y === selectedYear ? 'rgba(255,255,255,0.3)' : 'var(--border)', color: y === selectedYear ? '#fff' : 'var(--text-muted)' }}
-                title={`Supprimer ${y}`}
-              >
-                <Icon name="x" size={8} />
-              </button>
-            )}
-          </div>
-        ))}
 
-        {/* Bouton + Année */}
-        <div className="relative">
-          <button
-            onClick={() => setShowYearPicker(v => !v)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors hover:bg-gray-50 dark:hover:bg-slate-700"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-            <Icon name="plus" size={11} />
-            Année
-          </button>
+        {years.length === 0 && (
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Cliquez + Année pour démarrer le suivi
+          </span>
+        )}
 
-          {/* Popover saisie année */}
-          {showYearPicker && (
-            <div className="absolute top-8 left-0 z-20 rounded-lg border shadow-lg p-3 flex gap-2 items-center"
-              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', minWidth: '160px' }}>
-              <input
-                ref={inputRef}
-                type="number"
-                value={yearInput}
-                onChange={e => setYearInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddYear(); if (e.key === 'Escape') setShowYearPicker(false) }}
-                className="w-20 px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
-                min={2000} max={2100}
-              />
+        {[...years].sort((a, b) => a - b).map((y, idx) => {
+          const isStart = idx === 0
+          const isSelected = y === selectedYear
+
+          return (
+            <div key={y} className="relative flex items-center">
+              {/* Chip année */}
               <button
-                onClick={handleAddYear}
-                className="px-2 py-1 text-xs rounded font-medium text-white"
-                style={{ backgroundColor: 'var(--accent, #6366f1)' }}>
-                Ajouter
+                onClick={() => onSelectYear(y)}
+                onMouseEnter={() => { if (isStart) setHoveredStart(true) }}
+                onMouseLeave={() => { if (isStart) setHoveredStart(false) }}
+                className="px-3 py-1 rounded-full text-xs font-semibold transition-colors"
+                style={isSelected
+                  ? { backgroundColor: 'var(--accent, #6366f1)', color: '#fff', paddingRight: isStart && hoveredStart ? '22px' : undefined }
+                  : { backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border)', paddingRight: isStart && hoveredStart ? '22px' : undefined }
+                }>
+                {y}
               </button>
-              <button
-                onClick={() => setShowYearPicker(false)}
-                className="p-0.5 rounded hover:opacity-70"
-                style={{ color: 'var(--text-muted)' }}>
-                <Icon name="x" size={12} />
-              </button>
+
+              {/* ✏️ sur l'année de départ uniquement */}
+              {isStart && hoveredStart && !editingStart && (
+                <button
+                  onMouseEnter={() => setHoveredStart(true)}
+                  onMouseLeave={() => setHoveredStart(false)}
+                  onClick={e => { e.stopPropagation(); setEditingStart(true) }}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full w-3.5 h-3.5 flex items-center justify-center hover:opacity-80"
+                  style={{ backgroundColor: isSelected ? 'rgba(255,255,255,0.3)' : 'var(--border)', color: isSelected ? '#fff' : 'var(--text-muted)' }}
+                  title="Modifier l'année de départ"
+                >
+                  <Icon name="edit" size={8} />
+                </button>
+              )}
+
+              {/* Popover édition année de départ */}
+              {isStart && editingStart && (
+                <div className="absolute top-8 left-0 z-20 rounded-lg border shadow-lg p-3 flex gap-2 items-center"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', minWidth: '200px' }}>
+                  <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Départ</span>
+                  <input
+                    ref={inputRef}
+                    type="number"
+                    value={startInput}
+                    onChange={e => setStartInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleConfirmStart(); if (e.key === 'Escape') setEditingStart(false) }}
+                    className="w-20 px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                    min={2000} max={2100}
+                  />
+                  {years.length > 1 && (
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      → {years.length} années décalées
+                    </span>
+                  )}
+                  <button
+                    onClick={handleConfirmStart}
+                    className="px-2 py-1 text-xs rounded font-medium text-white"
+                    style={{ backgroundColor: 'var(--accent, #6366f1)' }}>
+                    OK
+                  </button>
+                  <button
+                    onClick={() => setEditingStart(false)}
+                    className="p-0.5 rounded hover:opacity-70"
+                    style={{ color: 'var(--text-muted)' }}>
+                    <Icon name="x" size={12} />
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          )
+        })}
+
+        {/* Bouton + Année — ajoute max+1 directement */}
+        <button
+          onClick={onAddNextYear}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors hover:opacity-80"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+          title={years.length > 0 ? `Ajouter ${Math.max(...years) + 1}` : 'Ajouter une première année'}>
+          <Icon name="plus" size={11} />
+          Année
+        </button>
       </div>
 
       {/* Slot actions (ex: bouton Enregistrer) */}

@@ -46,7 +46,7 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
   const [selectedOrg, setSelectedOrg] = useState<Organisation | null>(null)
   const [headerActions, setHeaderActions] = useState<React.ReactNode>(null)
 
-  const { years, selectedYear, setSelectedYear, addYear, removeYear } = useRseYears({
+  const { years, selectedYear, setSelectedYear, addNextYear, changeStartYear } = useRseYears({
     organisationId: selectedOrg?.id ?? null,
     appSlug,
   })
@@ -184,8 +184,8 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
               years={years}
               selectedYear={selectedYear}
               onSelectYear={setSelectedYear}
-              onAddYear={addYear}
-              onRemoveYear={removeYear}
+              onAddNextYear={addNextYear}
+              onChangeStartYear={changeStartYear}
               actions={headerActions}
             />
             <main className="flex-1 overflow-y-auto p-6">
