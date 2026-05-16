@@ -6,10 +6,17 @@ import Icon from '@/components/ui/Icon'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import { createClient } from '@/lib/supabase/client'
 import type { GuidedPDFData, GuidedPhaseReport, GuidedDomainReport } from './GuidedDiagnosticPDFReport'
+import type { Attachment } from './GuidedActionNotePanel'
 
 // ── Lazy PDF Report (html2canvas + jspdf — ne pas inclure dans le bundle principal)
 const PdfReportLazy = dynamic(
   () => import('./GuidedDiagnosticPDFReport').then(m => ({ default: m.default })),
+  { ssr: false, loading: () => null },
+)
+
+// ── Lazy Note Panel (fetch côté client)
+const GuidedActionNotePanelLazy = dynamic(
+  () => import('./GuidedActionNotePanel'),
   { ssr: false, loading: () => null },
 )
 
@@ -306,11 +313,16 @@ function progressColor(p: number) {
 
 // ─── ActionItem ───────────────────────────────────────────────────────────────
 
-function ActionItem({ text, progress, na, note, isOpen, readOnly, onToggle, onSetProgress, onToggleNa, onNoteChange }: {
+function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, actionKey, attachments, onToggle, onSetProgress, onToggleNa, onNoteChange, onAttachmentAdded, onAttachmentRemoved }: {
   text: string; progress: number; na: boolean; note: string; isOpen: boolean
   readOnly: boolean
+  diagnosticId: string
+  actionKey: string
+  attachments: Attachment[]
   onToggle: () => void; onSetProgress: (v: number) => void; onToggleNa: () => void
   onNoteChange: (v: string) => void
+  onAttachmentAdded: (a: Attachment) => void
+  onAttachmentRemoved: (id: string) => void
 }) {
   const done = na || progress >= 10
   return (
@@ -325,7 +337,7 @@ function ActionItem({ text, progress, na, note, isOpen, readOnly, onToggle, onSe
         <span className={`flex-1 text-sm leading-snug ${done ? 'line-through' : ''}`}
           style={{ color: done ? 'var(--text-muted)' : 'var(--text)' }}>{text}</span>
         {done && <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium ${na ? 'bg-gray-500/20 text-gray-500' : 'bg-green-500/20 text-green-600'}`}>{na ? 'N/A' : '✓'}</span>}
-        {note && !done && <span className="shrink-0 text-indigo-400 text-xs">📝</span>}
+        {(note || attachments.length > 0) && !done && <span className="shrink-0 text-indigo-400 text-xs">📝</span>}
       </button>
 
       <div className="flex items-center gap-2 px-2 pb-1.5">
@@ -345,16 +357,16 @@ function ActionItem({ text, progress, na, note, isOpen, readOnly, onToggle, onSe
       </div>
 
       {isOpen && (
-        <div className="px-2 pb-2">
-          <textarea
-            readOnly={readOnly}
-            value={note}
-            onChange={e => onNoteChange(e.target.value)}
-            placeholder="Notes, observations, pièces justificatives…"
-            rows={3}
-            className="w-full text-xs p-2 rounded border resize-y focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }} />
-        </div>
+        <GuidedActionNotePanelLazy
+          diagnosticId={diagnosticId}
+          actionKey={actionKey}
+          note={note}
+          readOnly={readOnly}
+          onNoteChange={onNoteChange}
+          attachments={attachments}
+          onAttachmentAdded={onAttachmentAdded}
+          onAttachmentRemoved={onAttachmentRemoved}
+        />
       )}
     </li>
   )
@@ -530,6 +542,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [actionProgress, setActionProgress] = useState<Record<string, number>>({})
   const [actionNa, setActionNa] = useState<Record<string, boolean>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [attachments, setAttachments] = useState<Record<string, Attachment[]>>({})
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1)
   const [activeDomainId, setActiveDomainId] = useState<string>(DOMAINS[0].id)
@@ -580,9 +593,13 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           setActionProgress(d.action_progress ?? {})
           setActionNa(d.action_na ?? {})
           setAiAnalysis(d.ai_analysis ?? null)
-          // Charger les notes
+          // Charger les notes + attachments
           const nr = await fetch(`/api/guided-diagnostic/${d.id}/notes`)
-          if (nr.ok) { const nj = await nr.json(); setNotes(nj.data ?? {}) }
+          if (nr.ok) {
+            const nj = await nr.json()
+            setNotes(nj.data?.notes ?? {})
+            setAttachments(nj.data?.attachments ?? {})
+          }
         } else {
           // Créer automatiquement
           const cr = await fetch('/api/guided-diagnostic', {
@@ -594,7 +611,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             const cj = await cr.json()
             setDiagnostic(cj.data)
             setIsOwner(true)
-            setScores({}); setActionProgress({}); setActionNa({}); setNotes({})
+            setScores({}); setActionProgress({}); setActionNa({}); setNotes({}); setAttachments({})
             setAiAnalysis(null)
           }
         }
@@ -703,6 +720,14 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   function toggleNa(key: string) {
     const n = { ...actionNa, [key]: !actionNa[key] }
     setActionNa(n); scheduleSave(scores, actionProgress, n)
+  }
+
+  function addAttachment(key: string, att: Attachment) {
+    setAttachments(prev => ({ ...prev, [key]: [...(prev[key] ?? []), att] }))
+  }
+
+  function removeAttachment(key: string, id: string) {
+    setAttachments(prev => ({ ...prev, [key]: (prev[key] ?? []).filter(a => a.id !== id) }))
   }
 
   function updateNote(key: string, value: string) {
@@ -1336,10 +1361,15 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
                       note={notes[key] ?? ''}
                       isOpen={expandedKey === key}
                       readOnly={readOnly}
+                      diagnosticId={diagnostic.id}
+                      actionKey={key}
+                      attachments={attachments[key] ?? []}
                       onToggle={() => setExpandedKey(prev => prev === key ? null : key)}
                       onSetProgress={v => setProgress(key, v)}
                       onToggleNa={() => toggleNa(key)}
-                      onNoteChange={v => updateNote(key, v)} />
+                      onNoteChange={v => updateNote(key, v)}
+                      onAttachmentAdded={att => addAttachment(key, att)}
+                      onAttachmentRemoved={id => removeAttachment(key, id)} />
                   )
                 })}
             </ul>

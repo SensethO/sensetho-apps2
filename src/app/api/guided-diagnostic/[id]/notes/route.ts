@@ -41,7 +41,15 @@ async function canWrite(userId: string, diagnosticId: string): Promise<boolean> 
   return share?.permission === 'edit'
 }
 
-/** GET /api/guided-diagnostic/[id]/notes — charger toutes les notes */
+interface Attachment {
+  id: string
+  name: string
+  sharepoint_item_id: string
+  mime: string | null
+  size: number | null
+}
+
+/** GET /api/guided-diagnostic/[id]/notes — charger toutes les notes + attachments */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()
@@ -50,14 +58,33 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!await canRead(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const admin = createAdminClient()
-    const { data } = await admin
-      .from('guided_action_notes')
-      .select('action_key, content, updated_at')
-      .eq('diagnostic_id', params.id)
+    const [notesResult, attachmentsResult] = await Promise.all([
+      admin
+        .from('guided_action_notes')
+        .select('action_key, content, updated_at')
+        .eq('diagnostic_id', params.id),
+      admin
+        .from('guided_action_attachments')
+        .select('id, action_key, name, sharepoint_item_id, mime, size')
+        .eq('diagnostic_id', params.id),
+    ])
 
-    const map: Record<string, string> = {}
-    for (const row of (data ?? [])) map[row.action_key] = row.content
-    return NextResponse.json({ data: map })
+    const notes: Record<string, string> = {}
+    for (const row of (notesResult.data ?? [])) notes[row.action_key] = row.content
+
+    const attachments: Record<string, Attachment[]> = {}
+    for (const row of (attachmentsResult.data ?? [])) {
+      if (!attachments[row.action_key]) attachments[row.action_key] = []
+      attachments[row.action_key].push({
+        id: row.id,
+        name: row.name,
+        sharepoint_item_id: row.sharepoint_item_id,
+        mime: row.mime,
+        size: row.size,
+      })
+    }
+
+    return NextResponse.json({ data: { notes, attachments } })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
