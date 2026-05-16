@@ -41,15 +41,10 @@ async function canWrite(userId: string, diagnosticId: string): Promise<boolean> 
   return share?.permission === 'edit'
 }
 
-interface Attachment {
-  id: string
-  name: string
-  sharepoint_item_id: string
-  mime: string | null
-  size: number | null
-}
-
-/** GET /api/guided-diagnostic/[id]/notes — charger toutes les notes + attachments */
+/**
+ * GET /api/guided-diagnostic/[id]/notes
+ * Returns { data: { sections: Record<string, NoteSection[]> } }
+ */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()
@@ -58,39 +53,26 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!await canRead(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const admin = createAdminClient()
-    const [notesResult, attachmentsResult] = await Promise.all([
-      admin
-        .from('guided_action_notes')
-        .select('action_key, content, updated_at')
-        .eq('diagnostic_id', params.id),
-      admin
-        .from('guided_action_attachments')
-        .select('id, action_key, name, sharepoint_item_id, mime, size')
-        .eq('diagnostic_id', params.id),
-    ])
+    const { data: rows } = await admin
+      .from('guided_action_notes')
+      .select('action_key, sections')
+      .eq('diagnostic_id', params.id)
 
-    const notes: Record<string, string> = {}
-    for (const row of (notesResult.data ?? [])) notes[row.action_key] = row.content
-
-    const attachments: Record<string, Attachment[]> = {}
-    for (const row of (attachmentsResult.data ?? [])) {
-      if (!attachments[row.action_key]) attachments[row.action_key] = []
-      attachments[row.action_key].push({
-        id: row.id,
-        name: row.name,
-        sharepoint_item_id: row.sharepoint_item_id,
-        mime: row.mime,
-        size: row.size,
-      })
+    const sections: Record<string, unknown[]> = {}
+    for (const row of (rows ?? [])) {
+      if (row.sections) sections[row.action_key] = row.sections
     }
 
-    return NextResponse.json({ data: { notes, attachments } })
+    return NextResponse.json({ data: { sections } })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }
 
-/** PUT /api/guided-diagnostic/[id]/notes — upsert une note */
+/**
+ * PUT /api/guided-diagnostic/[id]/notes
+ * Body: { action_key, sections: NoteSection[] }
+ */
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()
@@ -98,14 +80,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!await canWrite(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-    const { action_key, content } = await req.json()
+    const { action_key, sections } = await req.json() as { action_key?: string; sections?: unknown[] }
     if (!action_key) return NextResponse.json({ error: 'action_key required' }, { status: 400 })
 
     const admin = createAdminClient()
     await admin
       .from('guided_action_notes')
-      .upsert({ diagnostic_id: params.id, action_key, content: content ?? '' },
-               { onConflict: 'diagnostic_id,action_key' })
+      .upsert(
+        { diagnostic_id: params.id, action_key, sections: sections ?? [] },
+        { onConflict: 'diagnostic_id,action_key' }
+      )
 
     return NextResponse.json({ ok: true })
   } catch (err) {

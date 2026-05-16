@@ -6,7 +6,7 @@ import Icon from '@/components/ui/Icon'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import { createClient } from '@/lib/supabase/client'
 import type { GuidedPDFData, GuidedPhaseReport, GuidedDomainReport } from './GuidedDiagnosticPDFReport'
-import type { Attachment } from './GuidedActionNotePanel'
+import type { NoteSection } from './GuidedActionNotePanel'
 
 // ── Lazy PDF Report (html2canvas + jspdf — ne pas inclure dans le bundle principal)
 const PdfReportLazy = dynamic(
@@ -313,18 +313,17 @@ function progressColor(p: number) {
 
 // ─── ActionItem ───────────────────────────────────────────────────────────────
 
-function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, actionKey, attachments, onToggle, onSetProgress, onToggleNa, onNoteChange, onAttachmentAdded, onAttachmentRemoved }: {
-  text: string; progress: number; na: boolean; note: string; isOpen: boolean
+function ActionItem({ text, progress, na, isOpen, readOnly, diagnosticId, actionKey, actionSections, onToggle, onSetProgress, onToggleNa, onSectionsChange }: {
+  text: string; progress: number; na: boolean; isOpen: boolean
   readOnly: boolean
   diagnosticId: string
   actionKey: string
-  attachments: Attachment[]
+  actionSections: NoteSection[]
   onToggle: () => void; onSetProgress: (v: number) => void; onToggleNa: () => void
-  onNoteChange: (v: string) => void
-  onAttachmentAdded: (a: Attachment) => void
-  onAttachmentRemoved: (id: string) => void
+  onSectionsChange: (sects: NoteSection[]) => void
 }) {
   const done = na || progress >= 10
+  const hasContent = actionSections.some(s => s.title || s.content || s.attachments.length > 0)
   return (
     <li className="rounded-lg border transition-colors"
       style={isOpen
@@ -337,7 +336,7 @@ function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, 
         <span className={`flex-1 text-sm leading-snug ${done ? 'line-through' : ''}`}
           style={{ color: done ? 'var(--text-muted)' : 'var(--text)' }}>{text}</span>
         {done && <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium ${na ? 'bg-gray-500/20 text-gray-500' : 'bg-green-500/20 text-green-600'}`}>{na ? 'N/A' : '✓'}</span>}
-        {(note || attachments.length > 0) && !done && <span className="shrink-0 text-indigo-400 text-xs">📝</span>}
+        {hasContent && !done && <span className="shrink-0 text-indigo-400 text-xs">📝</span>}
       </button>
 
       <div className="flex items-center gap-2 px-2 pb-1.5">
@@ -360,12 +359,9 @@ function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, 
         <GuidedActionNotePanelLazy
           diagnosticId={diagnosticId}
           actionKey={actionKey}
-          note={note}
           readOnly={readOnly}
-          onNoteChange={onNoteChange}
-          attachments={attachments}
-          onAttachmentAdded={onAttachmentAdded}
-          onAttachmentRemoved={onAttachmentRemoved}
+          initialSections={actionSections}
+          onSectionsChange={onSectionsChange}
         />
       )}
     </li>
@@ -541,8 +537,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [scores, setScores] = useState<Record<string, number>>({})
   const [actionProgress, setActionProgress] = useState<Record<string, number>>({})
   const [actionNa, setActionNa] = useState<Record<string, boolean>>({})
-  const [notes, setNotes] = useState<Record<string, string>>({})
-  const [attachments, setAttachments] = useState<Record<string, Attachment[]>>({})
+  const [sections, setSections] = useState<Record<string, NoteSection[]>>({})
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1)
   const [activeDomainId, setActiveDomainId] = useState<string>(DOMAINS[0].id)
@@ -593,12 +588,11 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           setActionProgress(d.action_progress ?? {})
           setActionNa(d.action_na ?? {})
           setAiAnalysis(d.ai_analysis ?? null)
-          // Charger les notes + attachments
+          // Charger les sections de notes
           const nr = await fetch(`/api/guided-diagnostic/${d.id}/notes`)
           if (nr.ok) {
             const nj = await nr.json()
-            setNotes(nj.data?.notes ?? {})
-            setAttachments(nj.data?.attachments ?? {})
+            setSections(nj.data?.sections ?? {})
           }
         } else {
           // Créer automatiquement
@@ -611,7 +605,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             const cj = await cr.json()
             setDiagnostic(cj.data)
             setIsOwner(true)
-            setScores({}); setActionProgress({}); setActionNa({}); setNotes({}); setAttachments({})
+            setScores({}); setActionProgress({}); setActionNa({}); setSections({})
             setAiAnalysis(null)
           }
         }
@@ -722,23 +716,15 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     setActionNa(n); scheduleSave(scores, actionProgress, n)
   }
 
-  function addAttachment(key: string, att: Attachment) {
-    setAttachments(prev => ({ ...prev, [key]: [...(prev[key] ?? []), att] }))
-  }
-
-  function removeAttachment(key: string, id: string) {
-    setAttachments(prev => ({ ...prev, [key]: (prev[key] ?? []).filter(a => a.id !== id) }))
-  }
-
-  function updateNote(key: string, value: string) {
-    setNotes(prev => ({ ...prev, [key]: value }))
+  function updateSections(key: string, sects: NoteSection[]) {
+    setSections(prev => ({ ...prev, [key]: sects }))
     if (noteSaveTimers.current[key]) clearTimeout(noteSaveTimers.current[key])
     noteSaveTimers.current[key] = setTimeout(() => {
       if (!diagnostic) return
       fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action_key: key, content: value }),
+        body: JSON.stringify({ action_key: key, sections: sects }),
       })
     }, 800)
   }
@@ -789,7 +775,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           text: d.actions[i],
           progress: actionProgress[`${d.id}_${i}`] ?? 0,
           na: actionNa[`${d.id}_${i}`] ?? false,
-          note: notes[`${d.id}_${i}`] ?? undefined,
+          note: undefined,
         }))
         const domainReport: GuidedDomainReport = {
           domainId: d.id,
@@ -1358,18 +1344,15 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
                     <ActionItem key={key} text={activeDomain.actions[i]}
                       progress={actionProgress[key] ?? 0}
                       na={actionNa[key] ?? false}
-                      note={notes[key] ?? ''}
                       isOpen={expandedKey === key}
                       readOnly={readOnly}
                       diagnosticId={diagnostic.id}
                       actionKey={key}
-                      attachments={attachments[key] ?? []}
+                      actionSections={sections[key] ?? []}
                       onToggle={() => setExpandedKey(prev => prev === key ? null : key)}
                       onSetProgress={v => setProgress(key, v)}
                       onToggleNa={() => toggleNa(key)}
-                      onNoteChange={v => updateNote(key, v)}
-                      onAttachmentAdded={att => addAttachment(key, att)}
-                      onAttachmentRemoved={id => removeAttachment(key, id)} />
+                      onSectionsChange={sects => updateSections(key, sects)} />
                   )
                 })}
             </ul>
