@@ -256,6 +256,132 @@ SHAREPOINT_DRIVE_ID, SHAREPOINT_BASE_FOLDER_NAME
 
 ---
 
+## Shell type — configuration admin
+
+### Champ `shell_type` sur `AppCategory`
+
+```typescript
+type ShellType = 'standard' | 'rse'
+```
+
+| Valeur | Description | Shell utilisé |
+|---|---|---|
+| `standard` | Pages classiques, pas de gestion org/années | `AppShell` |
+| `rse` | Sidebar organisations + versioning années | `RseAppShell` |
+
+**Migration SQL requise** (à exécuter dans Supabase si la colonne n'existe pas) :
+```sql
+ALTER TABLE app_categories
+  ADD COLUMN IF NOT EXISTS shell_type text NOT NULL DEFAULT 'standard';
+
+UPDATE app_categories SET shell_type = 'rse' WHERE slug = 'rse';
+```
+
+**Dans CategoriesManager** : le sélecteur `<ShellTypeSelector>` est toujours présent dans le modal catégorie. Le badge "RSE" est affiché dans la liste si `shell_type = 'rse'`.
+
+**Règle** : toute catégorie `shell_type = 'rse'` → ses apps DOIVENT utiliser `<RseAppShell>`.  
+Ne jamais mélanger `AppShell` et `RseAppShell` dans la même catégorie.
+
+---
+
+## OrganisationsSidebar — règles
+
+**Fichier** : `src/components/rse/OrganisationsSidebar.tsx`
+
+- Auto-collapse sous **1100 px** de largeur de fenêtre (`AUTO_COLLAPSE_PX = 1100`)
+- Si l'utilisateur ouvre manuellement sur écran étroit (`manuallyExpandedRef = true`), ne pas refermer automatiquement
+- Se rouvre automatiquement si la fenêtre repasse au-dessus du seuil
+
+**Deux modes d'ajout d'organisation** :
+1. **Recherche DATA.GOUV** : `/api/organisations/search?q=...` — endpoint qui appelle l'API publique data.gouv.fr, retourne `OrganisationSearchResult[]`
+2. **Saisie manuelle** : `onSaveManual(denomination, siren?)` — pour les orgs non référencées
+
+**Table Supabase** : `organisations(id, user_id, denomination, siren, ville, dirigeants jsonb)`
+
+**Props** :
+```typescript
+interface OrganisationsSidebarProps {
+  organisations: Organisation[]
+  selected: Organisation | null
+  onSelect: (org: Organisation) => void
+  onSave: (result: OrganisationSearchResult) => Promise<Organisation | null>
+  onSaveManual: (denomination: string, siren?: string) => Promise<Organisation | null>
+  onRemove: (id: string) => void
+  loading?: boolean
+}
+```
+
+**Vue compacte** (collapsed) : avatars avec initiale de l'organisation. Clic → déplie + sélectionne.
+
+---
+
+## Système de partage de diagnostics
+
+**Fichier** : `src/components/apps/GuidedDiagnostic.tsx` → composant `<ShareModal>`  
+**Routes API** :
+```
+GET    /api/guided-diagnostic/[id]/shares           → liste des partages
+POST   /api/guided-diagnostic/[id]/shares           → inviter un utilisateur
+DELETE /api/guided-diagnostic/[id]/shares?share_id= → retirer un partage
+```
+
+**Table Supabase** : `guided_diagnostic_shares(id, diagnostic_id, shared_with_user_id, permission, created_at)`
+
+**Niveaux de permission** :
+```typescript
+type Permission = 'read' | 'edit'
+```
+
+**Règles** :
+- Seul le **propriétaire** (`isOwner = true`) peut partager et retirer des accès
+- L'utilisateur invité doit avoir un **abonnement actif** sur l'app concernée
+- En lecture seule (`isOwner = false`) : tous les champs sont `readOnly`, bouton Partager masqué
+- Vérification d'abonnement dans `checkSubscription(userId, appSlug)` — admin exempté
+
+**Pattern à reproduire pour toute app RSE avec partage** :
+```typescript
+// Dans GET /api/[app]/route.ts
+// 1. Chercher le record en tant que propriétaire
+const { data: owned } = await admin.from('table').select('*')
+  .eq('user_id', user.id).eq('organisation_id', org_id).eq('year', year).maybeSingle()
+if (owned) return NextResponse.json({ data: owned, isOwner: true })
+
+// 2. Chercher un record partagé
+const { data: shared } = await admin.from('table')
+  .select('*, shares_table!inner(permission, shared_with_user_id)')
+  .eq('organisation_id', org_id).eq('year', year)
+  .eq('shares_table.shared_with_user_id', user.id).maybeSingle()
+if (shared) return NextResponse.json({ data: shared, isOwner: false })
+```
+
+---
+
+## Catalogue-App — synchronisation (état 2025-05)
+
+**Repo** : `E:\Claude\Catalogue-App\` — package npm `@sensetho/catalogue-app` v0.4.9  
+**Relation** : sensetho-apps2 est la **SOURCE**, Catalogue-App est le **consommateur/distributeur**
+
+### Domaines ISO 26000
+
+| sensetho-apps2 | Catalogue-App v0.4.9 | Action |
+|---|---|---|
+| **13 domaines** prioritaires (source de vérité) | 12 domaines (manque DA7.1 ?) | Mettre à jour Catalogue-App |
+| Phases 1-4 identiques | Phases 1-4 identiques | ✓ OK |
+
+### Features à back-porter depuis Catalogue-App vers sensetho-apps2
+
+| Feature | Catalogue-App | sensetho-apps2 | Priorité |
+|---|---|---|---|
+| Export PDF du diagnostic | ✅ `ISO26000GuidedPDFReport` | ❌ | Haute |
+| Export Excel | ✅ `/api/iso26000-guided/export-excel` | ❌ | Moyenne |
+| Amélioration AI analyze | ✅ nouveaux prompts | Existant mais basique | Moyenne |
+| `ActionNotePanel` (pièces jointes) | ✅ | ❌ | Basse |
+
+> ⚠️ Ne jamais importer `@sensetho/catalogue-app` dans sensetho-apps2 (dépendance circulaire).  
+> La synchronisation se fait manuellement en copiant le code.
+
+---
+
 ## Checklist — ajouter une nouvelle app RSE
 
 - [ ] Page dans `src/app/rse/[slug]/page.tsx` qui utilise `<RseAppShell appSlug="...">`

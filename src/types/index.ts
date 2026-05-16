@@ -1,5 +1,7 @@
 export type UserRole = 'user' | 'admin'
 export type PricingType = 'free' | 'subscription' | 'perpetual' | 'quote'
+/** Type de shell utilisé par les apps de cette catégorie */
+export type ShellType = 'standard' | 'rse'
 
 export interface Profile {
   id: string
@@ -21,6 +23,8 @@ export interface AppCategory {
   order_index: number
   is_admin_only: boolean
   is_active: boolean
+  /** Type de shell appliqué aux apps de cette catégorie. Default: 'standard' */
+  shell_type: ShellType
   created_at: string
   updated_at: string
   apps?: App[]

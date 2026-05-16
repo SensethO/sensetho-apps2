@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAllApps, broadcastAppsUpdate } from '@/hooks/useApps'
 import Icon from '@/components/ui/Icon'
 import clsx from 'clsx'
-import type { AppCategory, App, PricingType } from '@/types'
+import type { AppCategory, App, PricingType, ShellType } from '@/types'
 
 // ── Liste complète des icônes disponibles ────────────────────────────────────
 // Doit rester synchronisée avec src/components/ui/Icon.tsx
@@ -129,12 +129,14 @@ export default function CategoriesManager() {
         name: editCat.name, slug: editCat.slug, description: editCat.description,
         icon: editCat.icon ?? 'grid', order_index: editCat.order_index ?? 0,
         is_admin_only: editCat.is_admin_only ?? false, is_active: editCat.is_active ?? true,
+        shell_type: editCat.shell_type ?? 'standard',
       }).eq('id', editCat.id)
     } else {
       await supabase.from('app_categories').insert({
         name: editCat.name, slug: editCat.slug, description: editCat.description ?? null,
         icon: editCat.icon ?? 'grid', order_index: editCat.order_index ?? categories.length,
         is_admin_only: editCat.is_admin_only ?? false, is_active: true,
+        shell_type: editCat.shell_type ?? 'standard',
       })
     }
     setEditCat(null); setSaving(false); reload(); broadcastAppsUpdate()
@@ -224,7 +226,7 @@ export default function CategoriesManager() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="font-semibold" style={{ color: 'var(--text)' }}>Catégories</h2>
-            <button onClick={() => setEditCat({ is_admin_only: false, is_active: true, icon: 'grid', order_index: categories.length })}
+            <button onClick={() => setEditCat({ is_admin_only: false, is_active: true, icon: 'grid', order_index: categories.length, shell_type: 'standard' })}
               className="flex items-center gap-2 bg-gray-900 dark:bg-slate-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-gray-800 dark:hover:bg-slate-500">
               <Icon name="plus" size={14} /> Nouvelle catégorie
             </button>
@@ -240,7 +242,12 @@ export default function CategoriesManager() {
                     {cat.is_admin_only && <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">Admin</span>}
                     {!cat.is_active && <span className="text-[10px] bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded">Inactif</span>}
                   </div>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{cat.slug} · {(cat.apps ?? []).length} app(s)</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {cat.slug} · {(cat.apps ?? []).length} app(s)
+                    {(cat.shell_type ?? 'standard') === 'rse' && (
+                      <span className="ml-2 text-[10px] bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-medium">RSE</span>
+                    )}
+                  </p>
                 </div>
                 <div className="flex items-center gap-1">
                   <button disabled={i === 0} onClick={() => moveCat(cat.id, 'up')} className="p-1 hover:opacity-80 disabled:opacity-30" style={{ color: 'var(--text-muted)' }}><Icon name="arrowUp" size={14} /></button>
@@ -300,6 +307,7 @@ export default function CategoriesManager() {
             <Field label="Slug *" value={editCat.slug ?? ''} onChange={v => setEditCat(e => ({ ...e!, slug: v }))} />
             <Field label="Description" value={editCat.description ?? ''} onChange={v => setEditCat(e => ({ ...e!, description: v }))} />
             <IconPicker value={editCat.icon ?? 'grid'} onChange={v => setEditCat(e => ({ ...e!, icon: v }))} />
+            <ShellTypeSelector value={editCat.shell_type ?? 'standard'} onChange={v => setEditCat(e => ({ ...e!, shell_type: v }))} />
             <Field label="Ordre" type="number" value={String(editCat.order_index ?? 0)} onChange={v => setEditCat(e => ({ ...e!, order_index: parseInt(v) || 0 }))} />
             <Checkbox label="Réservé aux admins" checked={editCat.is_admin_only ?? false} onChange={v => setEditCat(e => ({ ...e!, is_admin_only: v }))} />
             <Checkbox label="Actif" checked={editCat.is_active ?? true} onChange={v => setEditCat(e => ({ ...e!, is_active: v }))} />
@@ -397,6 +405,34 @@ export default function CategoriesManager() {
 }
 
 // ── Composants UI locaux ─────────────────────────────────────
+
+function ShellTypeSelector({ value, onChange }: { value: ShellType; onChange: (v: ShellType) => void }) {
+  const options: { v: ShellType; label: string; desc: string; icon: string }[] = [
+    { v: 'standard', label: 'Standard', desc: 'Shell générique sans gestion organisation/année', icon: 'monitor' },
+    { v: 'rse',      label: 'RSE',      desc: 'Shell RSE : sidebar organisations + versioning années', icon: 'shieldCheck' },
+  ]
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Type de shell</label>
+      <div className="grid grid-cols-2 gap-1.5">
+        {options.map(({ v, label, desc, icon }) => (
+          <button key={v} type="button" onClick={() => onChange(v)}
+            className={clsx('flex flex-col items-start gap-1 p-2.5 rounded-lg border text-left transition-colors',
+              value === v
+                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
+                : 'hover:bg-gray-50 dark:hover:bg-slate-700')}
+            style={value !== v ? { borderColor: 'var(--border)' } : undefined}>
+            <div className="flex items-center gap-1.5">
+              <Icon name={icon} size={13} style={{ color: value === v ? '#6366f1' : 'var(--text-muted)' }} />
+              <span className="text-xs font-semibold" style={{ color: value === v ? '#6366f1' : 'var(--text)' }}>{label}</span>
+            </div>
+            <span className="text-[10px] leading-tight" style={{ color: 'var(--text-muted)' }}>{desc}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
