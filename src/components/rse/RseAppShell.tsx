@@ -53,6 +53,9 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
 
   const NAV_W = navCollapsed ? 'w-16' : 'w-60'
 
+  // Résolution de l'app courante pour récupérer son icône (même que la sidebar)
+  const currentApp = categories.flatMap(c => c.apps ?? []).find(a => a.slug === appSlug)
+
   const ctx: RseContext = {
     org: selectedOrg,
     year: selectedYear,
@@ -118,18 +121,31 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
         {/* TopBar */}
-        <header className="h-14 border-b flex items-center px-4 gap-3 flex-shrink-0"
+        <header className="relative h-14 border-b flex items-center px-4 gap-3 flex-shrink-0"
           style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}>
           <button className="md:hidden p-1.5 rounded-lg hover:opacity-70 transition-colors"
             onClick={() => setMobileOpen(true)} style={{ color: 'var(--text-muted)' }}>
             <Icon name="menu" size={20} />
           </button>
-          {/* Titre de l'application */}
-          {title && (
-            <span className="hidden md:block text-sm font-semibold" style={{ color: 'var(--text)' }}>
-              {title}
-            </span>
-          )}
+
+          {/* Titre centré — absolu pour ne pas dépendre des items gauche/droite */}
+          {(title ?? currentApp?.name) && (() => {
+            const label = title ?? currentApp?.name ?? ''
+            const iconName = currentApp?.icon
+            return (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
+                <div className="flex items-center gap-2">
+                  {iconName && (
+                    <Icon name={iconName} size={17} style={{ color: 'var(--accent)' }} />
+                  )}
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+                    {label}
+                  </span>
+                </div>
+              </div>
+            )
+          })()}
+
           <div className="flex-1" />
           {/* Toggle thème */}
           <ThemeToggle />
