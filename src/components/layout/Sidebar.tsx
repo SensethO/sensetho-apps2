@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
+import { useFavorites } from '@/hooks/useFavorites'
 import type { AppCategory, Profile } from '@/types'
 
 interface SidebarProps {
@@ -21,6 +22,7 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteCount = 0, profile, isAdmin, onSignOut, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
+  const { favoriteIds, toggleFavorite, isFavorite } = useFavorites(profile?.id ?? null)
 
   // Rétracté par défaut — false explicite à chaque nouvelle catégorie chargée
   const [openCats, setOpenCats] = useState<Record<string, boolean>>({})
@@ -79,7 +81,6 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
                     Admin
                   </span>
                 )}
-                {/* Badge notification si catégorie fermée */}
                 {!isOpen && hasActiveBadge && (
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
                 )}
@@ -100,7 +101,7 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
             {isOpen && (
               <div className="space-y-0.5">
                 {(cat.apps ?? []).map(app => (
-                  <NavItem
+                  <AppNavItem
                     key={app.id}
                     href={app.route}
                     icon={app.icon}
@@ -108,6 +109,8 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
                     active={pathname === app.route || pathname.startsWith(app.route + '/')}
                     collapsed={collapsed}
                     onClick={onNavigate}
+                    isFavorite={isFavorite(app.id)}
+                    onToggleFavorite={() => toggleFavorite(app.id)}
                     badge={
                       app.route === '/admin/tickets' && ticketCount > 0 ? ticketCount
                       : app.route === '/admin/quotes' && quoteCount > 0 ? quoteCount
@@ -126,7 +129,6 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
       {/* Zone utilisateur en bas */}
       <div className="px-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
         {collapsed ? (
-          /* Vue compacte */
           <div className="flex flex-col items-center gap-2 py-2">
             <Link href="/account" title="Mon compte" onClick={onNavigate}
               className={clsx(
@@ -141,7 +143,6 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
             </button>
           </div>
         ) : (
-          /* Vue étendue */
           <div className="py-2 space-y-1">
             <Link href="/account" onClick={onNavigate}
               className={clsx(
@@ -173,9 +174,23 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
           </div>
         )}
       </div>
+
+      {/* Compteur favoris en bas de sidebar (mode étendu) */}
+      {!collapsed && favoriteIds.length > 0 && (
+        <div className="px-4 pb-1 pt-1">
+          <Link href="/dashboard"
+            className="flex items-center gap-1.5 text-[10px] hover:opacity-80 transition-opacity"
+            style={{ color: 'var(--text-subtle)' }}>
+            <Icon name="starFilled" size={11} style={{ color: '#eab308' }} />
+            {favoriteIds.length} favori{favoriteIds.length > 1 ? 's' : ''} sur le tableau de bord
+          </Link>
+        </div>
+      )}
     </nav>
   )
 }
+
+// ── NavItem standard (Dashboard, etc.) ───────────────────────────────────────
 
 interface NavItemProps {
   href: string
@@ -214,5 +229,56 @@ function NavItem({ href, icon, label, active, collapsed, badge, onClick }: NavIt
         </span>
       )}
     </Link>
+  )
+}
+
+// ── AppNavItem — avec bouton ⭐ favori au hover ────────────────────────────────
+
+interface AppNavItemProps extends NavItemProps {
+  isFavorite: boolean
+  onToggleFavorite: () => void
+}
+
+function AppNavItem({ href, icon, label, active, collapsed, badge, onClick, isFavorite, onToggleFavorite }: AppNavItemProps) {
+  return (
+    <div className="relative group/app">
+      <Link
+        href={href}
+        onClick={onClick}
+        title={collapsed ? label : undefined}
+        className={clsx(
+          'flex items-center gap-3 px-2 py-2 rounded-lg text-sm transition-colors relative',
+          collapsed ? 'justify-center' : 'pr-7',
+          active
+            ? 'bg-gray-900 dark:bg-slate-600 text-white'
+            : 'hover:bg-gray-100 dark:hover:bg-slate-700'
+        )}
+        style={!active ? { color: 'var(--text-muted)' } : undefined}
+      >
+        <Icon name={icon} size={18} className="flex-shrink-0" />
+        {!collapsed && <span className="truncate flex-1">{label}</span>}
+        {badge && badge > 0 && (
+          <span className={clsx(
+            'flex-shrink-0 text-[10px] font-bold rounded-full flex items-center justify-center',
+            'bg-red-500 text-white',
+            collapsed ? 'absolute -top-0.5 -right-0.5 w-4 h-4' : 'w-5 h-5'
+          )}>
+            {badge > 9 ? '9+' : badge}
+          </span>
+        )}
+      </Link>
+
+      {/* Bouton favori — visible au hover uniquement, caché en mode compact */}
+      {!collapsed && (
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite() }}
+          title={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover/app:opacity-100 transition-opacity hover:scale-110"
+          style={{ color: isFavorite ? '#eab308' : 'var(--text-muted)' }}
+        >
+          <Icon name={isFavorite ? 'starFilled' : 'star'} size={13} />
+        </button>
+      )}
+    </div>
   )
 }
