@@ -28,11 +28,8 @@ export function useRseYears({ organisationId, appSlug }: UseRseYearsOptions) {
     const list = (data ?? []).map((r: { year: number }) => r.year)
     setYears(list)
     setLoading(false)
-    // Si aucune année : créer l'année courante automatiquement
-    if (list.length === 0) {
-      await addYear(currentYear, organisationId)
-    } else if (!list.includes(selectedYear)) {
-      // Sélectionner la plus récente si l'année courante n'existe pas
+    // Sélectionner la plus récente si l'année en cours n'est pas dans la liste
+    if (list.length > 0 && !list.includes(selectedYear)) {
       setSelectedYear(list[0])
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -59,5 +56,21 @@ export function useRseYears({ organisationId, appSlug }: UseRseYearsOptions) {
     }
   }
 
-  return { years, selectedYear, setSelectedYear, addYear, loading, reload: load }
+  async function removeYear(year: number) {
+    if (!organisationId) return
+    const supabase = createClient()
+    await supabase
+      .from('rse_years')
+      .delete()
+      .eq('organisation_id', organisationId)
+      .eq('app_slug', appSlug)
+      .eq('year', year)
+    setYears(prev => {
+      const next = prev.filter(y => y !== year)
+      if (selectedYear === year && next.length > 0) setSelectedYear(next[0])
+      return next
+    })
+  }
+
+  return { years, selectedYear, setSelectedYear, addYear, removeYear, loading, reload: load }
 }

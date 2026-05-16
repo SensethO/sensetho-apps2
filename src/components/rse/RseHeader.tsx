@@ -10,21 +10,30 @@ interface RseHeaderProps {
   selectedYear: number
   onSelectYear: (year: number) => void
   onAddYear: (year: number) => void
+  onRemoveYear: (year: number) => void
   /** Slot pour le bouton Enregistrer fourni par l'app */
   actions?: React.ReactNode
 }
 
 export default function RseHeader({
-  organisation, years, selectedYear, onSelectYear, onAddYear, actions
+  organisation, years, selectedYear, onSelectYear, onAddYear, onRemoveYear, actions
 }: RseHeaderProps) {
   const [showYearPicker, setShowYearPicker] = useState(false)
   const [yearInput, setYearInput] = useState('')
+  const [hoveredYear, setHoveredYear] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const currentYear = new Date().getFullYear()
 
+  // Ouvrir automatiquement le picker si aucune année n'existe pour cette org
+  useEffect(() => {
+    if (organisation && years.length === 0) {
+      setShowYearPicker(true)
+    }
+  }, [organisation, years.length])
+
   useEffect(() => {
     if (showYearPicker) {
-      setYearInput(String(currentYear + 1))
+      setYearInput(String(currentYear))
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [showYearPicker, currentYear])
@@ -61,16 +70,32 @@ export default function RseHeader({
       {/* Sélecteur d'années */}
       <div className="flex items-center gap-1.5 flex-wrap">
         {years.map(y => (
-          <button
+          <div
             key={y}
-            onClick={() => onSelectYear(y)}
-            className="px-3 py-1 rounded-full text-xs font-semibold transition-colors"
-            style={y === selectedYear
-              ? { backgroundColor: 'var(--accent, #6366f1)', color: '#fff' }
-              : { backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border)' }
-            }>
-            {y}
-          </button>
+            className="relative flex items-center"
+            onMouseEnter={() => setHoveredYear(y)}
+            onMouseLeave={() => setHoveredYear(null)}
+          >
+            <button
+              onClick={() => onSelectYear(y)}
+              className="px-3 py-1 rounded-full text-xs font-semibold transition-colors"
+              style={y === selectedYear
+                ? { backgroundColor: 'var(--accent, #6366f1)', color: '#fff', paddingRight: hoveredYear === y ? '20px' : undefined }
+                : { backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border)', paddingRight: hoveredYear === y ? '20px' : undefined }
+              }>
+              {y}
+            </button>
+            {hoveredYear === y && (
+              <button
+                onClick={e => { e.stopPropagation(); onRemoveYear(y) }}
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full w-3.5 h-3.5 flex items-center justify-center hover:opacity-80"
+                style={{ backgroundColor: y === selectedYear ? 'rgba(255,255,255,0.3)' : 'var(--border)', color: y === selectedYear ? '#fff' : 'var(--text-muted)' }}
+                title={`Supprimer ${y}`}
+              >
+                <Icon name="x" size={8} />
+              </button>
+            )}
+          </div>
         ))}
 
         {/* Bouton + Année */}
