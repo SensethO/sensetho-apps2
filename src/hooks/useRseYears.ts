@@ -13,8 +13,6 @@ export function useRseYears({ organisationId, appSlug }: UseRseYearsOptions) {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
   const [loading, setLoading] = useState(false)
 
-  const currentYear = new Date().getFullYear()
-
   const load = useCallback(async () => {
     if (!organisationId) { setYears([]); return }
     setLoading(true)

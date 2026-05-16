@@ -24,6 +24,7 @@ interface ShareEntry {
   profiles: { email: string; full_name: string | null } | null
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface Domain {
   id: string
   nom: string
