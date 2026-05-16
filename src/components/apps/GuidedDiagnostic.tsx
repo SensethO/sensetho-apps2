@@ -1,8 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import Icon from '@/components/ui/Icon'
 import type { RseContext } from '@/components/rse/RseAppShell'
+import { createClient } from '@/lib/supabase/client'
+import type { GuidedPDFData, GuidedPhaseReport, GuidedDomainReport } from './GuidedDiagnosticPDFReport'
+
+// ── Lazy PDF Report (html2canvas + jspdf — ne pas inclure dans le bundle principal)
+const PdfReportLazy = dynamic(
+  () => import('./GuidedDiagnosticPDFReport').then(m => ({ default: m.default })),
+  { ssr: false, loading: () => null },
+)
 
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 
@@ -482,11 +491,16 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1)
   const [activeDomainId, setActiveDomainId] = useState<string>(DOMAINS[0].id)
-  const [view, setView] = useState<'step' | 'summary'>('step')
+  const [view, setView] = useState<'step' | 'summary' | 'dashboard'>('step')
+  const [exportingPDF, setExportingPDF] = useState(false)
+  const [exportingExcel, setExportingExcel] = useState(false)
+  const [pdfData, setPdfData] = useState<GuidedPDFData | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [generatingAI, setGeneratingAI] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [analysisFromCache, setAnalysisFromCache] = useState(false)
+  const [showCacheNotice, setShowCacheNotice] = useState(false)
   const [showShare, setShowShare] = useState(false)
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -556,6 +570,22 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         {/* Statut sauvegarde */}
         {saveStatus === 'saving' && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Enregistrement…</span>}
         {saveStatus === 'saved'  && <span className="text-xs text-green-500">✓ Enregistré</span>}
+        {/* Excel */}
+        <button onClick={handleExportExcel} disabled={exportingExcel}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+          title="Exporter en Excel">
+          <Icon name="download" size={13} />
+          {exportingExcel ? '…' : 'Excel'}
+        </button>
+        {/* PDF */}
+        <button onClick={handleExportPDF} disabled={exportingPDF}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+          title="Exporter en PDF">
+          <Icon name="fileText" size={13} />
+          {exportingPDF ? '…' : 'PDF'}
+        </button>
         {/* Partager */}
         {isOwner && (
           <button onClick={() => setShowShare(true)}
@@ -565,7 +595,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           </button>
         )}
         {/* Vue */}
-        <button onClick={() => setView(v => v === 'step' ? 'summary' : 'step')}
+        <button onClick={() => setView(v => v === 'dashboard' ? 'step' : v === 'step' ? 'summary' : 'step')}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
           style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
           <Icon name={view === 'step' ? 'barChart' : 'list'} size={13} />
@@ -574,6 +604,31 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       </div>
     )
   }, [diagnostic, saveStatus, isOwner, view]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Realtime — sync multi-utilisateurs ───────────────────────────────────
+  useEffect(() => {
+    if (!diagnostic?.id) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`guided_diagnostics:${diagnostic.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'guided_diagnostics',
+        filter: `id=eq.${diagnostic.id}`,
+      }, (payload) => {
+        // Ne pas appliquer si des timers de sauvegarde sont actifs (éviter conflits)
+        if (saveTimer.current || Object.keys(noteSaveTimers.current).length > 0) return
+        const r = payload.new as DiagnosticRecord
+        setDiagnostic(r)
+        setScores(r.scores ?? {})
+        setActionProgress(r.action_progress ?? {})
+        setActionNa(r.action_na ?? {})
+        if (r.ai_analysis !== null) setAiAnalysis(r.ai_analysis)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Debounce save ─────────────────────────────────────────────────────────
   const scheduleSave = useCallback((newScores: Record<string, number>, newProgress: Record<string, number>, newNa: Record<string, boolean>) => {
@@ -622,16 +677,124 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   }
 
   // ── AI ────────────────────────────────────────────────────────────────────
-  async function generateAnalysis() {
+  async function generateAnalysis(force?: boolean) {
     if (!diagnostic || generatingAI) return
-    setGeneratingAI(true); setAiError(null)
+    setGeneratingAI(true); setAiError(null); setShowCacheNotice(false)
     try {
-      const res = await fetch(`/api/guided-diagnostic/${diagnostic.id}/analyze`, { method: 'POST' })
+      const res = await fetch(`/api/guided-diagnostic/${diagnostic.id}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: force ?? false }),
+      })
       const json = await res.json()
       if (!res.ok) { setAiError(json.error); return }
       setAiAnalysis(json.analysis)
+      // Mettre à jour le record local avec la date de génération si fournie
+      if (json.generated_at) {
+        setDiagnostic(prev => prev ? { ...prev, ai_analysis: json.analysis, ai_generated_at: json.generated_at } : prev)
+      }
+      const fromCache = json.regenerated === false
+      setAnalysisFromCache(fromCache)
+      setShowCacheNotice(fromCache)
     } catch (e) { setAiError(String(e)) }
     finally { setGeneratingAI(false) }
+  }
+
+  // ── PDF export ────────────────────────────────────────────────────────────
+  function buildPDFData(): GuidedPDFData {
+    const SCORE_LABELS_LOCAL = ['Non évalué', 'Initiale', 'Engagée', 'Structurée', 'Avancée', 'Exemplaire']
+    const evaluatedDomains = DOMAINS.filter(d => (scores[d.id] ?? 0) > 0)
+    const avg = evaluatedDomains.length > 0
+      ? evaluatedDomains.reduce((s, d) => s + scores[d.id], 0) / evaluatedDomains.length
+      : 0
+
+    const phases: GuidedPhaseReport[] = PHASES.map(phase => {
+      const pDomains = DOMAINS.filter(d => d.phase === phase.id)
+      const phaseEval = pDomains.filter(x => (scores[x.id] ?? 0) > 0)
+      const phaseAvg = phaseEval.length > 0
+        ? phaseEval.reduce((s, x) => s + scores[x.id], 0) / phaseEval.length
+        : 0
+      let isFirst = true
+      const phaseDomains = pDomains.map((d): GuidedDomainReport => {
+        const sc = scores[d.id] ?? 0
+        const focusActions = d.focusActionIndices.map(i => ({
+          key: `${d.id}_${i}`,
+          text: d.actions[i],
+          progress: actionProgress[`${d.id}_${i}`] ?? 0,
+          na: actionNa[`${d.id}_${i}`] ?? false,
+          note: notes[`${d.id}_${i}`] ?? undefined,
+        }))
+        const domainReport: GuidedDomainReport = {
+          domainId: d.id,
+          domainName: d.nom,
+          isoRef: d.isoRef,
+          qcNom: d.qcNom,
+          qcIcone: d.qcIcone,
+          phase: d.phase,
+          score: sc,
+          maturityName: SCORE_LABELS_LOCAL[sc] ?? 'Non évalué',
+          rationale: d.rationale,
+          focusActions,
+          isFirstInPhase: isFirst,
+          ...(isFirst ? {
+            phaseLabel: phase.label,
+            phaseColor: phase.color,
+            phaseBgColor: phase.bg,
+            phaseAvgScore: phaseAvg,
+            phaseEvaluated: phaseEval.length,
+            phaseTotal: pDomains.length,
+          } : {}),
+        }
+        isFirst = false
+        return domainReport
+      })
+      return { id: phase.id, label: phase.label, color: phase.color, bgColor: phase.bg, domains: phaseDomains }
+    })
+
+    return {
+      organisation: org?.denomination ?? null,
+      year,
+      date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      evaluatedCount: evaluatedDomains.length,
+      totalCount: DOMAINS.length,
+      avgScore: avg,
+      phases,
+      aiAnalysis: aiAnalysis ?? null,
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!diagnostic || exportingPDF) return
+    setExportingPDF(true)
+    try {
+      const data = buildPDFData()
+      setPdfData(data)
+      // Attendre le rendu du composant PDF caché
+      await new Promise(r => setTimeout(r, 800))
+      const { exportGuidedPDF } = await import('./GuidedDiagnosticPDFReport')
+      const orgSlug = (org?.denomination ?? 'diagnostic').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      await exportGuidedPDF(data, `Diagnostic-RSE-${orgSlug}-${year}.pdf`)
+    } catch (e) { console.error('[exportPDF]', e) }
+    finally { setExportingPDF(false); setPdfData(null) }
+  }
+
+  // ── Excel export ──────────────────────────────────────────────────────────
+  async function handleExportExcel() {
+    if (!diagnostic || exportingExcel) return
+    setExportingExcel(true)
+    try {
+      const res = await fetch(`/api/guided-diagnostic/${diagnostic.id}/export-excel`)
+      if (!res.ok) { console.error('Excel export failed'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const orgSlug = (org?.denomination ?? 'diagnostic').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      a.href = url
+      a.download = `Diagnostic-RSE-${orgSlug}-${year}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { console.error('[exportExcel]', e) }
+    finally { setExportingExcel(false) }
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -672,13 +835,20 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   if (view === 'summary') {
     return (
       <div className="space-y-6 max-w-3xl mx-auto">
-        {/* Bouton retour questionnaire */}
-        <button onClick={() => setView('step')}
-          className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
-          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-          <Icon name="chevronLeft" size={14} />
-          Retour au questionnaire
-        </button>
+        {/* Navigation */}
+        <div className="flex items-center gap-2">
+          <button onClick={() => setView('step')}
+            className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+            <Icon name="chevronLeft" size={14} />
+            Questionnaire
+          </button>
+          <button onClick={() => setView('dashboard')}
+            className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
+            style={{ borderColor: '#8b5cf6', color: '#8b5cf6' }}>
+            🎯 Tableau de bord
+          </button>
+        </div>
 
         {/* Scores globaux */}
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
@@ -732,16 +902,39 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
         {/* Analyse IA */}
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>✨ Analyse IA</h3>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>✨ Analyse IA</h3>
+              {aiAnalysis && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                  Sauvegardée
+                </span>
+              )}
+            </div>
             {!readOnly && (
-              <button onClick={generateAnalysis} disabled={generatingAI || evaluatedCount === 0}
+              <button onClick={() => generateAnalysis()} disabled={generatingAI || evaluatedCount === 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white rounded-lg disabled:opacity-50 transition-colors"
                 style={{ backgroundColor: '#6366f1' }}>
                 {generatingAI ? '⏳ Génération…' : aiAnalysis ? '↻ Mettre à jour' : '✨ Générer'}
               </button>
             )}
           </div>
+          {diagnostic?.ai_generated_at && (
+            <p className="text-[10px] mb-3" style={{ color: 'var(--text-muted)' }}>
+              Analyse générée le {new Date(diagnostic.ai_generated_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
+          {showCacheNotice && analysisFromCache && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-3 text-xs"
+              style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#92400e' }}>
+              <span className="flex-1">ℹ️ Aucun changement significatif depuis la dernière analyse.</span>
+              <button onClick={() => generateAnalysis(true)}
+                className="underline font-medium hover:opacity-80 whitespace-nowrap">
+                Forcer la régénération
+              </button>
+              <button onClick={() => setShowCacheNotice(false)} className="ml-1 hover:opacity-70">×</button>
+            </div>
+          )}
           {aiError && <p className="text-xs text-red-500 mb-2">{aiError}</p>}
           {evaluatedCount === 0 && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Évaluez au moins un domaine pour générer l&apos;analyse.</p>}
           {aiAnalysis ? (
@@ -757,6 +950,232 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cliquez sur &quot;Générer&quot; pour obtenir une analyse personnalisée.</p>
             )
           )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Vue TABLEAU DE BORD ───────────────────────────────────────────────────
+  if (view === 'dashboard') {
+    const evalCount = DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).length
+    const avg = evalCount > 0
+      ? DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).reduce((s, d) => s + scores[d.id], 0) / evalCount
+      : 0
+    const completionPct = Math.round((evalCount / DOMAINS.length) * 100)
+
+    // Top recommandations : domaines évalués triés par score croissant (les plus faibles)
+    const topReco = DOMAINS
+      .filter(d => (scores[d.id] ?? 0) > 0)
+      .sort((a, b) => (scores[a.id] ?? 0) - (scores[b.id] ?? 0))
+      .slice(0, 5)
+
+    // ODD actifs (union des ODD des domaines évalués avec score > 0)
+    const activeOdds = Array.from(new Set(
+      DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).flatMap(d => d.ods)
+    )).sort()
+
+    // SVG Radar simplifié (pentagone 13 axes → trop complexe; on utilise un graphe circulaire par phase)
+    const W = 340, H = 340, CX = 170, CY = 170, MAX_R = 130
+    const N = DOMAINS.length
+    const points = DOMAINS.map((d, i) => {
+      const angle = (2 * Math.PI * i / N) - Math.PI / 2
+      const r = ((scores[d.id] ?? 0) / 5) * MAX_R
+      return { x: CX + r * Math.cos(angle), y: CY + r * Math.sin(angle), d }
+    })
+    const gridPoints = (frac: number) => DOMAINS.map((_, i) => {
+      const angle = (2 * Math.PI * i / N) - Math.PI / 2
+      const r = frac * MAX_R
+      return `${CX + r * Math.cos(angle)},${CY + r * Math.sin(angle)}`
+    }).join(' ')
+    const scorePolygon = points.map(p => `${p.x},${p.y}`).join(' ')
+
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto">
+        {/* Bouton retour */}
+        <button onClick={() => setView('step')}
+          className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+          <Icon name="chevronLeft" size={14} />
+          Retour au questionnaire
+        </button>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Score moyen', value: evalCount > 0 ? `${avg.toFixed(1)}/5` : '—', sub: evalCount > 0 ? SCORE_LABELS[Math.round(avg)] : 'Aucun domaine évalué', color: scoreColor(avg) },
+            { label: 'Complétion', value: `${completionPct}%`, sub: `${evalCount}/${DOMAINS.length} domaines`, color: completionPct === 100 ? '#22c55e' : completionPct > 50 ? '#f97316' : '#6366f1' },
+            { label: 'ODD couverts', value: String(activeOdds.length), sub: 'sur 17 ODD', color: '#0ea5e9' },
+            { label: 'Actions en cours', value: String(Object.entries(actionProgress).filter(([, v]) => v > 0 && v < 10).length), sub: 'en progression', color: '#8b5cf6' },
+          ].map(kpi => (
+            <div key={kpi.label} className="rounded-xl border p-4 flex flex-col gap-1"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+              <span className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>{kpi.label}</span>
+              <span className="text-2xl font-bold" style={{ color: kpi.color }}>{kpi.value}</span>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{kpi.sub}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          {/* Radar SVG */}
+          <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <h3 className="text-xs font-semibold mb-3" style={{ color: 'var(--text)' }}>Radar des 13 domaines</h3>
+            <div className="flex justify-center">
+              <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ maxWidth: '100%' }}>
+                {/* Grilles */}
+                {[0.2, 0.4, 0.6, 0.8, 1].map(f => (
+                  <polygon key={f} points={gridPoints(f)} fill="none"
+                    stroke="var(--border)" strokeWidth={f === 1 ? 1.5 : 0.8} />
+                ))}
+                {/* Axes */}
+                {DOMAINS.map((d, i) => {
+                  const angle = (2 * Math.PI * i / N) - Math.PI / 2
+                  return (
+                    <line key={d.id}
+                      x1={CX} y1={CY}
+                      x2={CX + MAX_R * Math.cos(angle)}
+                      y2={CY + MAX_R * Math.sin(angle)}
+                      stroke="var(--border)" strokeWidth={0.8} />
+                  )
+                })}
+                {/* Score polygon */}
+                {evalCount > 0 && (
+                  <polygon points={scorePolygon}
+                    fill="rgba(99,102,241,0.15)" stroke="#6366f1" strokeWidth={2} />
+                )}
+                {/* Labels domaines */}
+                {DOMAINS.map((d, i) => {
+                  const angle = (2 * Math.PI * i / N) - Math.PI / 2
+                  const lr = MAX_R + 18
+                  const x = CX + lr * Math.cos(angle)
+                  const y = CY + lr * Math.sin(angle)
+                  const sc = scores[d.id] ?? 0
+                  return (
+                    <text key={d.id} x={x} y={y}
+                      textAnchor={Math.cos(angle) > 0.1 ? 'start' : Math.cos(angle) < -0.1 ? 'end' : 'middle'}
+                      dominantBaseline="middle"
+                      fontSize={8} fill={sc > 0 ? scoreColor(sc) : 'var(--text-muted)'}>
+                      {d.qcIcone}
+                    </text>
+                  )
+                })}
+              </svg>
+            </div>
+          </div>
+
+          {/* Scores par phase */}
+          <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <h3 className="text-xs font-semibold mb-3" style={{ color: 'var(--text)' }}>Scores par phase</h3>
+            <div className="space-y-4">
+              {PHASES.map(phase => {
+                const pDomains = DOMAINS.filter(d => d.phase === phase.id)
+                const pEval = pDomains.filter(d => (scores[d.id] ?? 0) > 0)
+                const pAvg = pEval.length > 0
+                  ? pEval.reduce((s, d) => s + scores[d.id], 0) / pEval.length
+                  : 0
+                return (
+                  <div key={phase.id}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold" style={{ color: phase.color }}>
+                        Phase {phase.id} — {phase.label}
+                      </span>
+                      <span className="text-xs font-bold tabular-nums" style={{ color: phase.color }}>
+                        {pEval.length > 0 ? `${pAvg.toFixed(1)}/5` : '—'}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: phase.border }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${(pAvg / 5) * 100}%`, backgroundColor: phase.color }} />
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {pDomains.map(d => {
+                        const s = scores[d.id] ?? 0
+                        return (
+                          <button key={d.id}
+                            onClick={() => { setActiveDomainId(d.id); setActivePhase(d.phase); setView('step') }}
+                            className="text-[9px] px-1.5 py-0.5 rounded-full border transition-colors hover:opacity-80"
+                            style={{
+                              borderColor: s > 0 ? scoreColor(s) : 'var(--border)',
+                              color: s > 0 ? scoreColor(s) : 'var(--text-muted)',
+                              backgroundColor: s > 0 ? `${scoreColor(s)}15` : 'transparent',
+                            }}
+                            title={`${d.nom} : ${s > 0 ? `${s}/5` : 'Non évalué'}`}>
+                            {d.qcIcone} {s > 0 ? `${s}/5` : '—'}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          {/* Top recommandations */}
+          <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <h3 className="text-xs font-semibold mb-3" style={{ color: 'var(--text)' }}>
+              ⚠️ Domaines prioritaires ({topReco.length} plus faibles)
+            </h3>
+            {topReco.length === 0 ? (
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Aucun domaine évalué</p>
+            ) : (
+              <div className="space-y-2">
+                {topReco.map((d, i) => {
+                  const s = scores[d.id] ?? 0
+                  return (
+                    <button key={d.id} onClick={() => { setActiveDomainId(d.id); setActivePhase(d.phase); setView('step') }}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors hover:bg-gray-50 dark:hover:bg-slate-700/60"
+                      style={{ border: '1px solid var(--border)' }}>
+                      <span className="text-xs font-bold w-4 tabular-nums" style={{ color: 'var(--text-muted)' }}>#{i + 1}</span>
+                      <span className="text-xs flex-1 font-medium" style={{ color: 'var(--text)' }}>{d.qcIcone} {d.nom}</span>
+                      <span className="text-xs font-bold" style={{ color: scoreColor(s) }}>{s}/5</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ODD badges */}
+          <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <h3 className="text-xs font-semibold mb-3" style={{ color: 'var(--text)' }}>
+              🌍 ODD couverts ({activeOdds.length}/17)
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              {Array.from({ length: 17 }, (_, i) => `ODD${i + 1}`).map(odd => {
+                const active = activeOdds.includes(odd)
+                const num = odd.replace('ODD', '')
+                return (
+                  <span key={odd}
+                    className="text-[10px] font-bold px-2 py-1 rounded-full"
+                    style={{
+                      backgroundColor: active ? '#6366f1' : 'var(--bg)',
+                      color: active ? 'white' : 'var(--text-muted)',
+                      border: `1px solid ${active ? '#6366f1' : 'var(--border)'}`,
+                    }}>
+                    ODD {num}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Export */}
+        <div className="flex gap-2 justify-end">
+          <button onClick={handleExportExcel} disabled={exportingExcel}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+            <Icon name="download" size={13} />
+            {exportingExcel ? 'Export…' : 'Exporter Excel'}
+          </button>
+          <button onClick={handleExportPDF} disabled={exportingPDF || evalCount === 0}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors disabled:opacity-50"
+            style={{ backgroundColor: '#6366f1' }}>
+            <Icon name="fileText" size={13} />
+            {exportingPDF ? 'Génération PDF…' : 'Exporter PDF'}
+          </button>
         </div>
       </div>
     )
@@ -802,12 +1221,19 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             )
           })}
 
-          {/* Bouton synthèse */}
-          <button onClick={() => setView('summary')}
-            className="w-full mt-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-center border transition-colors"
-            style={{ borderColor: '#6366f1', color: '#6366f1', borderStyle: 'dashed' }}>
-            📊 Voir la synthèse
-          </button>
+          {/* Boutons vue */}
+          <div className="mt-2 flex flex-col gap-1">
+            <button onClick={() => setView('summary')}
+              className="w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-center border transition-colors"
+              style={{ borderColor: '#6366f1', color: '#6366f1', borderStyle: 'dashed' }}>
+              📊 Synthèse
+            </button>
+            <button onClick={() => setView('dashboard')}
+              className="w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-center border transition-colors"
+              style={{ borderColor: '#8b5cf6', color: '#8b5cf6', borderStyle: 'dashed' }}>
+              🎯 Tableau de bord
+            </button>
+          </div>
         </div>
       </div>
 
@@ -902,6 +1328,14 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       {showShare && diagnostic && (
         <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />
       )}
+
+      {/* Composant PDF caché — monté uniquement pendant l'export */}
+      {pdfData && (
+        <div style={{ position: 'fixed', left: -9999, top: 0, pointerEvents: 'none', zIndex: -1 }}>
+          <PdfReportLazy data={pdfData} />
+        </div>
+      )}
     </div>
   )
 }
+

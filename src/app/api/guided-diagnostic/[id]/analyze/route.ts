@@ -50,6 +50,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    // Lire le paramètre force depuis le body
+    let force = false
+    try {
+      const body = await req.json()
+      force = body?.force === true
+    } catch { /* body vide ou non-JSON — on ignore */ }
+
     const scores: Record<string, number> = diag.scores ?? {}
     const evaluated = Object.entries(scores).filter(([, v]) => v > 0)
 
@@ -57,17 +64,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: 'Aucun domaine évalué' }, { status: 400 })
     }
 
-    // Vérifier si régénération nécessaire
-    const prevScores: Record<string, number> = diag.ai_scores ?? {}
-    const changed = evaluated.filter(([k, v]) => prevScores[k] !== v).length
-    const newEvaluated = evaluated.filter(([k]) => !prevScores[k]).length
+    // Vérifier si régénération nécessaire (sauf si force=true)
+    if (!force) {
+      const prevScores: Record<string, number> = diag.ai_scores ?? {}
+      const changed = evaluated.filter(([k, v]) => prevScores[k] !== v).length
+      const newEvaluated = evaluated.filter(([k]) => !prevScores[k]).length
 
-    if (diag.ai_analysis && changed < 2 && newEvaluated < 2) {
-      return NextResponse.json({
-        analysis: diag.ai_analysis,
-        generated_at: diag.ai_generated_at,
-        regenerated: false,
-      })
+      if (diag.ai_analysis && changed < 2 && newEvaluated < 2) {
+        return NextResponse.json({
+          analysis: diag.ai_analysis,
+          generated_at: diag.ai_generated_at,
+          cached: true,
+          regenerated: false,
+        })
+      }
     }
 
     // Générer avec Claude
