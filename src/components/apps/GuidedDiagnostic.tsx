@@ -492,6 +492,19 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const noteSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
+  // ── Enregistrer le handler de décalage d'année ────────────────────────────
+  useEffect(() => {
+    ctx.setYearShiftHandler(async (delta: number) => {
+      if (!org?.id) return
+      await fetch('/api/guided-diagnostic/shift-year', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: org.id, delta }),
+      })
+    })
+    return () => { ctx.setYearShiftHandler(null) }
+  }, [org?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Charger ou créer le diagnostic quand org/year change ──────────────────
   useEffect(() => {
     if (!org) { setDiagnostic(null); setScores({}); setActionProgress({}); setActionNa({}); return }

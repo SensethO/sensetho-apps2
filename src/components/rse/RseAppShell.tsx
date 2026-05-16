@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
 import Sidebar from '@/components/layout/Sidebar'
@@ -20,6 +20,12 @@ export interface RseContext {
   year: number
   /** Slot pour injecter le bouton Enregistrer dans le header */
   setActions: (node: React.ReactNode) => void
+  /**
+   * Enregistre un handler appelé quand l'utilisateur décale l'année de départ.
+   * delta = newStartYear - oldStartYear (peut être négatif).
+   * L'app doit mettre à jour ses données en base pour refléter le décalage.
+   */
+  setYearShiftHandler: (fn: ((delta: number) => Promise<void>) | null) => void
 }
 
 interface RseAppShellProps {
@@ -29,6 +35,59 @@ interface RseAppShellProps {
   title?: string
   children: (ctx: RseContext) => React.ReactNode
 }
+
+// ── Prompt première année ─────────────────────────────────────────────────────
+
+function FirstYearPrompt({ orgName, onConfirm }: { orgName: string; onConfirm: (year: number) => Promise<void> }) {
+  const [yearInput, setYearInput] = useState(String(new Date().getFullYear()))
+  const [saving, setSaving] = useState(false)
+
+  async function handleStart() {
+    const y = parseInt(yearInput)
+    if (isNaN(y) || y < 2000 || y > 2100) return
+    setSaving(true)
+    await onConfirm(y)
+    setSaving(false)
+  }
+
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="rounded-xl border p-8 max-w-sm w-full text-center"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <div className="text-4xl mb-4">📅</div>
+        <h3 className="font-semibold text-base mb-1" style={{ color: 'var(--text)' }}>
+          Première année de suivi
+        </h3>
+        <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
+          Choisissez l&apos;année de départ pour<br />
+          <strong style={{ color: 'var(--text)' }}>{orgName}</strong>
+        </p>
+        <div className="flex gap-2 justify-center">
+          <input
+            type="number"
+            value={yearInput}
+            onChange={e => setYearInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleStart()}
+            className="w-24 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center"
+            style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            min={2000} max={2100}
+            autoFocus
+          />
+          <button
+            onClick={handleStart}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 transition-opacity"
+            style={{ backgroundColor: 'var(--accent, #6366f1)' }}
+          >
+            {saving ? '…' : 'Démarrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Shell principal ───────────────────────────────────────────────────────────
 
 /**
  * Layout pour toutes les applications RSE.
@@ -46,10 +105,24 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
   const [selectedOrg, setSelectedOrg] = useState<Organisation | null>(null)
   const [headerActions, setHeaderActions] = useState<React.ReactNode>(null)
 
-  const { years, selectedYear, setSelectedYear, addNextYear, changeStartYear } = useRseYears({
+  const { years, selectedYear, setSelectedYear, addYear, addNextYear, changeStartYear, loading: yearsLoading } = useRseYears({
     organisationId: selectedOrg?.id ?? null,
     appSlug,
   })
+
+  /** Handler enregistré par l'app enfant pour décaler ses données quand l'année de départ change */
+  const yearShiftHandlerRef = useRef<((delta: number) => Promise<void>) | null>(null)
+
+  /** Décale les années ET demande à l'app de décaler ses données */
+  async function handleChangeStartYear(newStartYear: number) {
+    if (years.length === 0) return
+    const minYear = Math.min(...years)
+    const delta = newStartYear - minYear
+    await changeStartYear(newStartYear)
+    if (delta !== 0 && yearShiftHandlerRef.current) {
+      await yearShiftHandlerRef.current(delta)
+    }
+  }
 
   const NAV_W = navCollapsed ? 'w-16' : 'w-60'
 
@@ -60,6 +133,7 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
     org: selectedOrg,
     year: selectedYear,
     setActions: setHeaderActions,
+    setYearShiftHandler: (fn) => { yearShiftHandlerRef.current = fn },
   }
 
   return (
@@ -185,11 +259,19 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
               selectedYear={selectedYear}
               onSelectYear={setSelectedYear}
               onAddNextYear={addNextYear}
-              onChangeStartYear={changeStartYear}
+              onChangeStartYear={handleChangeStartYear}
               actions={headerActions}
             />
             <main className="flex-1 overflow-y-auto p-6">
-              {children(ctx)}
+              {/* Si org sélectionnée mais aucune année configurée → forcer le choix d'une année */}
+              {selectedOrg && !yearsLoading && years.length === 0 ? (
+                <FirstYearPrompt
+                  orgName={selectedOrg.denomination}
+                  onConfirm={(y) => addYear(y)}
+                />
+              ) : (
+                children(ctx)
+              )}
             </main>
           </div>
         </div>
