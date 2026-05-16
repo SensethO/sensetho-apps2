@@ -362,18 +362,60 @@ function ActionItem({ text, progress, na, note, isOpen, readOnly, onToggle, onSe
 
 // ─── ScoreSelector ────────────────────────────────────────────────────────────
 
-function ScoreSelector({ score, readOnly, onChange }: { score: number; readOnly: boolean; onChange: (v: number) => void }) {
+/** Calcule un score suggéré (0-5) depuis la progression moyenne des actions focus */
+function computeSuggestedScore(
+  domain: Domain,
+  actionProgress: Record<string, number>,
+  actionNa: Record<string, boolean>,
+): number | null {
+  const keys = domain.focusActionIndices.map(i => `${domain.id}_${i}`)
+  const active = keys.filter(k => !actionNa[k])
+  if (active.length === 0) return null
+  const totalStarted = active.filter(k => (actionProgress[k] ?? 0) > 0).length
+  if (totalStarted === 0) return null
+  const avg = active.reduce((s, k) => s + (actionProgress[k] ?? 0), 0) / active.length
+  // Mapping 0-10 → 0-5
+  if (avg >= 9.5) return 5
+  if (avg >= 7.5) return 4
+  if (avg >= 5.5) return 3
+  if (avg >= 3.5) return 2
+  if (avg >= 1)   return 1
+  return 0
+}
+
+function ScoreSelector({ score, readOnly, onChange, suggestedScore }: {
+  score: number; readOnly: boolean; onChange: (v: number) => void; suggestedScore?: number | null
+}) {
   return (
-    <div className="flex gap-1.5 flex-wrap">
-      {[0, 1, 2, 3, 4, 5].map(v => (
-        <button key={v} disabled={readOnly} onClick={() => onChange(v)}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
-          style={score === v
-            ? { backgroundColor: scoreColor(v), color: '#fff', borderColor: scoreColor(v) }
-            : { backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
-          {v} — {SCORE_LABELS[v]}
-        </button>
-      ))}
+    <div className="space-y-2">
+      <div className="flex gap-1.5 flex-wrap">
+        {[0, 1, 2, 3, 4, 5].map(v => (
+          <button key={v} disabled={readOnly} onClick={() => onChange(v)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+            style={score === v
+              ? { backgroundColor: scoreColor(v), color: '#fff', borderColor: scoreColor(v) }
+              : { backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
+            {v} — {SCORE_LABELS[v]}
+          </button>
+        ))}
+      </div>
+      {/* Score suggéré par la progression des actions */}
+      {!readOnly && suggestedScore != null && suggestedScore !== score && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
+          style={{ backgroundColor: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)' }}>
+          <span style={{ color: 'var(--text-muted)' }}>
+            💡 Score suggéré par vos actions :
+          </span>
+          <span className="font-semibold" style={{ color: scoreColor(suggestedScore) }}>
+            {suggestedScore} — {SCORE_LABELS[suggestedScore]}
+          </span>
+          <button onClick={() => onChange(suggestedScore)}
+            className="ml-auto text-xs font-medium px-2 py-0.5 rounded transition-colors hover:opacity-80"
+            style={{ backgroundColor: '#6366f1', color: '#fff' }}>
+            Appliquer
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -768,10 +810,24 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     setExportingPDF(true)
     try {
       const data = buildPDFData()
+      // 1. Pré-charger le module PDF pendant que le composant se monte
+      const pdfModulePromise = import('./GuidedDiagnosticPDFReport')
       setPdfData(data)
-      // Attendre le rendu du composant PDF caché
-      await new Promise(r => setTimeout(r, 800))
-      const { exportGuidedPDF } = await import('./GuidedDiagnosticPDFReport')
+      // 2. Attendre que les éléments DOM du rapport soient présents (MutationObserver + fallback)
+      await new Promise<void>(resolve => {
+        if (document.querySelector('[data-guided-pdf-page]')) { resolve(); return }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('[data-guided-pdf-page]')) {
+            observer.disconnect()
+            resolve()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => { observer.disconnect(); resolve() }, 4000)
+      })
+      // 3. Laisser html2canvas rendre les images (RAF x2)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const { exportGuidedPDF } = await pdfModulePromise
       const orgSlug = (org?.denomination ?? 'diagnostic').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
       await exportGuidedPDF(data, `Diagnostic-RSE-${orgSlug}-${year}.pdf`)
     } catch (e) { console.error('[exportPDF]', e) }
@@ -1259,7 +1315,8 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
               Niveau de maturité RSE
             </label>
             <ScoreSelector score={scores[activeDomain.id] ?? 0} readOnly={readOnly}
-              onChange={v => setScore(activeDomain.id, v)} />
+              onChange={v => setScore(activeDomain.id, v)}
+              suggestedScore={computeSuggestedScore(activeDomain, actionProgress, actionNa)} />
           </div>
 
           {/* Actions prioritaires */}
