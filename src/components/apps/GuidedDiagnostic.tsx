@@ -3,15 +3,276 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Icon from '@/components/ui/Icon'
 import type { RseContext } from '@/components/rse/RseAppShell'
-import {
-  DOMAINS,
-  PHASES,
-  SCORE_LABELS,
-  type Domain,
-  type DiagnosticRecord,
-  type DiagnosticShare as ShareEntry,
-} from '@sensetho/catalogue-app/guided-diagnostic'
 
+// ─── Types locaux ─────────────────────────────────────────────────────────────
+
+interface DiagnosticRecord {
+  id: string
+  user_id: string
+  scores: Record<string, number>
+  action_progress: Record<string, number>
+  action_na: Record<string, boolean>
+  ai_analysis: string | null
+  ai_scores: Record<string, number> | null
+  ai_generated_at: string | null
+}
+
+interface ShareEntry {
+  id: string
+  permission: 'read' | 'edit'
+  created_at: string
+  profiles: { email: string; full_name: string | null } | null
+}
+
+interface Domain {
+  id: string
+  nom: string
+  isoRef: string
+  phase: 1 | 2 | 3 | 4
+  qcNom: string
+  qcIcone: string
+  rationale: string
+  actions: string[]
+  focusActionIndices: number[]
+  kpis: string[]
+  ods: string[]
+}
+
+// ─── Données ISO 26000 — source de vérité locale ──────────────────────────────
+// (Ces données sont également publiées dans @sensetho/catalogue-app/guided-diagnostic
+//  pour les autres projets consommateurs.)
+
+const SCORE_LABELS = ['Non évalué', 'Initiale', 'Engagée', 'Structurée', 'Avancée', 'Exemplaire']
+
+const PHASES = [
+  { id: 1 as const, label: 'Fondamentaux',          color: '#ef4444', bg: 'rgba(239,68,68,0.08)',    border: 'rgba(239,68,68,0.25)' },
+  { id: 2 as const, label: 'Piliers sociaux',        color: '#f97316', bg: 'rgba(249,115,22,0.08)',   border: 'rgba(249,115,22,0.25)' },
+  { id: 3 as const, label: 'Environnement',          color: '#22c55e', bg: 'rgba(34,197,94,0.08)',    border: 'rgba(34,197,94,0.25)' },
+  { id: 4 as const, label: 'Enjeux complémentaires', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',   border: 'rgba(139,92,246,0.25)' },
+]
+
+const DOMAINS: Domain[] = [
+  // Phase 1 : Fondamentaux
+  {
+    id: 'DA1.1', nom: 'Gouvernance organisationnelle', isoRef: '6.2', phase: 1,
+    qcNom: "Gouvernance de l'organisation", qcIcone: '🏛️',
+    rationale: 'La gouvernance est le socle transversal de toute démarche RSE. Sans structures de décision claires et un engagement de la direction, les autres actions restent isolées et sans pilotage.',
+    focusActionIndices: [0, 1, 5, 8],
+    actions: [
+      'Définir et formaliser les valeurs, vision et stratégie RSE',
+      'Identifier et cartographier les parties prenantes',
+      'Mettre en place des mécanismes de décision transparents',
+      'Établir un reporting RSE régulier (annuel au minimum)',
+      'Intégrer la RSE dans les objectifs stratégiques et la feuille de route',
+      'Désigner un responsable RSE ou un comité dédié avec mandat officiel',
+      'Promouvoir la diversité dans les instances de décision',
+      'Évaluer et améliorer en continu les pratiques de gouvernance',
+      'Former les dirigeants et administrateurs aux enjeux de responsabilité sociétale',
+      'Publier un rapport de durabilité selon un référentiel reconnu (GRI, CSRD…)',
+    ],
+    kpis: ['Politique RSE formalisée (oui/non)', "Score d'intégration RSE dans les objectifs (0-100%)", 'Fréquence du reporting RSE (nombre/an)'],
+    ods: ['ODD16', 'ODD17'],
+  },
+  {
+    id: 'DA3.4', nom: 'Santé et sécurité au travail', isoRef: '6.4.6', phase: 1,
+    qcNom: 'Relations et conditions de travail', qcIcone: '👷',
+    rationale: "Premier enjeu social et légal. La santé et la sécurité au travail impactent chaque collaborateur quotidiennement.",
+    focusActionIndices: [0, 1, 2, 3],
+    actions: [
+      'Évaluer les risques professionnels et mettre à jour le document unique (DUER)',
+      'Mettre en place un comité SSCT (Santé, Sécurité et Conditions de Travail)',
+      'Former régulièrement les collaborateurs aux gestes et postures et aux risques spécifiques',
+      'Définir des indicateurs de suivi : taux de fréquence, taux de gravité des accidents',
+      "Promouvoir la remontée d'incidents et de presqu'accidents (culture de sécurité)",
+      'Intégrer le bien-être mental dans la politique santé (prévention des RPS)',
+      'Auditer régulièrement les conditions de travail et agir sur les résultats',
+    ],
+    kpis: ['Taux de fréquence des accidents (/million h)', "Taux d'absentéisme (%)", '% salariés formés SST'],
+    ods: ['ODD3', 'ODD8'],
+  },
+  {
+    id: 'DA4.3', nom: 'Atténuation des changements climatiques', isoRef: '6.5.5', phase: 1,
+    qcNom: 'Environnement', qcIcone: '🌱',
+    rationale: "Pression réglementaire croissante (CSRD, taxonomie verte). Mesurer son empreinte carbone est désormais incontournable.",
+    focusActionIndices: [0, 1, 2, 5],
+    actions: [
+      'Réaliser un bilan des émissions de gaz à effet de serre (Bilan Carbone® ou GHG Protocol)',
+      'Fixer des objectifs de réduction des émissions à court et moyen terme',
+      'Optimiser la consommation énergétique des bâtiments et équipements',
+      "Développer l'usage des énergies renouvelables",
+      "Intégrer le critère carbone dans les décisions d'achats et d'investissements",
+      'Communiquer transparentement sur les émissions et les progrès réalisés',
+      'Étudier les compensations carbone comme levier complémentaire (pas substitutif)',
+    ],
+    kpis: ['Émissions CO₂ scope 1+2 (tCO₂eq)', '% énergie renouvelable dans le mix énergétique', 'Réduction annuelle des émissions (%)'],
+    ods: ['ODD7', 'ODD13'],
+  },
+  {
+    id: 'DA5.1', nom: 'Lutte contre la corruption', isoRef: '6.6.3', phase: 1,
+    qcNom: 'Loyauté des pratiques', qcIcone: '⚖️',
+    rationale: 'Obligation légale (Loi Sapin 2). Le risque réputationnel et pénal en cas de corruption est majeur pour toute organisation, quelle que soit sa taille.',
+    focusActionIndices: [0, 1, 2, 3],
+    actions: [
+      'Adopter et diffuser un code de conduite anti-corruption',
+      "Cartographier les risques de corruption et d'atteinte à la probité",
+      'Former les collaborateurs exposés aux risques de corruption',
+      "Mettre en place un dispositif d'alerte interne (whistleblowing)",
+      'Évaluer les tiers (clients, fournisseurs, intermédiaires) sur leur intégrité',
+      'Auditer régulièrement les processus à risque (achats, commercial, partenariats)',
+    ],
+    kpis: ['Code de conduite diffusé (oui/non)', '% collaborateurs formés anti-corruption', "Dispositif d'alerte en place (oui/non)"],
+    ods: ['ODD16'],
+  },
+  // Phase 2 : Piliers sociaux
+  {
+    id: 'DA3.1', nom: 'Emploi et relations de travail', isoRef: '6.4.3', phase: 2,
+    qcNom: 'Relations et conditions de travail', qcIcone: '👷',
+    rationale: "Des conditions d'emploi équitables sont le premier levier d'attractivité et de fidélisation des talents.",
+    focusActionIndices: [0, 1, 2, 4],
+    actions: [
+      'Établir une politique de rémunération équitable et transparente',
+      'Garantir la stabilité des contrats et limiter la précarité',
+      'Favoriser le dialogue social et la consultation des représentants du personnel',
+      'Mettre en place des entretiens individuels réguliers et des parcours de carrière',
+      'Développer la flexibilité du travail (télétravail, aménagement horaires)',
+      "Mesurer et améliorer le taux d'engagement et de satisfaction des collaborateurs",
+    ],
+    kpis: ['Taux de turnover (%)', "Index d'égalité professionnelle (/100)", "% CDI dans l'effectif total"],
+    ods: ['ODD8', 'ODD10'],
+  },
+  {
+    id: 'DA3.5', nom: 'Formation et éducation', isoRef: '6.4.7', phase: 2,
+    qcNom: 'Relations et conditions de travail', qcIcone: '👷',
+    rationale: 'La formation est un droit pour chaque salarié et un investissement à ROI prouvé. La CSRD impose désormais de mesurer et communiquer cet engagement.',
+    focusActionIndices: [0, 1, 2, 5],
+    actions: [
+      'Définir un plan de développement des compétences annuel',
+      "Garantir l'accès à la formation pour tous les niveaux hiérarchiques",
+      'Intégrer la RSE dans les parcours de formation',
+      'Développer le mentorat et le transfert de compétences internes',
+      "Mesurer l'impact des formations sur les performances",
+      'Favoriser les certifications professionnelles et la validation des acquis',
+    ],
+    kpis: ['Heures de formation par salarié (h/an)', '% budget masse salariale consacré à la formation', "Taux d'accès à la formation (%)"],
+    ods: ['ODD4', 'ODD8'],
+  },
+  {
+    id: 'DA3.6', nom: 'Égalité professionnelle', isoRef: '6.4.4', phase: 2,
+    qcNom: 'Relations et conditions de travail', qcIcone: '👷',
+    rationale: "L'Index Égalité Professionnelle est obligatoire dès 50 salariés. L'égalité femmes/hommes est un facteur de performance mesurable.",
+    focusActionIndices: [0, 1, 2, 3],
+    actions: [
+      "Calculer et publier l'Index d'égalité professionnelle femmes/hommes",
+      "Analyser les écarts de rémunération et définir un plan d'action correctif",
+      'Fixer des objectifs de mixité à tous les niveaux hiérarchiques, notamment en direction',
+      'Prévenir et traiter les situations de harcèlement moral et sexuel',
+      'Faciliter la conciliation vie professionnelle / vie personnelle',
+      'Former les managers et recruteurs aux biais inconscients',
+    ],
+    kpis: ['Index égalité professionnelle (/100)', 'Écart de rémunération H/F (%)', '% femmes dans les postes de direction'],
+    ods: ['ODD5', 'ODD8', 'ODD10'],
+  },
+  {
+    id: 'DA5.4', nom: "Pratiques d'achat responsables", isoRef: '6.6.6', phase: 2,
+    qcNom: 'Loyauté des pratiques', qcIcone: '⚖️',
+    rationale: "Vos fournisseurs et partenaires engagent votre responsabilité sociale et environnementale. Les grands donneurs d'ordres vous imposent de plus en plus des exigences RSE.",
+    focusActionIndices: [0, 1, 2, 3],
+    actions: [
+      "Définir une politique d'achats responsables intégrant des critères RSE",
+      'Évaluer les fournisseurs sur des critères sociaux, environnementaux et éthiques',
+      'Intégrer des clauses RSE dans les contrats fournisseurs',
+      "Privilégier les fournisseurs locaux et les entreprises de l'ESS",
+      'Accompagner les fournisseurs dans leur démarche RSE',
+      "Mesurer et réduire l'empreinte carbone de la chaîne d'approvisionnement",
+    ],
+    kpis: ['% fournisseurs évalués RSE', '% achats locaux (< 100km)', '% achats avec clause RSE contractuelle'],
+    ods: ['ODD12', 'ODD17'],
+  },
+  // Phase 3 : Environnement
+  {
+    id: 'DA4.1', nom: 'Prévention de la pollution', isoRef: '6.5.3', phase: 3,
+    qcNom: 'Environnement', qcIcone: '🌱',
+    rationale: "Réduire les déchets et les émissions polluantes génère souvent des économies immédiates. C'est aussi le domaine environnemental le plus visible pour les riverains.",
+    focusActionIndices: [0, 2, 3, 6],
+    actions: [
+      'Cartographier et quantifier les pollutions générées (air, eau, sol, déchets)',
+      'Mettre en conformité les installations avec les réglementations environnementales',
+      'Réduire à la source les émissions polluantes et les déchets produits',
+      'Trier et valoriser les déchets (réemploi, recyclage, compostage)',
+      'Former les collaborateurs aux bonnes pratiques environnementales',
+      'Travailler avec les fournisseurs pour réduire les emballages et matières dangereuses',
+      "Mesurer l'évolution des indicateurs pollution et fixer des objectifs de réduction",
+    ],
+    kpis: ['Déchets produits par salarié (kg/an)', 'Taux de valorisation des déchets (%)', 'Rejets de substances polluantes (kg/an)'],
+    ods: ['ODD3', 'ODD6', 'ODD12', 'ODD14', 'ODD15'],
+  },
+  {
+    id: 'DA4.2', nom: 'Utilisation durable des ressources', isoRef: '6.5.4', phase: 3,
+    qcNom: 'Environnement', qcIcone: '🌱',
+    rationale: "Énergie et eau : des économies directes et une réduction de l'exposition aux prix volatils. L'efficacité des ressources est souvent le chemin le plus court vers la rentabilité verte.",
+    focusActionIndices: [0, 1, 2, 6],
+    actions: [
+      "Réaliser un audit des consommations énergétiques et identifier les gisements d'économies",
+      "Mettre en oeuvre un plan d'efficacité énergétique (isolation, équipements, process)",
+      "Mesurer et réduire les consommations d'eau",
+      "Développer l'économie circulaire dans les processus de production",
+      "Réduire l'utilisation de matières premières vierges (recyclées, biosourcées)",
+      'Mettre en place un suivi des consommations en temps réel',
+      'Fixer des objectifs annuels de réduction des consommations et les suivre',
+    ],
+    kpis: ['Consommation énergétique par salarié (kWh)', 'Consommation eau par salarié (m³)', '% matières recyclées dans les achats'],
+    ods: ['ODD6', 'ODD7', 'ODD12'],
+  },
+  // Phase 4 : Enjeux complémentaires
+  {
+    id: 'DA2.1', nom: 'Devoir de vigilance', isoRef: '6.3.3', phase: 4,
+    qcNom: "Droits de l'Homme", qcIcone: '🤝',
+    rationale: "La loi française sur le devoir de vigilance s'applique aux grandes entreprises et s'étend progressivement via la CSDDD européenne.",
+    focusActionIndices: [0, 1, 2, 4],
+    actions: [
+      "Cartographier les risques d'atteintes aux droits humains dans la chaîne de valeur",
+      'Élaborer et publier un plan de vigilance conforme à la loi',
+      "Mettre en oeuvre des procédures d'évaluation et d'audit fournisseurs sur les droits humains",
+      'Former les acheteurs et responsables commerciaux au devoir de vigilance',
+      "Établir un mécanisme d'alerte pour les victimes de violations",
+      "Assurer le suivi et l'amélioration continue du plan de vigilance",
+    ],
+    kpis: ['Plan de vigilance publié (oui/non)', '% fournisseurs audités sur les droits humains', "Nombre d'alertes traitées"],
+    ods: ['ODD8', 'ODD10', 'ODD16'],
+  },
+  {
+    id: 'DA6.5', nom: 'Protection des données', isoRef: '6.7.7', phase: 4,
+    qcNom: 'Questions relatives aux consommateurs', qcIcone: '🛒',
+    rationale: 'La conformité RGPD est une obligation légale depuis 2018. La protection des données clients est un avantage concurrentiel fort dans un contexte de méfiance croissante.',
+    focusActionIndices: [0, 1, 3, 4],
+    actions: [
+      'Désigner un délégué à la protection des données (DPO) ou un référent RGPD',
+      'Réaliser un registre des traitements de données personnelles',
+      'Mettre en place les mentions légales et les consentements conformes au RGPD',
+      'Former les collaborateurs aux bonnes pratiques de protection des données',
+      "Réaliser des analyses d'impact (AIPD) pour les traitements à risque",
+      "Gérer les demandes d'exercice des droits des personnes (accès, suppression…)",
+    ],
+    kpis: ['DPO/référent RGPD désigné (oui/non)', 'Registre des traitements à jour (oui/non)', 'Délai moyen de traitement des demandes droits (jours)'],
+    ods: ['ODD16'],
+  },
+  {
+    id: 'DA7.1', nom: 'Implication auprès des communautés', isoRef: '6.8.3', phase: 4,
+    qcNom: 'Communautés et développement local', qcIcone: '🏘️',
+    rationale: "L'ancrage territorial est un avantage compétitif et une attente forte des parties prenantes locales. Il différencie durablement les organisations responsables.",
+    focusActionIndices: [0, 1, 2, 3],
+    actions: [
+      'Cartographier et dialoguer régulièrement avec les communautés locales',
+      'Soutenir des initiatives locales (emploi, culture, sport, éducation)',
+      "Développer des partenariats avec les associations et acteurs de l'ESS locaux",
+      "Favoriser l'emploi local dans les recrutements et sous-traitances",
+      "Mesurer l'impact territorial de l'organisation (emplois induits, achats locaux…)",
+      'Participer aux concertations et décisions qui affectent le territoire',
+    ],
+    kpis: ['Budget mécénat/sponsoring local (€)', 'Nombre de partenariats associatifs actifs', '% achats auprès de fournisseurs locaux'],
+    ods: ['ODD11', 'ODD17'],
+  },
+]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
