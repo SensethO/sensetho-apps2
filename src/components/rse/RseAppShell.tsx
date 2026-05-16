@@ -113,15 +113,21 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
   /** Handler enregistré par l'app enfant pour décaler ses données quand l'année de départ change */
   const yearShiftHandlerRef = useRef<((delta: number) => Promise<void>) | null>(null)
 
-  /** Décale les années ET demande à l'app de décaler ses données */
+  /** Décale les années ET les données de l'app (dans le bon ordre) */
   async function handleChangeStartYear(newStartYear: number) {
     if (years.length === 0) return
     const minYear = Math.min(...years)
     const delta = newStartYear - minYear
-    await changeStartYear(newStartYear)
-    if (delta !== 0 && yearShiftHandlerRef.current) {
+    if (delta === 0) return
+
+    // ⚠️ Ordre critique : décaler les données EN PREMIER, avant que selectedYear
+    // ne change (ce qui déclencherait un rechargement sur l'ancienne clé).
+    if (yearShiftHandlerRef.current) {
       await yearShiftHandlerRef.current(delta)
     }
+
+    // Puis décaler les rse_years → met à jour years + selectedYear → recharge le contenu
+    await changeStartYear(newStartYear)
   }
 
   const NAV_W = navCollapsed ? 'w-16' : 'w-60'
