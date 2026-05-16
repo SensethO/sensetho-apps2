@@ -15,10 +15,15 @@ interface OrganisationsSidebarProps {
   loading?: boolean
 }
 
+/** Seuil en px en-dessous duquel la sidebar se replie automatiquement */
+const AUTO_COLLAPSE_PX = 1100
+
 export default function OrganisationsSidebar({
   organisations, selected, onSelect, onSave, onSaveManual, onRemove, loading
 }: OrganisationsSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < AUTO_COLLAPSE_PX
+  )
   const [showSearch, setShowSearch] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<OrganisationSearchResult[]>([])
@@ -28,6 +33,35 @@ export default function OrganisationsSidebar({
   const [saving, setSaving] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  /** true = l'utilisateur a explicitement ouvert la sidebar sur écran étroit */
+  const manuallyExpandedRef = useRef(false)
+
+  // Auto-collapse/expand selon la largeur de la fenêtre
+  useEffect(() => {
+    function handleResize() {
+      const narrow = window.innerWidth < AUTO_COLLAPSE_PX
+      if (narrow && !manuallyExpandedRef.current) {
+        setCollapsed(true)
+      } else if (!narrow) {
+        // Écran redevenu large → on réinitialise l'intention manuelle et on déplie
+        manuallyExpandedRef.current = false
+        setCollapsed(false)
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  function toggleCollapsed() {
+    setCollapsed(v => {
+      const next = !v
+      // Si l'utilisateur ouvre manuellement sur écran étroit, on le mémorise
+      if (!next && window.innerWidth < AUTO_COLLAPSE_PX) {
+        manuallyExpandedRef.current = true
+      }
+      return next
+    })
+  }
 
   // Debounce search
   useEffect(() => {
@@ -101,7 +135,7 @@ export default function OrganisationsSidebar({
             Organisations
           </span>
         )}
-        <button onClick={() => setCollapsed(v => !v)}
+        <button onClick={toggleCollapsed}
           className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700 flex-shrink-0"
           title={collapsed ? 'Déplier' : 'Replier'}
           style={{ color: 'var(--text-muted)' }}>
