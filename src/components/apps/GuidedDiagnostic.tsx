@@ -313,17 +313,18 @@ function progressColor(p: number) {
 
 // ─── ActionItem ───────────────────────────────────────────────────────────────
 
-function ActionItem({ text, progress, na, isOpen, readOnly, diagnosticId, actionKey, actionSections, onToggle, onSetProgress, onToggleNa, onSectionsChange }: {
-  text: string; progress: number; na: boolean; isOpen: boolean
+function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, actionKey, actionSections, onToggle, onSetProgress, onToggleNa, onNoteChange, onSectionsChange }: {
+  text: string; progress: number; na: boolean; note: string; isOpen: boolean
   readOnly: boolean
   diagnosticId: string
   actionKey: string
   actionSections: NoteSection[]
   onToggle: () => void; onSetProgress: (v: number) => void; onToggleNa: () => void
+  onNoteChange: (v: string) => void
   onSectionsChange: (sects: NoteSection[]) => void
 }) {
   const done = na || progress >= 10
-  const hasContent = actionSections.some(s => s.title || s.content || s.attachments.length > 0)
+  const hasContent = !!note || actionSections.some(s => s.title || s.content || s.attachments.length > 0)
   return (
     <li className="rounded-lg border transition-colors"
       style={isOpen
@@ -360,6 +361,8 @@ function ActionItem({ text, progress, na, isOpen, readOnly, diagnosticId, action
           diagnosticId={diagnosticId}
           actionKey={actionKey}
           readOnly={readOnly}
+          note={note}
+          onNoteChange={onNoteChange}
           initialSections={actionSections}
           onSectionsChange={onSectionsChange}
         />
@@ -537,6 +540,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [scores, setScores] = useState<Record<string, number>>({})
   const [actionProgress, setActionProgress] = useState<Record<string, number>>({})
   const [actionNa, setActionNa] = useState<Record<string, boolean>>({})
+  const [notes, setNotes] = useState<Record<string, string>>({})
   const [sections, setSections] = useState<Record<string, NoteSection[]>>({})
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1)
@@ -588,11 +592,12 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           setActionProgress(d.action_progress ?? {})
           setActionNa(d.action_na ?? {})
           setAiAnalysis(d.ai_analysis ?? null)
-          // Charger les sections de notes
+          // Charger les notes (texte + sections Tiptap)
           const nr = await fetch(`/api/guided-diagnostic/${d.id}/notes`)
           if (nr.ok) {
             const nj = await nr.json()
             setSections(nj.data?.sections ?? {})
+            setNotes(nj.data?.notes ?? {})
           }
         } else {
           // Créer automatiquement
@@ -605,7 +610,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             const cj = await cr.json()
             setDiagnostic(cj.data)
             setIsOwner(true)
-            setScores({}); setActionProgress({}); setActionNa({}); setSections({})
+            setScores({}); setActionProgress({}); setActionNa({}); setNotes({}); setSections({})
             setAiAnalysis(null)
           }
         }
@@ -716,10 +721,25 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     setActionNa(n); scheduleSave(scores, actionProgress, n)
   }
 
+  function updateNote(key: string, value: string) {
+    setNotes(prev => ({ ...prev, [key]: value }))
+    const timerKey = `note_${key}`
+    if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
+    noteSaveTimers.current[timerKey] = setTimeout(() => {
+      if (!diagnostic) return
+      fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_key: key, content: value }),
+      })
+    }, 800)
+  }
+
   function updateSections(key: string, sects: NoteSection[]) {
     setSections(prev => ({ ...prev, [key]: sects }))
-    if (noteSaveTimers.current[key]) clearTimeout(noteSaveTimers.current[key])
-    noteSaveTimers.current[key] = setTimeout(() => {
+    const timerKey = `sects_${key}`
+    if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
+    noteSaveTimers.current[timerKey] = setTimeout(() => {
       if (!diagnostic) return
       fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`, {
         method: 'PUT',
@@ -1344,6 +1364,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
                     <ActionItem key={key} text={activeDomain.actions[i]}
                       progress={actionProgress[key] ?? 0}
                       na={actionNa[key] ?? false}
+                      note={notes[key] ?? ''}
                       isOpen={expandedKey === key}
                       readOnly={readOnly}
                       diagnosticId={diagnostic.id}
@@ -1352,6 +1373,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
                       onToggle={() => setExpandedKey(prev => prev === key ? null : key)}
                       onSetProgress={v => setProgress(key, v)}
                       onToggleNa={() => toggleNa(key)}
+                      onNoteChange={v => updateNote(key, v)}
                       onSectionsChange={sects => updateSections(key, sects)} />
                   )
                 })}

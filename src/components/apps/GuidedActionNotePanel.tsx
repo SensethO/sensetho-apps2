@@ -875,6 +875,9 @@ interface Props {
   diagnosticId: string
   actionKey: string
   readOnly: boolean
+  /** Commentaire court (texte brut) affiché au-dessus des sections Tiptap */
+  note: string
+  onNoteChange: (v: string) => void
   initialSections: NoteSection[]
   onSectionsChange: (sections: NoteSection[]) => void
   /** Prefix used for annexe refs. Default: 'A' */
@@ -902,6 +905,8 @@ export default function GuidedActionNotePanel({
   diagnosticId,
   actionKey,
   readOnly,
+  note,
+  onNoteChange,
   initialSections,
   onSectionsChange,
   refPrefix = 'A',
@@ -951,7 +956,21 @@ export default function GuidedActionNotePanel({
   }
 
   return (
-    <div className="mt-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/30 dark:bg-indigo-900/10 overflow-hidden">
+    <div className="mt-1 flex flex-col gap-2 px-2 pb-2">
+
+      {/* ── Commentaire de base ───────────────────────────── */}
+      <textarea
+        readOnly={readOnly}
+        value={note}
+        onChange={e => onNoteChange(e.target.value)}
+        placeholder="Notes, observations, pièces justificatives…"
+        rows={3}
+        className="w-full text-xs p-2 rounded-lg border resize-y focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+      />
+
+      {/* ── Notes & documents (Tiptap sections) ──────────── */}
+    <div className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/30 dark:bg-indigo-900/10 overflow-hidden">
       {/* Panel header */}
       <button
         type="button"
@@ -999,6 +1018,7 @@ export default function GuidedActionNotePanel({
           </button>
         )}
       </div>}
+    </div>
     </div>
   )
 }

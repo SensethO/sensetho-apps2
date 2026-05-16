@@ -55,15 +55,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const admin = createAdminClient()
     const { data: rows } = await admin
       .from('guided_action_notes')
-      .select('action_key, sections')
+      .select('action_key, content, sections')
       .eq('diagnostic_id', params.id)
 
     const sections: Record<string, unknown[]> = {}
+    const notes: Record<string, string> = {}
     for (const row of (rows ?? [])) {
       if (row.sections) sections[row.action_key] = row.sections
+      if (row.content)  notes[row.action_key]   = row.content
     }
 
-    return NextResponse.json({ data: { sections } })
+    return NextResponse.json({ data: { sections, notes } })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
@@ -80,16 +82,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!await canWrite(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-    const { action_key, sections } = await req.json() as { action_key?: string; sections?: unknown[] }
+    const body = await req.json() as { action_key?: string; sections?: unknown[]; content?: string }
+    const { action_key, sections, content } = body
     if (!action_key) return NextResponse.json({ error: 'action_key required' }, { status: 400 })
 
     const admin = createAdminClient()
+    const upsertRow: Record<string, unknown> = { diagnostic_id: params.id, action_key }
+    if (sections !== undefined) upsertRow.sections = sections
+    if (content  !== undefined) upsertRow.content  = content
     await admin
       .from('guided_action_notes')
-      .upsert(
-        { diagnostic_id: params.id, action_key, sections: sections ?? [] },
-        { onConflict: 'diagnostic_id,action_key' }
-      )
+      .upsert(upsertRow, { onConflict: 'diagnostic_id,action_key' })
 
     return NextResponse.json({ ok: true })
   } catch (err) {
