@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useAllApps } from '@/hooks/useApps'
+import { useAllApps, broadcastAppsUpdate } from '@/hooks/useApps'
 import Icon from '@/components/ui/Icon'
 import clsx from 'clsx'
 import type { AppCategory, App, PricingType } from '@/types'
@@ -137,13 +137,13 @@ export default function CategoriesManager() {
         is_admin_only: editCat.is_admin_only ?? false, is_active: true,
       })
     }
-    setEditCat(null); setSaving(false); reload()
+    setEditCat(null); setSaving(false); reload(); broadcastAppsUpdate()
   }
 
   async function deleteCat(id: string) {
     if (!confirm('Supprimer cette catégorie ?')) return
     await supabase.from('app_categories').delete().eq('id', id)
-    reload()
+    reload(); broadcastAppsUpdate()
   }
 
   async function moveCat(id: string, dir: 'up' | 'down') {
@@ -152,7 +152,7 @@ export default function CategoriesManager() {
     if (!target) return
     await supabase.from('app_categories').update({ order_index: target.order_index }).eq('id', id)
     await supabase.from('app_categories').update({ order_index: categories[idx].order_index }).eq('id', target.id)
-    reload()
+    reload(); broadcastAppsUpdate()
   }
 
   // ── Apps ────────────────────────────────────────────────────
@@ -184,13 +184,13 @@ export default function CategoriesManager() {
         ...pricingFields,
       })
     }
-    setEditApp(null); setSaving(false); reload()
+    setEditApp(null); setSaving(false); reload(); broadcastAppsUpdate()
   }
 
   async function deleteApp(id: string) {
     if (!confirm('Supprimer cette application ?')) return
     await supabase.from('apps').delete().eq('id', id)
-    reload()
+    reload(); broadcastAppsUpdate()
   }
 
   async function moveApp(id: string, dir: 'up' | 'down') {
@@ -200,7 +200,7 @@ export default function CategoriesManager() {
     if (!target) return
     await supabase.from('apps').update({ order_index: target.order_index }).eq('id', id)
     await supabase.from('apps').update({ order_index: catApps[idx].order_index }).eq('id', target.id)
-    reload()
+    reload(); broadcastAppsUpdate()
   }
 
   if (loading) return <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Chargement…</div>

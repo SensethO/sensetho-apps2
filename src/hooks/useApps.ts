@@ -4,6 +4,16 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AppCategory, App } from '@/types'
 
+const CHANNEL_NAME = 'apps-updated'
+
+/** Notifie tous les onglets + le même onglet qu'il faut recharger le menu */
+export function broadcastAppsUpdate() {
+  // Même onglet
+  window.dispatchEvent(new CustomEvent(CHANNEL_NAME))
+  // Autres onglets
+  try { new BroadcastChannel(CHANNEL_NAME).postMessage('reload') } catch { /* navigateur sans support */ }
+}
+
 export function useApps(isAdmin: boolean) {
   const [categories, setCategories] = useState<AppCategory[]>([])
   const [loading, setLoading] = useState(true)
@@ -45,15 +55,20 @@ export function useApps(isAdmin: boolean) {
   useEffect(() => {
     loadApps()
 
-    // Rechargement automatique quand app_categories ou apps sont modifiés
-    const supabase = createClient()
-    const channel = supabase
-      .channel('menu-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_categories' }, loadApps)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'apps' }, loadApps)
-      .subscribe()
+    // Écoute du même onglet (event custom)
+    window.addEventListener(CHANNEL_NAME, loadApps)
 
-    return () => { supabase.removeChannel(channel) }
+    // Écoute des autres onglets (BroadcastChannel)
+    let bc: BroadcastChannel | null = null
+    try {
+      bc = new BroadcastChannel(CHANNEL_NAME)
+      bc.onmessage = () => loadApps()
+    } catch { /* navigateur sans support */ }
+
+    return () => {
+      window.removeEventListener(CHANNEL_NAME, loadApps)
+      bc?.close()
+    }
   }, [loadApps])
 
   return { categories, loading, reload: loadApps }
@@ -75,9 +90,7 @@ export function useAllApps() {
     setLoading(false)
   }, [])
 
-  useEffect(() => {
-    load()
-  }, [load])
+  useEffect(() => { load() }, [load])
 
   return { categories, apps, loading, reload: load }
 }
