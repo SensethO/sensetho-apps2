@@ -689,24 +689,27 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       .subscribe()
 
     // Channel 2 : notes & sections (pour synchronisation entre onglets/utilisateurs)
+    // Pas de filtre serveur : REPLICA IDENTITY FULL est requis pour filtrer sur des
+    // colonnes non-PK en UPDATE → on filtre côté client sur diagnostic_id.
     const notesChannel = supabase
       .channel(`guided_action_notes:${diagnostic.id}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'guided_action_notes',
-        filter: `diagnostic_id=eq.${diagnostic.id}`,
       }, (payload) => {
-        const row = payload.new as { action_key?: string; sections?: NoteSection[]; content?: string } | null
+        const row = payload.new as { diagnostic_id?: string; action_key?: string; sections?: NoteSection[] | null; content?: string | null } | null
         if (!row?.action_key) return
+        // Filtre client-side sur le diagnostic courant
+        if (row.diagnostic_id !== diagnostic.id) return
         const key = row.action_key
         // Ignorer si un timer de sauvegarde est en cours pour cette clé (c'est notre propre écho)
         if (noteSaveTimers.current[`note_${key}`] || noteSaveTimers.current[`sects_${key}`]) return
-        if (row.sections !== undefined) {
-          setSections(prev => ({ ...prev, [key]: (row.sections ?? []) as NoteSection[] }))
+        if (Array.isArray(row.sections)) {
+          setSections(prev => ({ ...prev, [key]: row.sections as NoteSection[] }))
         }
-        if (row.content !== undefined) {
-          setNotes(prev => ({ ...prev, [key]: row.content ?? '' }))
+        if (typeof row.content === 'string') {
+          setNotes(prev => ({ ...prev, [key]: row.content as string }))
         }
       })
       .subscribe()
