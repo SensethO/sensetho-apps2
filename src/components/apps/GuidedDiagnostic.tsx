@@ -25,6 +25,8 @@ const GuidedActionNotePanelLazy = dynamic(
 interface DiagnosticRecord {
   id: string
   user_id: string
+  organisation_id: string
+  year: number
   scores: Record<string, number>
   action_progress: Record<string, number>
   action_na: Record<string, boolean>
@@ -622,23 +624,20 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     }
   }, [org?.id, year]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Realtime sync — guided_diagnostics ───────────────────────────────────
+  // ── Sync — Realtime WebSocket + fallback polling toutes les 4s ───────────
   useEffect(() => {
     if (!diagnostic) return
+    const diagId = diagnostic.id
+    let realtimeOk = false
+
+    // ── Tentative Realtime ────────────────────────────────────────────────
     const supabase = createClient()
-    console.log('[Realtime] Subscribing to guided_diagnostics id=', diagnostic.id)
     const channel = supabase
-      .channel(`guided_diag_${diagnostic.id}`)
+      .channel(`guided_diag_${diagId}`)
       .on(
         'postgres_changes',
-        {
-          event:  'UPDATE',
-          schema: 'public',
-          table:  'guided_diagnostics',
-          filter: `id=eq.${diagnostic.id}`,
-        },
+        { event: 'UPDATE', schema: 'public', table: 'guided_diagnostics', filter: `id=eq.${diagId}` },
         (payload: { new?: Record<string, unknown> }) => {
-          console.log('[Realtime] guided_diagnostics UPDATE received', payload, 'pending=', diagSavePending.current)
           if (diagSavePending.current) return
           const remote = payload.new as DiagnosticRecord | undefined
           if (!remote) return
@@ -648,9 +647,28 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         }
       )
       .subscribe((status: string) => {
-        console.log('[Realtime] guided_diagnostics status:', status)
+        realtimeOk = status === 'SUBSCRIBED'
       })
-    return () => { supabase.removeChannel(channel) }
+
+    // ── Fallback polling (si Realtime indisponible) ───────────────────────
+    const poll = setInterval(async () => {
+      if (realtimeOk || diagSavePending.current) return
+      try {
+        const res = await fetch(`/api/guided-diagnostic?org_id=${diagnostic.organisation_id}&year=${diagnostic.year}`)
+        if (!res.ok) return
+        const json = await res.json()
+        const remote = json.data as DiagnosticRecord | null
+        if (!remote) return
+        setActionProgress(remote.action_progress ?? {})
+        setActionNa(remote.action_na ?? {})
+        setScores(remote.scores ?? {})
+      } catch { /* silencieux */ }
+    }, 4000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(poll)
+    }
   }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Injecter les boutons dans le header RSE ───────────────────────────────
