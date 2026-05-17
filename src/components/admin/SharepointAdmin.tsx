@@ -15,6 +15,7 @@ interface SpConfig {
   site_path: string
   drive_id: string | null
   root_folder: string
+  app_root: string
   is_default: boolean
   notes: string | null
   created_at: string
@@ -174,6 +175,7 @@ const EMPTY_FORM = {
   site_host: '',
   site_path: '',
   root_folder: 'Documents partages',
+  app_root: '',
   is_default: false,
   notes: '',
 }
@@ -195,7 +197,8 @@ function ConfigFormFields({
         { field: 'client_id' as const, label: 'Client ID (App ID)', placeholder: 'xxxxxxxx-xxxx-...' },
         { field: 'site_host' as const, label: 'Site Host', placeholder: 'scdbpro.sharepoint.com' },
         { field: 'site_path' as const, label: 'Site Path', placeholder: 'sites/WebApp-Partage' },
-        { field: 'root_folder' as const, label: 'Dossier racine', placeholder: 'Documents partages' },
+        { field: 'root_folder' as const, label: 'Dossier racine (bibliothèque SP)', placeholder: 'Documents partages' },
+        { field: 'app_root' as const, label: 'Répertoire racine applicatif (optionnel)', placeholder: 'ex: Clients, SCDB, MonEntreprise' },
       ].map(({ field, label, placeholder }) => (
         <div key={field}>
           <label className={labelCls} style={labelStyle}>{label}</label>
@@ -276,6 +279,7 @@ function ConfigsTab({ configs, onRefresh }: { configs: SpConfig[]; onRefresh: ()
       site_host: cfg.site_host,
       site_path: cfg.site_path,
       root_folder: cfg.root_folder,
+      app_root: cfg.app_root ?? '',
       is_default: cfg.is_default,
       notes: cfg.notes ?? '',
     })
@@ -472,6 +476,33 @@ function RoutesTab({ configs, routes, onRefresh }: {
 }) {
   type RowState = { sp_config_id: string | null; folder_name: string; saving: boolean; saved: boolean }
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({})
+  const [creatingRoot, setCreatingRoot] = useState<string | null>(null)
+  const [rootCreated, setRootCreated] = useState<Set<string>>(new Set())
+
+  function getEffectiveConfig(sp_config_id: string | null): SpConfig | undefined {
+    if (sp_config_id) return configs.find(c => c.id === sp_config_id)
+    return configs.find(c => c.is_default) ?? configs[0]
+  }
+
+  async function createAppRoot(configId: string, appRoot: string) {
+    setCreatingRoot(configId)
+    try {
+      const res = await fetch(`/api/admin/sp/configs/${configId}/folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentId: null, name: appRoot }),
+      })
+      if (!res.ok) {
+        const j = await res.json() as { error: string }
+        throw new Error(j.error)
+      }
+      setRootCreated(prev => new Set(prev).add(configId))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCreatingRoot(null)
+    }
+  }
 
   // Initialize row states from loaded routes
   useEffect(() => {
@@ -520,19 +551,57 @@ function RoutesTab({ configs, routes, onRefresh }: {
     }
   }
 
+  // Group apps by their effective config to show app_root banners
+  const configsWithRoot = configs.filter(c => c.app_root)
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-        Associez chaque application à une configuration SharePoint et un dossier racine.
+        Associez chaque application à une configuration SharePoint et un dossier applicatif.
+        Si la configuration a un répertoire racine, tous ses dossiers seront créés à l&apos;intérieur.
       </p>
+
+      {/* App-root banners per config */}
+      {configsWithRoot.map(cfg => (
+        <div key={cfg.id} className="rounded-xl border border-indigo-200 bg-indigo-50 dark:bg-indigo-900/10 dark:border-indigo-800 px-4 py-3 flex items-center gap-3 flex-wrap">
+          <Icon name="folder" size={16} style={{ color: '#6366f1' }} />
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{cfg.name}</span>
+            <span className="text-xs ml-2 font-mono" style={{ color: 'var(--text-muted)' }}>
+              {cfg.root_folder} / <strong style={{ color: '#6366f1' }}>{cfg.app_root}</strong> / …
+            </span>
+          </div>
+          {cfg.drive_id && (
+            <SecondaryBtn
+              onClick={() => createAppRoot(cfg.id, cfg.app_root)}
+              disabled={creatingRoot === cfg.id || rootCreated.has(cfg.id)}
+            >
+              <span className="flex items-center gap-1.5">
+                <Icon name="folderPlus" size={13} />
+                {rootCreated.has(cfg.id) ? '✓ Créé' : creatingRoot === cfg.id ? 'Création...' : 'Créer dans SP'}
+              </span>
+            </SecondaryBtn>
+          )}
+        </div>
+      ))}
+
       {KNOWN_APPS.map(app => {
         const row = rowStates[app.key] ?? { sp_config_id: null, folder_name: app.defaultFolder, saving: false, saved: false }
+        const cfg = getEffectiveConfig(row.sp_config_id)
+        const effectivePath = cfg?.app_root
+          ? `${cfg.app_root}/${row.folder_name}`
+          : row.folder_name
         return (
           <div key={app.key} className="rounded-xl border p-4" style={cardStyle}>
             <div className="flex items-center gap-3 flex-wrap">
               <div className="w-44 shrink-0">
                 <div className="font-medium text-sm" style={{ color: 'var(--text)' }}>{app.label}</div>
                 <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{app.key}</div>
+                {cfg?.app_root && (
+                  <div className="text-xs mt-0.5 font-mono truncate" style={{ color: '#6366f1' }} title={effectivePath}>
+                    → {effectivePath}
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 min-w-[160px]">

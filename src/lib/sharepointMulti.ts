@@ -26,7 +26,8 @@ export interface SpConfigResolved {
   siteHost: string
   sitePath: string
   driveId: string
-  rootFolder: string
+  rootFolder: string  // effective path = appRoot/folderName (or just folderName)
+  appRoot: string     // common parent directory for all app folders (empty = none)
 }
 
 export interface SpItem {
@@ -123,6 +124,8 @@ export async function getConfigForApp(appKey: string): Promise<SpConfigResolved>
   if (route && route.sp_configs) {
     const cfg = route.sp_configs as unknown as Record<string, unknown>
     if (cfg.drive_id) {
+      const appRoot = (cfg.app_root as string) ?? ''
+      const folderName = (route.folder_name as string) ?? (cfg.root_folder as string)
       return {
         tenantId: cfg.tenant_id as string,
         clientId: cfg.client_id as string,
@@ -130,7 +133,8 @@ export async function getConfigForApp(appKey: string): Promise<SpConfigResolved>
         siteHost: cfg.site_host as string,
         sitePath: cfg.site_path as string,
         driveId: cfg.drive_id as string,
-        rootFolder: (route.folder_name as string) ?? (cfg.root_folder as string),
+        appRoot,
+        rootFolder: appRoot ? `${appRoot}/${folderName}` : folderName,
       }
     }
   }
@@ -143,6 +147,8 @@ export async function getConfigForApp(appKey: string): Promise<SpConfigResolved>
     .single()
 
   if (defaultCfg && defaultCfg.drive_id) {
+    const appRoot = defaultCfg.app_root ?? ''
+    const folderName = defaultCfg.root_folder
     return {
       tenantId: defaultCfg.tenant_id,
       clientId: defaultCfg.client_id,
@@ -150,7 +156,8 @@ export async function getConfigForApp(appKey: string): Promise<SpConfigResolved>
       siteHost: defaultCfg.site_host,
       sitePath: defaultCfg.site_path,
       driveId: defaultCfg.drive_id,
-      rootFolder: defaultCfg.root_folder,
+      appRoot,
+      rootFolder: appRoot ? `${appRoot}/${folderName}` : folderName,
     }
   }
 
@@ -165,6 +172,7 @@ export async function getConfigForApp(appKey: string): Promise<SpConfigResolved>
     siteHost: 'scdbpro.sharepoint.com',
     sitePath: 'sites/WebApp-Partage',
     driveId,
+    appRoot: '',
     rootFolder: 'Documents partages',
   }
 }
