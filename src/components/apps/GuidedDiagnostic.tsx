@@ -663,7 +663,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         setActionNa(remote.action_na ?? {})
         setScores(remote.scores ?? {})
       } catch { /* silencieux */ }
-    }, 4000)
+    }, 2000)
 
     return () => {
       supabase.removeChannel(channel)
