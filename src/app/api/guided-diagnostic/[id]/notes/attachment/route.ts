@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { spGraph } from '@/lib/sharepoint'
+import { spGraphForApp } from '@/lib/sharepointMulti'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,7 +60,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     // Rename on SharePoint
-    const spRes = await spGraph(`/items/${row.sharepoint_item_id}`, {
+    const spRes = await spGraphForApp('guided-diagnostic', `/items/${row.sharepoint_item_id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: fileName }),
@@ -115,7 +115,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     }
 
     // Supprimer de SharePoint
-    const spRes = await spGraph(`/items/${row.sharepoint_item_id}`, { method: 'DELETE' })
+    const spRes = await spGraphForApp('guided-diagnostic', `/items/${row.sharepoint_item_id}`, { method: 'DELETE' })
     // 204 = No Content = succès, 404 = déjà supprimé → on continue quand même
     if (!spRes.ok && spRes.status !== 404) {
       const errText = await spRes.text()

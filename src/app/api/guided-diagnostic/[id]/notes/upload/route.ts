@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { spGraph } from '@/lib/sharepoint'
+import { spGraphForApp, getConfigForApp } from '@/lib/sharepointMulti'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,13 +48,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const filename = file.name
     const arrayBuffer = await file.arrayBuffer()
 
-    // Créer le dossier parent GUIDED-DIAG/{diagnosticId}/{action_key} si inexistant
+    // Créer le dossier parent {rootFolder}/{diagnosticId}/{action_key} si inexistant
     // On tente l'upload directement via le path — Graph crée les dossiers intermédiaires automatiquement
     // via la syntaxe :/path:/content
-    const encodedPath = encodeURIComponent(`GUIDED-DIAG/${diagnosticId}/${action_key}/${filename}`)
-    const uploadPath = `/root:/GUIDED-DIAG/${diagnosticId}/${action_key}/${filename}:/content`
+    const config = await getConfigForApp('guided-diagnostic')
+    const uploadPath = `/root:/${config.rootFolder}/${diagnosticId}/${action_key}/${filename}:/content`
 
-    const uploadRes = await spGraph(uploadPath, {
+    const uploadRes = await spGraphForApp('guided-diagnostic', uploadPath, {
       method: 'PUT',
       headers: { 'Content-Type': file.type || 'application/octet-stream' },
       body: arrayBuffer,
@@ -90,9 +90,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       console.error('[upload/db] error', dbErr)
       return NextResponse.json({ error: dbErr.message }, { status: 500 })
     }
-
-    // Suppress unused variable warning
-    void encodedPath
 
     return NextResponse.json({ data: row })
   } catch (err) {

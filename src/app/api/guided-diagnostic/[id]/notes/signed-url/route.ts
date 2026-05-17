@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { spGraph } from '@/lib/sharepoint'
+import { spGraphForApp } from '@/lib/sharepointMulti'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const item_id = req.nextUrl.searchParams.get('item_id')
     if (!item_id) return NextResponse.json({ error: 'item_id required' }, { status: 400 })
 
-    const res = await spGraph(`/items/${item_id}`)
+    const res = await spGraphForApp('guided-diagnostic', `/items/${item_id}`)
     if (!res.ok) {
       const errText = await res.text()
       return NextResponse.json({ error: 'SharePoint item not found', detail: errText }, { status: 502 })

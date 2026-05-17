@@ -177,6 +177,30 @@ export async function getConfigForApp(appKey: string): Promise<SpConfigResolved>
   }
 }
 
+// ── spGraphForApp — drop-in replacement for the legacy spGraph(path) ─────────
+/**
+ * Makes a Graph API call against the drive resolved for a given appKey.
+ * URL shape: https://graph.microsoft.com/v1.0/drives/{driveId}{path}
+ * Mirrors the legacy `spGraph()` from sharepoint.ts but uses the DB config.
+ */
+export async function spGraphForApp(
+  appKey: string,
+  path: string,
+  opts: RequestInit = {}
+): Promise<Response> {
+  const config = await getConfigForApp(appKey)
+  const token = await getTokenForConfig({
+    tenant_id: config.tenantId,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+  })
+  return fetch(`${GRAPH_BASE}/drives/${config.driveId}${path}`, {
+    ...opts,
+    headers: { Authorization: `Bearer ${token}`, ...opts.headers },
+    cache: 'no-store',
+  })
+}
+
 // ── Graph helpers ─────────────────────────────────────────────────────────────
 
 async function graphGet<T>(token: string, url: string): Promise<T> {

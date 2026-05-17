@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { spGraph } from '@/lib/sharepoint'
+import { spGraphForApp, getConfigForApp } from '@/lib/sharepointMulti'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,8 +59,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const finalName = safeName
 
     // Create SharePoint upload session
-    const spPath = `/root:/GUIDED-DIAG/${diagnosticId}/${actionKey}/${finalName}:/createUploadSession`
-    const spRes = await spGraph(spPath, {
+    const config = await getConfigForApp('guided-diagnostic')
+    const spPath = `/root:/${config.rootFolder}/${diagnosticId}/${actionKey}/${finalName}:/createUploadSession`
+    const spRes = await spGraphForApp('guided-diagnostic', spPath, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
