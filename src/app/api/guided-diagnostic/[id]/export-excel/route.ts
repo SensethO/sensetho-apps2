@@ -10,8 +10,7 @@
  *  5. Analyse IA         — si disponible
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import ExcelJS from 'exceljs'
 
@@ -345,14 +344,6 @@ const DOMAINS: DomainDef[] = [
 
 // ─── Helpers pour vérifier l'accès ───────────────────────────────────────────
 
-function createUserClient() {
-  const cookieStore = cookies()
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } }
-  )
-}
 
 async function canRead(userId: string, diagnosticId: string): Promise<boolean> {
   const admin = createAdminClient()
