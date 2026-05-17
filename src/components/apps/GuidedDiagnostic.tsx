@@ -755,6 +755,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     const timerKey = `note_${key}`
     if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
     noteSaveTimers.current[timerKey] = setTimeout(() => {
+      delete noteSaveTimers.current[timerKey]   // ← libère le verrou realtime
       if (!diagnostic) return
       fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`, {
         method: 'PUT',
@@ -769,6 +770,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     const timerKey = `sects_${key}`
     if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
     noteSaveTimers.current[timerKey] = setTimeout(() => {
+      delete noteSaveTimers.current[timerKey]   // ← libère le verrou realtime
       if (!diagnostic) return
       fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`, {
         method: 'PUT',
