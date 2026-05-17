@@ -987,6 +987,29 @@ export default function GuidedActionNotePanel({
     return () => { supabase.removeChannel(channel) }
   }, [diagnosticId, actionKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // BroadcastChannel — sync instantanée entre onglets du même navigateur
+  // Fonctionne indépendamment de Supabase Realtime (API navigateur native)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const bc = new BroadcastChannel(`guided_notes_${diagnosticId}`)
+    bc.onmessage = (evt: MessageEvent<{ action_key: string; content: string; sections: NoteSection[] }>) => {
+      const { action_key, content, sections: remoteSections } = evt.data
+      if (action_key !== actionKey) return
+      // Ignorer si l'utilisateur est en train d'écrire localement
+      if (pendingSaveRef.current) return
+      const finalSections = remoteSections?.length > 0 ? remoteSections : [newSection()]
+      // Marquer comme changement interne pour éviter le double-apply via initialSections
+      isInternalChange.current = true
+      setSections(finalSections)
+      setEditorVersion(v => v + 1)
+      // Notifier le parent sans déclencher de sauvegarde
+      onExternalSync?.(content ?? '', finalSections)
+      setSaveState('synced')
+      setTimeout(() => setSaveState('idle'), 2500)
+    }
+    return () => bc.close()
+  }, [diagnosticId, actionKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // When initialSections changes from parent — only apply for EXTERNAL updates
   // (initial load, realtime sync). Ignore echoes of our own writes.
   useEffect(() => {

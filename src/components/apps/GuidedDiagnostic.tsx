@@ -561,6 +561,15 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const noteSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  // BroadcastChannel — sync instantanée entre onglets du même navigateur
+  const notesBCRef = useRef<BroadcastChannel | null>(null)
+  // Refs miroirs des états notes/sections pour éviter les closures périmées
+  const notesRef    = useRef<Record<string, string>>({})
+  const sectionsRef = useRef<Record<string, NoteSection[]>>({})
+
+  // Garder les refs à jour
+  notesRef.current    = notes
+  sectionsRef.current = sections
 
   // ── Enregistrer le handler de décalage d'année ────────────────────────────
   useEffect(() => {
@@ -665,6 +674,16 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     )
   }, [diagnostic, saveStatus, isOwner, view]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── BroadcastChannel — lifecycle lié au diagnostic ───────────────────────
+  useEffect(() => {
+    if (!diagnostic?.id) return
+    notesBCRef.current = new BroadcastChannel(`guided_notes_${diagnostic.id}`)
+    return () => {
+      notesBCRef.current?.close()
+      notesBCRef.current = null
+    }
+  }, [diagnostic?.id])
+
   // ── Realtime — sync multi-utilisateurs ───────────────────────────────────
   useEffect(() => {
     if (!diagnostic?.id) return
@@ -736,6 +755,12 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   function updateNote(key: string, value: string) {
     setNotes(prev => ({ ...prev, [key]: value }))
+    // Broadcast instantané vers les autres onglets (même navigateur)
+    notesBCRef.current?.postMessage({
+      action_key: key,
+      content:    value,
+      sections:   sectionsRef.current[key] ?? [],
+    })
     const timerKey = `note_${key}`
     if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
     noteSaveTimers.current[timerKey] = setTimeout(() => {
@@ -751,6 +776,12 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   function updateSections(key: string, sects: NoteSection[]) {
     setSections(prev => ({ ...prev, [key]: sects }))
+    // Broadcast instantané vers les autres onglets (même navigateur)
+    notesBCRef.current?.postMessage({
+      action_key: key,
+      content:    notesRef.current[key] ?? '',
+      sections:   sects,
+    })
     const timerKey = `sects_${key}`
     if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
     noteSaveTimers.current[timerKey] = setTimeout(() => {
