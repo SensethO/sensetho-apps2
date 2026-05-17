@@ -10,6 +10,7 @@ import Underline from '@tiptap/extension-underline'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import FileViewerModal from '@/components/ui/FileViewerModal'
+import { createClient } from '@/lib/supabase/client'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -917,16 +918,74 @@ export default function GuidedActionNotePanel({
   const [collapsed, setCollapsed] = useState(true)
   const [editorVersion, setEditorVersion] = useState(0)
 
-  const sectionsRef   = useRef(sections)
-  sectionsRef.current = sections
+  const sectionsRef    = useRef(sections)
+  sectionsRef.current  = sections
+  const saveTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** true pendant le debounce + fetch → bloque l'application d'une sync distante */
+  const pendingSaveRef = useRef(false)
 
   // When initialSections changes from parent (initial load)
   useEffect(() => {
-    if (initialSections.length > 0) {
+    if (initialSections.length > 0 && !pendingSaveRef.current) {
       setSections(initialSections)
       setEditorVersion(v => v + 1)
     }
   }, [initialSections])
+
+  // ─── Supabase Realtime subscription ──────────────────────────────────────────
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`guided_note_${diagnosticId}_${actionKey}`)
+      .on(
+        'postgres_changes',
+        {
+          event:  '*',
+          schema: 'public',
+          table:  'guided_action_notes',
+          filter: `diagnostic_id=eq.${diagnosticId}`,
+        },
+        (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
+          const row = (payload.new ?? payload.old) as { action_key?: string; sections?: NoteSection[]; content?: string } | null
+          if (!row || row.action_key !== actionKey) return
+          // Ignorer si une sauvegarde locale est en cours
+          if (pendingSaveRef.current) return
+
+          if (row.sections !== undefined) {
+            const remoteSections = row.sections ?? []
+            const final = remoteSections.length > 0 ? remoteSections : [newSection()]
+            setSections(final)
+            setEditorVersion(v => v + 1)
+            onSectionsChange(final)
+          }
+          if (row.content !== undefined && typeof row.content === 'string') {
+            onNoteChange(row.content)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [diagnosticId, actionKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Debounced auto-save des sections ─────────────────────────────────────────
+  const scheduleSave = useCallback((newSections: NoteSection[]) => {
+    if (readOnly) return
+    pendingSaveRef.current = true
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await fetch(`/api/guided-diagnostic/${diagnosticId}/notes`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action_key: actionKey, sections: newSections }),
+        })
+      } finally {
+        pendingSaveRef.current = false
+        saveTimerRef.current = null
+      }
+    }, 800)
+  }, [diagnosticId, actionKey, readOnly])
 
   // Computed: does this action have any saved content?
   const totalAttachments = sections.reduce((n, s) => n + s.attachments.length, 0)
@@ -938,14 +997,16 @@ export default function GuidedActionNotePanel({
     setSections(prev => {
       const next = [...prev]
       next[index] = updated
+      scheduleSave(next)
       onSectionsChange(next)
       return next
     })
-  }, [onSectionsChange])
+  }, [scheduleSave, onSectionsChange])
 
   function addSection() {
     setSections(prev => {
       const next = [...prev, newSection()]
+      scheduleSave(next)
       onSectionsChange(next)
       return next
     })
@@ -955,6 +1016,7 @@ export default function GuidedActionNotePanel({
     setSections(prev => {
       const next = prev.filter((_, i) => i !== index)
       const final = next.length === 0 ? [newSection()] : next
+      scheduleSave(final)
       onSectionsChange(final)
       return final
     })

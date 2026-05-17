@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
 import Icon from '@/components/ui/Icon'
 import type { RseContext } from '@/components/rse/RseAppShell'
@@ -556,8 +557,10 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [showCacheNotice, setShowCacheNotice] = useState(false)
   const [showShare, setShowShare] = useState(false)
 
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const noteSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const saveTimer        = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const noteSaveTimers   = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  /** true pendant la sauvegarde diagnostic → bloque la sync realtime distante */
+  const diagSavePending  = useRef(false)
 
   // ── Enregistrer le handler de décalage d'année ────────────────────────────
   useEffect(() => {
@@ -619,6 +622,33 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     }
   }, [org?.id, year]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Realtime sync — guided_diagnostics ───────────────────────────────────
+  useEffect(() => {
+    if (!diagnostic) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`guided_diag_${diagnostic.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event:  'UPDATE',
+          schema: 'public',
+          table:  'guided_diagnostics',
+          filter: `id=eq.${diagnostic.id}`,
+        },
+        (payload: { new?: Record<string, unknown> }) => {
+          if (diagSavePending.current) return
+          const remote = payload.new as DiagnosticRecord | undefined
+          if (!remote) return
+          setActionProgress(remote.action_progress ?? {})
+          setActionNa(remote.action_na ?? {})
+          setScores(remote.scores ?? {})
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Injecter les boutons dans le header RSE ───────────────────────────────
   useEffect(() => {
     if (!diagnostic) { setActions(null); return }
@@ -665,9 +695,10 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   // ── Debounce save ─────────────────────────────────────────────────────────
   const scheduleSave = useCallback((newScores: Record<string, number>, newProgress: Record<string, number>, newNa: Record<string, boolean>) => {
+    diagSavePending.current = true
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
-      if (!diagnostic) return
+      if (!diagnostic) { diagSavePending.current = false; return }
       setSaveStatus('saving')
       try {
         await fetch(`/api/guided-diagnostic/${diagnostic.id}`, {
@@ -678,6 +709,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         setSaveStatus('saved')
         setTimeout(() => setSaveStatus('idle'), 2000)
       } catch { setSaveStatus('idle') }
+      finally { diagSavePending.current = false }
     }, 700)
   }, [diagnostic])
 
@@ -711,19 +743,10 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     }, 800)
   }
 
+  // Les sections sont sauvegardées directement par GuidedActionNotePanel (via scheduleSave).
+  // Cette fonction met uniquement à jour l'état local (pour PDF export, etc.)
   function updateSections(key: string, sects: NoteSection[]) {
     setSections(prev => ({ ...prev, [key]: sects }))
-    const timerKey = `sects_${key}`
-    if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
-    noteSaveTimers.current[timerKey] = setTimeout(() => {
-      delete noteSaveTimers.current[timerKey]
-      if (!diagnostic) return
-      fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action_key: key, sections: sects }),
-      })
-    }, 800)
   }
 
   // ── AI ────────────────────────────────────────────────────────────────────
