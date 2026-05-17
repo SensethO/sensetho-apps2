@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import DOMPurify from 'dompurify'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -880,6 +881,8 @@ interface Props {
   onNoteChange: (v: string) => void
   initialSections: NoteSection[]
   onSectionsChange: (sections: NoteSection[]) => void
+  /** Called when realtime brings an external update (without triggering a DB save) */
+  onExternalSync?: (note: string, sections: NoteSection[]) => void
   /** Prefix used for annexe refs. Default: 'A' */
   refPrefix?: string
 }
@@ -909,6 +912,7 @@ export default function GuidedActionNotePanel({
   onNoteChange,
   initialSections,
   onSectionsChange,
+  onExternalSync,
   refPrefix = 'A',
 }: Props) {
   const [sections, setSections] = useState<NoteSection[]>(() =>
@@ -916,24 +920,72 @@ export default function GuidedActionNotePanel({
   )
   const [collapsed, setCollapsed] = useState(true)
   const [editorVersion, setEditorVersion] = useState(0)
-  // Save indicator: 'idle' | 'pending' | 'saved'
-  const [saveState, setSaveState] = useState<'idle' | 'pending' | 'saved'>('idle')
+  // Save indicator: 'idle' | 'pending' | 'saved' | 'synced'
+  const [saveState, setSaveState] = useState<'idle' | 'pending' | 'saved' | 'synced'>('idle')
 
   const sectionsRef      = useRef(sections)
   sectionsRef.current    = sections
   // Tracks whether the last initialSections change came from this component (our own echo)
   const isInternalChange = useRef(false)
   const saveIndicatorTimer = useRef<ReturnType<typeof setTimeout>>()
+  // Blocks realtime updates while user is editing locally (prevents overwrite mid-type)
+  const pendingSaveRef = useRef(false)
+  const pendingResetTimer = useRef<ReturnType<typeof setTimeout>>()
 
   function markPending() {
     setSaveState('pending')
+    pendingSaveRef.current = true
     if (saveIndicatorTimer.current) clearTimeout(saveIndicatorTimer.current)
+    if (pendingResetTimer.current) clearTimeout(pendingResetTimer.current)
     // The parent debounce is 800 ms → we wait 1 s then briefly show "saved"
     saveIndicatorTimer.current = setTimeout(() => {
       setSaveState('saved')
       saveIndicatorTimer.current = setTimeout(() => setSaveState('idle'), 1800)
     }, 1000)
+    // Release the realtime block after 800ms debounce + ~1.2s network buffer
+    pendingResetTimer.current = setTimeout(() => {
+      pendingSaveRef.current = false
+    }, 2200)
   }
+
+  // Supabase Realtime — sync depuis DB (même pattern que ActionNotePanel de l'ancienne app)
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`guided_action_notes_${diagnosticId}_${actionKey}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'guided_action_notes',
+        },
+        (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
+          const row = (payload.new ?? payload.old) as {
+            diagnostic_id?: string; action_key?: string
+            sections?: NoteSection[]; content?: string
+          } | null
+          if (!row) return
+          // Filtre client-side (diagnostic_id + action_key)
+          if (row.diagnostic_id !== diagnosticId || row.action_key !== actionKey) return
+          // Ignorer si l'utilisateur est en train d'écrire localement
+          if (pendingSaveRef.current) return
+
+          const remoteSections: NoteSection[] = row.sections ?? []
+          const finalSections = remoteSections.length > 0 ? remoteSections : [newSection()]
+          setSections(finalSections)
+          setEditorVersion(v => v + 1)
+
+          // Notifier le parent sans déclencher de sauvegarde
+          onExternalSync?.(row.content ?? '', finalSections)
+          setSaveState('synced' as typeof saveState)
+          setTimeout(() => setSaveState('idle'), 2500)
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [diagnosticId, actionKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // When initialSections changes from parent — only apply for EXTERNAL updates
   // (initial load, realtime sync). Ignore echoes of our own writes.
@@ -1030,6 +1082,12 @@ export default function GuidedActionNotePanel({
             <span className="flex items-center gap-1 text-[10px] text-green-500 dark:text-green-400">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
               Enregistré
+            </span>
+          )}
+          {saveState === 'synced' && (
+            <span className="flex items-center gap-1 text-[10px] text-blue-500 dark:text-blue-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+              Synchronisé
             </span>
           )}
           <svg
