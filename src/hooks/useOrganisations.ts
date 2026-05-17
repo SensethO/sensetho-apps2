@@ -20,19 +20,6 @@ export function useOrganisations() {
 
   useEffect(() => { load() }, [load])
 
-  // Realtime — sync inter-navigateurs pour créations / suppressions d'organisations
-  useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel('organisations_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'organisations' }, () => {
-        // On recharge simplement la liste complète à chaque changement
-        load()
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [load])
-
   async function save(result: OrganisationSearchResult): Promise<Organisation | null> {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()

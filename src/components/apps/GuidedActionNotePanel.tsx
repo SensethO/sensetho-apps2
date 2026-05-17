@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import DOMPurify from 'dompurify'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -881,8 +880,6 @@ interface Props {
   onNoteChange: (v: string) => void
   initialSections: NoteSection[]
   onSectionsChange: (sections: NoteSection[]) => void
-  /** Called when realtime brings an external update (without triggering a DB save) */
-  onExternalSync?: (note: string, sections: NoteSection[]) => void
   /** Prefix used for annexe refs. Default: 'A' */
   refPrefix?: string
 }
@@ -912,7 +909,6 @@ export default function GuidedActionNotePanel({
   onNoteChange,
   initialSections,
   onSectionsChange,
-  onExternalSync,
   refPrefix = 'A',
 }: Props) {
   const [sections, setSections] = useState<NoteSection[]>(() =>
@@ -920,104 +916,12 @@ export default function GuidedActionNotePanel({
   )
   const [collapsed, setCollapsed] = useState(true)
   const [editorVersion, setEditorVersion] = useState(0)
-  // Save indicator: 'idle' | 'pending' | 'saved' | 'synced'
-  const [saveState, setSaveState] = useState<'idle' | 'pending' | 'saved' | 'synced'>('idle')
 
-  const sectionsRef      = useRef(sections)
-  sectionsRef.current    = sections
-  // Tracks whether the last initialSections change came from this component (our own echo)
-  const isInternalChange = useRef(false)
-  const saveIndicatorTimer = useRef<ReturnType<typeof setTimeout>>()
-  // Blocks realtime updates while user is editing locally (prevents overwrite mid-type)
-  const pendingSaveRef = useRef(false)
-  const pendingResetTimer = useRef<ReturnType<typeof setTimeout>>()
+  const sectionsRef   = useRef(sections)
+  sectionsRef.current = sections
 
-  function markPending() {
-    setSaveState('pending')
-    pendingSaveRef.current = true
-    if (saveIndicatorTimer.current) clearTimeout(saveIndicatorTimer.current)
-    if (pendingResetTimer.current) clearTimeout(pendingResetTimer.current)
-    // The parent debounce is 800 ms → we wait 1 s then briefly show "saved"
-    saveIndicatorTimer.current = setTimeout(() => {
-      setSaveState('saved')
-      saveIndicatorTimer.current = setTimeout(() => setSaveState('idle'), 1800)
-    }, 1000)
-    // Release the realtime block after 800ms debounce + ~1.2s network buffer
-    pendingResetTimer.current = setTimeout(() => {
-      pendingSaveRef.current = false
-    }, 2200)
-  }
-
-  // Supabase Realtime — sync depuis DB (même pattern que ActionNotePanel de l'ancienne app)
+  // When initialSections changes from parent (initial load)
   useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`guided_action_notes_${diagnosticId}_${actionKey}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'guided_action_notes',
-          filter: `diagnostic_id=eq.${diagnosticId}`,
-        },
-        (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
-          const row = (payload.new ?? payload.old) as {
-            diagnostic_id?: string; action_key?: string
-            sections?: NoteSection[]; content?: string
-          } | null
-          if (!row) return
-          // Filtre client-side (diagnostic_id + action_key)
-          if (row.diagnostic_id !== diagnosticId || row.action_key !== actionKey) return
-          // Ignorer si l'utilisateur est en train d'écrire localement
-          if (pendingSaveRef.current) return
-
-          const remoteSections: NoteSection[] = row.sections ?? []
-          const finalSections = remoteSections.length > 0 ? remoteSections : [newSection()]
-          setSections(finalSections)
-          setEditorVersion(v => v + 1)
-
-          // Notifier le parent sans déclencher de sauvegarde
-          onExternalSync?.(row.content ?? '', finalSections)
-          setSaveState('synced' as typeof saveState)
-          setTimeout(() => setSaveState('idle'), 2500)
-        }
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [diagnosticId, actionKey]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // BroadcastChannel — sync instantanée entre onglets du même navigateur
-  // Fonctionne indépendamment de Supabase Realtime (API navigateur native)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const bc = new BroadcastChannel(`guided_notes_${diagnosticId}`)
-    bc.onmessage = (evt: MessageEvent<{ action_key: string; content: string; sections: NoteSection[] }>) => {
-      const { action_key, content, sections: remoteSections } = evt.data
-      if (action_key !== actionKey) return
-      // Ignorer si l'utilisateur est en train d'écrire localement
-      if (pendingSaveRef.current) return
-      const finalSections = remoteSections?.length > 0 ? remoteSections : [newSection()]
-      // Marquer comme changement interne pour éviter le double-apply via initialSections
-      isInternalChange.current = true
-      setSections(finalSections)
-      setEditorVersion(v => v + 1)
-      // Notifier le parent sans déclencher de sauvegarde
-      onExternalSync?.(content ?? '', finalSections)
-      setSaveState('synced')
-      setTimeout(() => setSaveState('idle'), 2500)
-    }
-    return () => bc.close()
-  }, [diagnosticId, actionKey]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // When initialSections changes from parent — only apply for EXTERNAL updates
-  // (initial load, realtime sync). Ignore echoes of our own writes.
-  useEffect(() => {
-    if (isInternalChange.current) {
-      isInternalChange.current = false
-      return
-    }
     if (initialSections.length > 0) {
       setSections(initialSections)
       setEditorVersion(v => v + 1)
@@ -1031,18 +935,15 @@ export default function GuidedActionNotePanel({
   const annexeRefs = buildAnnexeRefs(sections, refPrefix)
 
   const handleSectionChange = useCallback((index: number, updated: NoteSection) => {
-    isInternalChange.current = true
     setSections(prev => {
       const next = [...prev]
       next[index] = updated
       onSectionsChange(next)
       return next
     })
-    markPending()
-  }, [onSectionsChange]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onSectionsChange])
 
   function addSection() {
-    isInternalChange.current = true
     setSections(prev => {
       const next = [...prev, newSection()]
       onSectionsChange(next)
@@ -1051,7 +952,6 @@ export default function GuidedActionNotePanel({
   }
 
   function deleteSection(index: number) {
-    isInternalChange.current = true
     setSections(prev => {
       const next = prev.filter((_, i) => i !== index)
       const final = next.length === 0 ? [newSection()] : next
@@ -1067,7 +967,7 @@ export default function GuidedActionNotePanel({
       <textarea
         readOnly={readOnly}
         value={note}
-        onChange={e => { onNoteChange(e.target.value); markPending() }}
+        onChange={e => onNoteChange(e.target.value)}
         placeholder="Notes, observations, pièces justificatives…"
         rows={3}
         className="w-full text-xs p-2 rounded-lg border resize-y focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1095,25 +995,6 @@ export default function GuidedActionNotePanel({
           )}
         </span>
         <span className="flex items-center gap-2">
-          {/* Save state indicator */}
-          {saveState === 'pending' && (
-            <span className="flex items-center gap-1 text-[10px] text-amber-500 dark:text-amber-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              Enreg…
-            </span>
-          )}
-          {saveState === 'saved' && (
-            <span className="flex items-center gap-1 text-[10px] text-green-500 dark:text-green-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-              Enregistré
-            </span>
-          )}
-          {saveState === 'synced' && (
-            <span className="flex items-center gap-1 text-[10px] text-blue-500 dark:text-blue-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-              Synchronisé
-            </span>
-          )}
           <svg
             className={`w-3.5 h-3.5 text-indigo-400 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
             fill="none" viewBox="0 0 24 24" stroke="currentColor"

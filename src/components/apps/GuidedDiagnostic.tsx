@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Icon from '@/components/ui/Icon'
 import type { RseContext } from '@/components/rse/RseAppShell'
-import { createClient } from '@/lib/supabase/client'
 import type { GuidedPDFData, GuidedPhaseReport, GuidedDomainReport } from './GuidedDiagnosticPDFReport'
 import type { NoteSection } from './GuidedActionNotePanel'
 
@@ -313,7 +312,7 @@ function progressColor(p: number) {
 
 // ─── ActionItem ───────────────────────────────────────────────────────────────
 
-function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, actionKey, actionSections, onToggle, onSetProgress, onToggleNa, onNoteChange, onSectionsChange, onExternalSync }: {
+function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, actionKey, actionSections, onToggle, onSetProgress, onToggleNa, onNoteChange, onSectionsChange }: {
   text: string; progress: number; na: boolean; note: string; isOpen: boolean
   readOnly: boolean
   diagnosticId: string
@@ -322,7 +321,6 @@ function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, 
   onToggle: () => void; onSetProgress: (v: number) => void; onToggleNa: () => void
   onNoteChange: (v: string) => void
   onSectionsChange: (sects: NoteSection[]) => void
-  onExternalSync: (note: string, sects: NoteSection[]) => void
 }) {
   const done = na || progress >= 10
   const hasContent = !!note || actionSections.some(s => s.title || s.content || s.attachments.length > 0)
@@ -366,7 +364,6 @@ function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, 
           onNoteChange={onNoteChange}
           initialSections={actionSections}
           onSectionsChange={onSectionsChange}
-          onExternalSync={onExternalSync}
         />
       )}
     </li>
@@ -561,15 +558,6 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const noteSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  // BroadcastChannel — sync instantanée entre onglets du même navigateur
-  const notesBCRef = useRef<BroadcastChannel | null>(null)
-  // Refs miroirs des états notes/sections pour éviter les closures périmées
-  const notesRef    = useRef<Record<string, string>>({})
-  const sectionsRef = useRef<Record<string, NoteSection[]>>({})
-
-  // Garder les refs à jour
-  notesRef.current    = notes
-  sectionsRef.current = sections
 
   // ── Enregistrer le handler de décalage d'année ────────────────────────────
   useEffect(() => {
@@ -674,47 +662,6 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     )
   }, [diagnostic, saveStatus, isOwner, view]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── BroadcastChannel — lifecycle lié au diagnostic ───────────────────────
-  useEffect(() => {
-    if (!diagnostic?.id) return
-    notesBCRef.current = new BroadcastChannel(`guided_notes_${diagnostic.id}`)
-    return () => {
-      notesBCRef.current?.close()
-      notesBCRef.current = null
-    }
-  }, [diagnostic?.id])
-
-  // ── Realtime — sync multi-utilisateurs ───────────────────────────────────
-  useEffect(() => {
-    if (!diagnostic?.id) return
-    const supabase = createClient()
-
-    // Channel 1 : scores / progress / analysis (guided_diagnostics maintenant dans supabase_realtime)
-    const diagChannel = supabase
-      .channel(`guided_diagnostics_${diagnostic.id}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'guided_diagnostics',
-        filter: `id=eq.${diagnostic.id}`,
-      }, (payload: { new: unknown }) => {
-        // Ne pas appliquer si des timers de sauvegarde sont actifs (éviter conflits)
-        if (saveTimer.current || Object.keys(noteSaveTimers.current).length > 0) return
-        const r = payload.new as DiagnosticRecord
-        setDiagnostic(r)
-        setScores(r.scores ?? {})
-        setActionProgress(r.action_progress ?? {})
-        setActionNa(r.action_na ?? {})
-        if (r.ai_analysis !== null) setAiAnalysis(r.ai_analysis)
-      })
-      .subscribe((status: string) => {
-        if (status === 'CHANNEL_ERROR') console.error('[GuidedDiagnostic] realtime channel error')
-      })
-
-    return () => {
-      supabase.removeChannel(diagChannel)
-    }
-  }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Debounce save ─────────────────────────────────────────────────────────
   const scheduleSave = useCallback((newScores: Record<string, number>, newProgress: Record<string, number>, newNa: Record<string, boolean>) => {
@@ -749,20 +696,8 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     setActionNa(n); scheduleSave(scores, actionProgress, n)
   }
 
-  /** Called by GuidedActionNotePanel when realtime brings an external update — no DB save triggered */
-  function syncNoteFromRealtime(key: string, noteContent: string, sects: NoteSection[]) {
-    setNotes(prev => ({ ...prev, [key]: noteContent }))
-    setSections(prev => ({ ...prev, [key]: sects }))
-  }
-
   function updateNote(key: string, value: string) {
     setNotes(prev => ({ ...prev, [key]: value }))
-    // Broadcast instantané vers les autres onglets (même navigateur)
-    notesBCRef.current?.postMessage({
-      action_key: key,
-      content:    value,
-      sections:   sectionsRef.current[key] ?? [],
-    })
     const timerKey = `note_${key}`
     if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
     noteSaveTimers.current[timerKey] = setTimeout(() => {
@@ -778,12 +713,6 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   function updateSections(key: string, sects: NoteSection[]) {
     setSections(prev => ({ ...prev, [key]: sects }))
-    // Broadcast instantané vers les autres onglets (même navigateur)
-    notesBCRef.current?.postMessage({
-      action_key: key,
-      content:    notesRef.current[key] ?? '',
-      sections:   sects,
-    })
     const timerKey = `sects_${key}`
     if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
     noteSaveTimers.current[timerKey] = setTimeout(() => {
@@ -1422,8 +1351,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
                       onSetProgress={v => setProgress(key, v)}
                       onToggleNa={() => toggleNa(key)}
                       onNoteChange={v => updateNote(key, v)}
-                      onSectionsChange={sects => updateSections(key, sects)}
-                      onExternalSync={(n, s) => syncNoteFromRealtime(key, n, s)} />
+                      onSectionsChange={sects => updateSections(key, sects)} />
                   )
                 })}
             </ul>
