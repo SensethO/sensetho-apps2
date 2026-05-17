@@ -959,6 +959,7 @@ export default function GuidedActionNotePanel({
           event: '*',
           schema: 'public',
           table: 'guided_action_notes',
+          filter: `diagnostic_id=eq.${diagnosticId}`,
         },
         (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
           const row = (payload.new ?? payload.old) as {

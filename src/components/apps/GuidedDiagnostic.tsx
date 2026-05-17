@@ -689,9 +689,9 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     if (!diagnostic?.id) return
     const supabase = createClient()
 
-    // Channel 1 : scores / progress / analysis
+    // Channel 1 : scores / progress / analysis (guided_diagnostics maintenant dans supabase_realtime)
     const diagChannel = supabase
-      .channel(`guided_diagnostics:${diagnostic.id}`)
+      .channel(`guided_diagnostics_${diagnostic.id}`)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
@@ -707,7 +707,9 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         setActionNa(r.action_na ?? {})
         if (r.ai_analysis !== null) setAiAnalysis(r.ai_analysis)
       })
-      .subscribe()
+      .subscribe((status: string) => {
+        if (status === 'CHANNEL_ERROR') console.error('[GuidedDiagnostic] realtime channel error')
+      })
 
     return () => {
       supabase.removeChannel(diagChannel)
