@@ -916,29 +916,57 @@ export default function GuidedActionNotePanel({
   )
   const [collapsed, setCollapsed] = useState(true)
   const [editorVersion, setEditorVersion] = useState(0)
-  const sectionsRef   = useRef(sections)
-  sectionsRef.current = sections
+  // Save indicator: 'idle' | 'pending' | 'saved'
+  const [saveState, setSaveState] = useState<'idle' | 'pending' | 'saved'>('idle')
 
-  // When initialSections changes from parent
+  const sectionsRef      = useRef(sections)
+  sectionsRef.current    = sections
+  // Tracks whether the last initialSections change came from this component (our own echo)
+  const isInternalChange = useRef(false)
+  const saveIndicatorTimer = useRef<ReturnType<typeof setTimeout>>()
+
+  function markPending() {
+    setSaveState('pending')
+    if (saveIndicatorTimer.current) clearTimeout(saveIndicatorTimer.current)
+    // The parent debounce is 800 ms → we wait 1 s then briefly show "saved"
+    saveIndicatorTimer.current = setTimeout(() => {
+      setSaveState('saved')
+      saveIndicatorTimer.current = setTimeout(() => setSaveState('idle'), 1800)
+    }, 1000)
+  }
+
+  // When initialSections changes from parent — only apply for EXTERNAL updates
+  // (initial load, realtime sync). Ignore echoes of our own writes.
   useEffect(() => {
+    if (isInternalChange.current) {
+      isInternalChange.current = false
+      return
+    }
     if (initialSections.length > 0) {
       setSections(initialSections)
       setEditorVersion(v => v + 1)
     }
   }, [initialSections])
 
+  // Computed: does this action have any saved content?
+  const totalAttachments = sections.reduce((n, s) => n + s.attachments.length, 0)
+  const hasContent = !!note || sections.some(s => s.title || s.content || s.attachments.length > 0)
+
   const annexeRefs = buildAnnexeRefs(sections, refPrefix)
 
   const handleSectionChange = useCallback((index: number, updated: NoteSection) => {
+    isInternalChange.current = true
     setSections(prev => {
       const next = [...prev]
       next[index] = updated
       onSectionsChange(next)
       return next
     })
-  }, [onSectionsChange])
+    markPending()
+  }, [onSectionsChange]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function addSection() {
+    isInternalChange.current = true
     setSections(prev => {
       const next = [...prev, newSection()]
       onSectionsChange(next)
@@ -947,6 +975,7 @@ export default function GuidedActionNotePanel({
   }
 
   function deleteSection(index: number) {
+    isInternalChange.current = true
     setSections(prev => {
       const next = prev.filter((_, i) => i !== index)
       const final = next.length === 0 ? [newSection()] : next
@@ -962,7 +991,7 @@ export default function GuidedActionNotePanel({
       <textarea
         readOnly={readOnly}
         value={note}
-        onChange={e => onNoteChange(e.target.value)}
+        onChange={e => { onNoteChange(e.target.value); markPending() }}
         placeholder="Notes, observations, pièces justificatives…"
         rows={3}
         className="w-full text-xs p-2 rounded-lg border resize-y focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -981,14 +1010,35 @@ export default function GuidedActionNotePanel({
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          Notes & documents
+          Notes &amp; documents
+          {/* Content badge */}
+          {hasContent && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 dark:bg-indigo-800/60 text-indigo-600 dark:text-indigo-300">
+              {totalAttachments > 0 ? `📎 ${totalAttachments}` : '●'}
+            </span>
+          )}
         </span>
-        <svg
-          className={`w-3.5 h-3.5 text-indigo-400 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <span className="flex items-center gap-2">
+          {/* Save state indicator */}
+          {saveState === 'pending' && (
+            <span className="flex items-center gap-1 text-[10px] text-amber-500 dark:text-amber-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              Enreg…
+            </span>
+          )}
+          {saveState === 'saved' && (
+            <span className="flex items-center gap-1 text-[10px] text-green-500 dark:text-green-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+              Enregistré
+            </span>
+          )}
+          <svg
+            className={`w-3.5 h-3.5 text-indigo-400 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </span>
       </button>
 
       {/* Sections */}

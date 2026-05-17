@@ -667,7 +667,9 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   useEffect(() => {
     if (!diagnostic?.id) return
     const supabase = createClient()
-    const channel = supabase
+
+    // Channel 1 : scores / progress / analysis
+    const diagChannel = supabase
       .channel(`guided_diagnostics:${diagnostic.id}`)
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -685,7 +687,34 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         if (r.ai_analysis !== null) setAiAnalysis(r.ai_analysis)
       })
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+
+    // Channel 2 : notes & sections (pour synchronisation entre onglets/utilisateurs)
+    const notesChannel = supabase
+      .channel(`guided_action_notes:${diagnostic.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'guided_action_notes',
+        filter: `diagnostic_id=eq.${diagnostic.id}`,
+      }, (payload) => {
+        const row = payload.new as { action_key?: string; sections?: NoteSection[]; content?: string } | null
+        if (!row?.action_key) return
+        const key = row.action_key
+        // Ignorer si un timer de sauvegarde est en cours pour cette clé (c'est notre propre écho)
+        if (noteSaveTimers.current[`note_${key}`] || noteSaveTimers.current[`sects_${key}`]) return
+        if (row.sections !== undefined) {
+          setSections(prev => ({ ...prev, [key]: (row.sections ?? []) as NoteSection[] }))
+        }
+        if (row.content !== undefined) {
+          setNotes(prev => ({ ...prev, [key]: row.content ?? '' }))
+        }
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(diagChannel)
+      supabase.removeChannel(notesChannel)
+    }
   }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Debounce save ─────────────────────────────────────────────────────────
