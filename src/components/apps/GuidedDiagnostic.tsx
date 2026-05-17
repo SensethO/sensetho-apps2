@@ -626,6 +626,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   useEffect(() => {
     if (!diagnostic) return
     const supabase = createClient()
+    console.log('[Realtime] Subscribing to guided_diagnostics id=', diagnostic.id)
     const channel = supabase
       .channel(`guided_diag_${diagnostic.id}`)
       .on(
@@ -637,6 +638,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           filter: `id=eq.${diagnostic.id}`,
         },
         (payload: { new?: Record<string, unknown> }) => {
+          console.log('[Realtime] guided_diagnostics UPDATE received', payload, 'pending=', diagSavePending.current)
           if (diagSavePending.current) return
           const remote = payload.new as DiagnosticRecord | undefined
           if (!remote) return
@@ -645,7 +647,9 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           setScores(remote.scores ?? {})
         }
       )
-      .subscribe()
+      .subscribe((status: string) => {
+        console.log('[Realtime] guided_diagnostics status:', status)
+      })
     return () => { supabase.removeChannel(channel) }
   }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
