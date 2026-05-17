@@ -559,6 +559,8 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const noteSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rtBroadcastChannel = useRef<any>(null)
 
   // ── Enregistrer le handler de décalage d'année ────────────────────────────
   useEffect(() => {
@@ -688,35 +690,32 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       })
       .subscribe()
 
-    // Channel 2 : notes & sections (pour synchronisation entre onglets/utilisateurs)
-    // Pas de filtre serveur : REPLICA IDENTITY FULL est requis pour filtrer sur des
-    // colonnes non-PK en UPDATE → on filtre côté client sur diagnostic_id.
+    // Channel 2 : Broadcast pour sync notes en temps réel entre onglets/utilisateurs
+    // Broadcast est plus fiable que postgres_changes (pas de dépendance WAL/REPLICA IDENTITY)
     const notesChannel = supabase
-      .channel(`guided_action_notes:${diagnostic.id}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'guided_action_notes',
-      }, (payload) => {
-        const row = payload.new as { diagnostic_id?: string; action_key?: string; sections?: NoteSection[] | null; content?: string | null } | null
-        if (!row?.action_key) return
-        // Filtre client-side sur le diagnostic courant
-        if (row.diagnostic_id !== diagnostic.id) return
-        const key = row.action_key
-        // Ignorer si un timer de sauvegarde est en cours pour cette clé (c'est notre propre écho)
-        if (noteSaveTimers.current[`note_${key}`] || noteSaveTimers.current[`sects_${key}`]) return
-        if (Array.isArray(row.sections)) {
-          setSections(prev => ({ ...prev, [key]: row.sections as NoteSection[] }))
+      .channel(`notes_broadcast:${diagnostic.id}`)
+      .on('broadcast', { event: 'note_sync' }, ({ payload }) => {
+        const { action_key, content, sections } = payload as {
+          action_key: string; content?: string; sections?: NoteSection[]
         }
-        if (typeof row.content === 'string') {
-          setNotes(prev => ({ ...prev, [key]: row.content as string }))
+        if (!action_key) return
+        // Ignorer si on est en train de sauvegarder cette clé (c'est notre propre frappe)
+        if (noteSaveTimers.current[`note_${action_key}`] || noteSaveTimers.current[`sects_${action_key}`]) return
+        if (typeof content === 'string') {
+          setNotes(prev => ({ ...prev, [action_key]: content }))
+        }
+        if (Array.isArray(sections)) {
+          setSections(prev => ({ ...prev, [action_key]: sections }))
         }
       })
       .subscribe()
 
+    rtBroadcastChannel.current = notesChannel
+
     return () => {
       supabase.removeChannel(diagChannel)
       supabase.removeChannel(notesChannel)
+      rtBroadcastChannel.current = null
     }
   }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -755,10 +754,15 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   function updateNote(key: string, value: string) {
     setNotes(prev => ({ ...prev, [key]: value }))
+    // Broadcast immédiat vers les autres onglets/utilisateurs
+    rtBroadcastChannel.current?.send({
+      type: 'broadcast', event: 'note_sync',
+      payload: { action_key: key, content: value },
+    })
     const timerKey = `note_${key}`
     if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
     noteSaveTimers.current[timerKey] = setTimeout(() => {
-      delete noteSaveTimers.current[timerKey]   // ← libère le verrou realtime
+      delete noteSaveTimers.current[timerKey]
       if (!diagnostic) return
       fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`, {
         method: 'PUT',
@@ -770,10 +774,15 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   function updateSections(key: string, sects: NoteSection[]) {
     setSections(prev => ({ ...prev, [key]: sects }))
+    // Broadcast immédiat vers les autres onglets/utilisateurs
+    rtBroadcastChannel.current?.send({
+      type: 'broadcast', event: 'note_sync',
+      payload: { action_key: key, sections: sects },
+    })
     const timerKey = `sects_${key}`
     if (noteSaveTimers.current[timerKey]) clearTimeout(noteSaveTimers.current[timerKey])
     noteSaveTimers.current[timerKey] = setTimeout(() => {
-      delete noteSaveTimers.current[timerKey]   // ← libère le verrou realtime
+      delete noteSaveTimers.current[timerKey]
       if (!diagnostic) return
       fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`, {
         method: 'PUT',
