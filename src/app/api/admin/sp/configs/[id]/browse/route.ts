@@ -42,6 +42,7 @@ export async function GET(
     siteHost: cfg.site_host,
     sitePath: cfg.site_path,
     driveId: cfg.drive_id,
+    appRoot: cfg.app_root ?? '',
     rootFolder: cfg.root_folder,
   }
 
