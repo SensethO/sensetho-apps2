@@ -29,6 +29,7 @@ function resolveConfig(cfg: Record<string, unknown>): SpConfigResolved {
     sitePath: cfg.site_path as string,
     driveId: cfg.drive_id as string,
     rootFolder: cfg.root_folder as string,
+    appRoot: (cfg.app_root as string) ?? '',
   }
 }
 
