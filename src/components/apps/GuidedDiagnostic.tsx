@@ -654,6 +654,27 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         realtimeOk = status === 'SUBSCRIBED'
       })
 
+    // ── Realtime : guided_action_notes ────────────────────────────────────
+    // Quand Realtime est opérationnel, ce channel reçoit immédiatement les
+    // changements de notes/sections de tous les autres navigateurs et met à
+    // jour notesRemoteVersion → les panneaux ouverts se rafraîchissent en live.
+    // Quand Realtime est HS, ce channel ne reçoit rien et le polling prend le relais.
+    const notesChannel = supabase
+      .channel(`guided_notes_${diagId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'guided_action_notes', filter: `diagnostic_id=eq.${diagId}` },
+        (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
+          const row = (payload.new ?? payload.old) as { action_key?: string; sections?: NoteSection[]; content?: string } | null
+          if (!row?.action_key) return
+          const key = row.action_key
+          if (row.sections !== undefined) setSections(prev => ({ ...prev, [key]: row.sections ?? [] }))
+          if (row.content  !== undefined) setNotes(prev   => ({ ...prev, [key]: row.content  ?? '' }))
+          setNotesRemoteVersion(v => v + 1)
+        }
+      )
+      .subscribe()
+
     // ── Fallback polling (si Realtime indisponible) ───────────────────────
     let pollTick = 0
     const poll = setInterval(async () => {
@@ -685,6 +706,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
     return () => {
       supabase.removeChannel(channel)
+      supabase.removeChannel(notesChannel)
       clearInterval(poll)
     }
   }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
