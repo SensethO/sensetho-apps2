@@ -315,12 +315,13 @@ function progressColor(p: number) {
 
 // ─── ActionItem ───────────────────────────────────────────────────────────────
 
-function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, actionKey, actionSections, onToggle, onSetProgress, onToggleNa, onNoteChange, onSectionsChange }: {
+function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, actionKey, actionSections, notesRemoteVersion, onToggle, onSetProgress, onToggleNa, onNoteChange, onSectionsChange }: {
   text: string; progress: number; na: boolean; note: string; isOpen: boolean
   readOnly: boolean
   diagnosticId: string
   actionKey: string
   actionSections: NoteSection[]
+  notesRemoteVersion: number
   onToggle: () => void; onSetProgress: (v: number) => void; onToggleNa: () => void
   onNoteChange: (v: string) => void
   onSectionsChange: (sects: NoteSection[]) => void
@@ -366,6 +367,7 @@ function ActionItem({ text, progress, na, note, isOpen, readOnly, diagnosticId, 
           note={note}
           onNoteChange={onNoteChange}
           initialSections={actionSections}
+          notesRemoteVersion={notesRemoteVersion}
           onSectionsChange={onSectionsChange}
         />
       )}
@@ -544,6 +546,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [actionNa, setActionNa] = useState<Record<string, boolean>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [sections, setSections] = useState<Record<string, NoteSection[]>>({})
+  const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1)
   const [activeDomainId, setActiveDomainId] = useState<string>(DOMAINS[0].id)
@@ -602,6 +605,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             const nj = await nr.json()
             setSections(nj.data?.sections ?? {})
             setNotes(nj.data?.notes ?? {})
+            setNotesRemoteVersion(v => v + 1)
           }
         } else {
           // Créer automatiquement
@@ -651,9 +655,12 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       })
 
     // ── Fallback polling (si Realtime indisponible) ───────────────────────
+    let pollTick = 0
     const poll = setInterval(async () => {
       if (realtimeOk || diagSavePending.current) return
+      pollTick++
       try {
+        // Toutes les 2s : sync scores / progress / na
         const res = await fetch(`/api/guided-diagnostic?org_id=${diagnostic.organisation_id}&year=${diagnostic.year}`)
         if (!res.ok) return
         const json = await res.json()
@@ -662,6 +669,17 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         setActionProgress(remote.action_progress ?? {})
         setActionNa(remote.action_na ?? {})
         setScores(remote.scores ?? {})
+
+        // Toutes les ~4s (1 tick sur 2) : sync notes + sections (si aucune sauvegarde locale en cours)
+        if (pollTick % 2 === 0 && Object.keys(noteSaveTimers.current).length === 0) {
+          const nr = await fetch(`/api/guided-diagnostic/${diagId}/notes`)
+          if (nr.ok) {
+            const nj = await nr.json()
+            setNotes(nj.data?.notes ?? {})
+            setSections(nj.data?.sections ?? {})
+            setNotesRemoteVersion(v => v + 1)
+          }
+        }
       } catch { /* silencieux */ }
     }, 2000)
 
@@ -1392,6 +1410,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
                       diagnosticId={diagnostic.id}
                       actionKey={key}
                       actionSections={sections[key] ?? []}
+                      notesRemoteVersion={notesRemoteVersion}
                       onToggle={() => setExpandedKey(prev => prev === key ? null : key)}
                       onSetProgress={v => setProgress(key, v)}
                       onToggleNa={() => toggleNa(key)}

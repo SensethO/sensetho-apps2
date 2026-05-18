@@ -880,6 +880,8 @@ interface Props {
   note: string
   onNoteChange: (v: string) => void
   initialSections: NoteSection[]
+  /** Incrémenté par le parent à chaque poll réussi — trigger de sync distante */
+  notesRemoteVersion?: number
   onSectionsChange: (sections: NoteSection[]) => void
   /** Prefix used for annexe refs. Default: 'A' */
   refPrefix?: string
@@ -909,6 +911,7 @@ export default function GuidedActionNotePanel({
   note,
   onNoteChange,
   initialSections,
+  notesRemoteVersion,
   onSectionsChange,
   refPrefix = 'A',
 }: Props) {
@@ -924,13 +927,21 @@ export default function GuidedActionNotePanel({
   /** true pendant le debounce + fetch → bloque l'application d'une sync distante */
   const pendingSaveRef = useRef(false)
 
-  // When initialSections changes from parent (initial load)
+  // ── Sync depuis le parent ─────────────────────────────────────────────────────
+  // Déclenché (a) au mount (chargement initial) et (b) à chaque tick de polling
+  // réussi via notesRemoteVersion. On remonte les éditeurs Tiptap uniquement si
+  // le contenu a changé et qu'aucune sauvegarde locale n'est en cours.
   useEffect(() => {
-    if (initialSections.length > 0 && !pendingSaveRef.current) {
+    if (pendingSaveRef.current) return
+    if (initialSections.length === 0) return
+    if (JSON.stringify(sectionsRef.current) !== JSON.stringify(initialSections)) {
       setSections(initialSections)
       setEditorVersion(v => v + 1)
     }
-  }, [initialSections])
+  // notesRemoteVersion sert de trigger explicite (chargement initial + polling)
+  // initialSections est lu dans le closure au moment de l'exécution — pas dans les deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesRemoteVersion])
 
   // ─── Supabase Realtime subscription ──────────────────────────────────────────
   useEffect(() => {
