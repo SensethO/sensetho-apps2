@@ -440,6 +440,7 @@ function ScoreSelector({ score, readOnly, onChange, suggestedScore }: {
 // Le composant ViewTabs est importé depuis @/components/rse/ViewTabs (partagé RSE).
 
 const GUIDED_TABS = [
+  { id: 'intro'     as const, label: 'Présentation',    icon: '📋' },
   { id: 'dashboard' as const, label: 'Tableau de bord', icon: '🎯' },
   { id: 'summary'   as const, label: 'Synthèse',        icon: '📊' },
   { id: 'step'      as const, label: 'Questionnaire',   icon: '📝' },
@@ -560,7 +561,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1)
   const [activeDomainId, setActiveDomainId] = useState<string>(DOMAINS[0].id)
-  const [view, setView] = useState<'step' | 'summary' | 'dashboard'>('dashboard')
+  const [view, setView] = useState<'intro' | 'step' | 'summary' | 'dashboard'>('dashboard')
   const [exportingPDF, setExportingPDF] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
   const [exportingAnnexes, setExportingAnnexes] = useState(false)
@@ -1047,6 +1048,153 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     return <div className="text-sm text-center py-10" style={{ color: 'var(--text-muted)' }}>Impossible de charger le diagnostic.</div>
   }
 
+  // ── Vue PRÉSENTATION ─────────────────────────────────────────────────────
+  if (view === 'intro') {
+    const evalCount = DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).length
+    const completionPct = Math.round((evalCount / DOMAINS.length) * 100)
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto">
+        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} />
+
+        {/* Hero */}
+        <div className="rounded-2xl p-7 text-center"
+          style={{ background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #3730a3 100%)' }}>
+          <div className="text-5xl mb-3">🌐</div>
+          <h1 className="text-2xl font-bold text-white mb-2">Diagnostic Initial Guidé RSE</h1>
+          <p className="text-indigo-200 text-sm mb-1">Référentiel ISO 26000 — Responsabilité Sociétale des Organisations</p>
+          <p className="text-indigo-300 text-xs max-w-xl mx-auto leading-relaxed">
+            Évaluez la maturité RSE de votre organisation sur 13 domaines prioritaires, structurés en 4 phases progressives.
+            Obtenez une analyse IA personnalisée et un plan d&apos;actions concret.
+          </p>
+          {diagnostic && evalCount > 0 && (
+            <div className="mt-4 inline-flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium"
+              style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'white' }}>
+              <div className="w-24 h-1.5 rounded-full bg-white/30 overflow-hidden">
+                <div className="h-full rounded-full bg-white transition-all" style={{ width: `${completionPct}%` }} />
+              </div>
+              <span>{evalCount}/{DOMAINS.length} domaines évalués ({completionPct} %)</span>
+            </div>
+          )}
+        </div>
+
+        {/* Chiffres clés */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { icon: '📐', value: '4', label: 'Phases progressives' },
+            { icon: '🔍', value: '13', label: 'Domaines prioritaires' },
+            { icon: '✅', value: '52', label: 'Actions focus' },
+            { icon: '📊', value: '0–5', label: 'Niveaux de maturité' },
+          ].map(stat => (
+            <div key={stat.label} className="rounded-xl border p-4 text-center"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+              <div className="text-2xl mb-1">{stat.icon}</div>
+              <div className="text-xl font-bold" style={{ color: 'var(--accent, #6366f1)' }}>{stat.value}</div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Phases */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {PHASES.map(phase => {
+            const pDomains = DOMAINS.filter(d => d.phase === phase.id)
+            const evaluated = pDomains.filter(d => (scores[d.id] ?? 0) > 0).length
+            const pct = Math.round((evaluated / pDomains.length) * 100)
+            return (
+              <div key={phase.id} className="rounded-xl border p-4"
+                style={{ borderColor: phase.border, backgroundColor: phase.bg }}>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-wide mb-0.5" style={{ color: phase.color }}>
+                      Phase {phase.id}
+                    </div>
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{phase.label}</h3>
+                  </div>
+                  {diagnostic && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                      style={{ backgroundColor: phase.color, color: 'white' }}>
+                      {evaluated}/{pDomains.length}
+                    </span>
+                  )}
+                </div>
+                {diagnostic && pDomains.length > 0 && (
+                  <div className="w-full h-1 rounded-full mb-3 overflow-hidden" style={{ backgroundColor: `${phase.color}30` }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: phase.color }} />
+                  </div>
+                )}
+                <ul className="space-y-1">
+                  {pDomains.map(d => {
+                    const s = scores[d.id] ?? 0
+                    return (
+                      <li key={d.id}
+                        className="flex items-center gap-2 text-xs cursor-pointer rounded px-1.5 py-0.5 transition-colors hover:opacity-80"
+                        onClick={() => { setActiveDomainId(d.id); setActivePhase(d.phase); setView('step') }}
+                        style={{ color: 'var(--text)' }}>
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s > 0 ? scoreColor(s) : 'var(--border)' }} />
+                        <span className="flex-1 truncate">{d.qcIcone} {d.nom}</span>
+                        {s > 0 && <span className="text-[10px] font-semibold flex-shrink-0" style={{ color: scoreColor(s) }}>{s}/5</span>}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Niveaux de maturité */}
+        <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+          <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>📊 Niveaux de maturité RSE</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {([
+              [0, 'Non évalué', 'Aucune évaluation réalisée'],
+              [1, 'Initiale', 'Premières actions ponctuelles'],
+              [2, 'Engagée', 'Actions formalisées engagées'],
+              [3, 'Structurée', 'Pratiques documentées et déployées'],
+              [4, 'Avancée', 'Pilotage et amélioration continue'],
+              [5, 'Exemplaire', 'Excellence RSE et benchmark sectoriel'],
+            ] as [number, string, string][]).map(([s, name, desc]) => (
+              <div key={s} className="flex items-start gap-2 p-2 rounded-lg"
+                style={{ backgroundColor: s === 0 ? 'var(--bg)' : `${scoreColor(s)}15` }}>
+                <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
+                  style={{ backgroundColor: s === 0 ? 'var(--border)' : scoreColor(s) }}>
+                  {s}
+                </div>
+                <div>
+                  <div className="text-xs font-semibold" style={{ color: s === 0 ? 'var(--text-muted)' : scoreColor(s) }}>{name}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* CTA */}
+        <div className="flex gap-3 justify-center pb-2">
+          <button onClick={() => setView('dashboard')}
+            className="px-6 py-2.5 text-sm font-medium rounded-xl border transition-colors hover:opacity-80"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+            🎯 Tableau de bord
+          </button>
+          <button onClick={() => setView('step')}
+            className="px-6 py-2.5 text-sm font-semibold rounded-xl text-white transition-colors hover:opacity-90"
+            style={{ backgroundColor: 'var(--accent, #6366f1)' }}>
+            📝 {evalCount > 0 ? 'Continuer le questionnaire' : 'Commencer l\'évaluation'}
+          </button>
+        </div>
+
+        {showShare && diagnostic && (
+          <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />
+        )}
+        {pdfData && (
+          <div style={{ position: 'fixed', left: -9999, top: 0, pointerEvents: 'none', zIndex: -1 }}>
+            <PdfReportLazy data={pdfData} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ── Vue SYNTHÈSE ──────────────────────────────────────────────────────────
   if (view === 'summary') {
     return (
@@ -1154,6 +1302,17 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             )
           )}
         </div>
+
+      {showShare && diagnostic && (
+        <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />
+      )}
+
+      {/* Composant PDF caché — monté uniquement pendant l'export */}
+      {pdfData && (
+        <div style={{ position: 'fixed', left: -9999, top: 0, pointerEvents: 'none', zIndex: -1 }}>
+          <PdfReportLazy data={pdfData} />
+        </div>
+      )}
       </div>
     )
   }
@@ -1367,6 +1526,14 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             <Icon name="download" size={13} />
             {exportingExcel ? 'Export…' : 'Exporter Excel'}
           </button>
+          <button onClick={handleExportAnnexes} disabled={exportingAnnexes}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+            <Icon name="paperclip" size={13} />
+            {exportingAnnexes
+              ? annexesCount ? `${annexesCount.done}/${annexesCount.total}…` : '…'
+              : 'Exporter Annexes'}
+          </button>
           <button onClick={handleExportPDF} disabled={exportingPDF || evalCount === 0}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors disabled:opacity-50"
             style={{ backgroundColor: '#6366f1' }}>
@@ -1374,6 +1541,17 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             {exportingPDF ? 'Génération PDF…' : 'Exporter PDF'}
           </button>
         </div>
+
+      {showShare && diagnostic && (
+        <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />
+      )}
+
+      {/* Composant PDF caché — monté uniquement pendant l'export */}
+      {pdfData && (
+        <div style={{ position: 'fixed', left: -9999, top: 0, pointerEvents: 'none', zIndex: -1 }}>
+          <PdfReportLazy data={pdfData} />
+        </div>
+      )}
       </div>
     )
   }

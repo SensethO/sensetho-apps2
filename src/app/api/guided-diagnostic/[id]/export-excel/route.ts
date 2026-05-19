@@ -110,11 +110,35 @@ function scoreColorL(score: number): string {
 }
 function scoreName(score: number): string {
   if (score === 0) return 'Non évalué'
-  if (score <= 1) return 'Initial'
-  if (score <= 2) return 'En développement'
-  if (score <= 3) return 'Défini'
-  if (score <= 4) return 'Géré'
-  return 'Optimisé'
+  if (score <= 1) return 'Initiale'
+  if (score <= 2) return 'Engagée'
+  if (score <= 3) return 'Structurée'
+  if (score <= 4) return 'Avancée'
+  return 'Exemplaire'
+}
+
+/** Extrait le texte brut depuis du HTML Tiptap */
+function htmlToText(html: string): string {
+  if (!html) return ''
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+interface NoteSection {
+  id: string
+  title: string   // HTML
+  content: string // HTML
 }
 
 // ─── Données métier : phases et domaines ─────────────────────────────────────
@@ -416,6 +440,8 @@ function buildCouvertureSheet(
 function buildSyntheseSheet(
   wb: ExcelJS.Workbook,
   scores: Record<string, number>,
+  actionProgress: Record<string, number>,
+  actionNa: Record<string, boolean>,
 ) {
   const ws = wb.addWorksheet('Synthèse par phase')
   ws.properties.tabColor = { argb: C.indigo }
@@ -468,8 +494,21 @@ function buildSyntheseSheet(
         ha: 'center', bg: scoreColorL(score), fg: scoreColor(score), bold: score > 0,
       })
       sc(ws, r, 3, scoreName(score), { it: score === 0, fg: score === 0 ? C.grayM : C.black })
+      // Calcul % réalisées pour cette feuille aussi
+      let dDone = 0, dTotal = 0
+      for (const idx of domain.focusActionIndices) {
+        const key = `${domain.id}_${idx}`
+        if (actionNa[key]) continue
+        dTotal++
+        if ((actionProgress[key] ?? 0) >= 10) dDone++
+      }
+      const pct = dTotal > 0 ? `${Math.round((dDone / dTotal) * 100)} %` : '—'
       sc(ws, r, 4, totalFocus, { ha: 'center' })
-      sc(ws, r, 5, '—', { ha: 'center', fg: C.grayM, it: true })
+      sc(ws, r, 5, pct, {
+        ha: 'center',
+        bold: dDone === dTotal && dTotal > 0,
+        fg: dTotal === 0 ? C.grayM : dDone === dTotal ? C.green : dDone > 0 ? C.yellow : C.grayM,
+      })
       r++
     }
     blank(ws, r++, 8)
@@ -540,24 +579,26 @@ function buildActionsSheet(
   actionProgress: Record<string, number>,
   actionNa: Record<string, boolean>,
   notes: Record<string, string>,
+  sections: Record<string, NoteSection[]>,
+  annexesPerAction: Record<string, number>,
 ) {
   const ws = wb.addWorksheet("Plan d'actions")
   ws.properties.tabColor = { argb: C.green }
   ws.columns = [
-    { width: 26 }, { width: 9 }, { width: 46 }, { width: 11 }, { width: 15 }, { width: 40 },
+    { width: 26 }, { width: 9 }, { width: 46 }, { width: 11 }, { width: 15 }, { width: 44 }, { width: 10 },
   ]
   let r = 1
 
-  titleRow(ws, r++, "Plan d'actions — Domaines prioritaires ISO 26000", 6, C.green)
+  titleRow(ws, r++, "Plan d'actions — Domaines prioritaires ISO 26000", 7, C.green)
   blank(ws, r++, 8)
-  hdRow(ws, r++, ['Domaine', 'Score', 'Action prioritaire', 'Avancement', 'Statut', 'Note'], C.green)
+  hdRow(ws, r++, ['Domaine', 'Score', 'Action prioritaire', 'Avancement', 'Statut', 'Notes et sections', 'Annexes'], C.green)
 
   for (const phase of PHASES) {
     const domainsInPhase = DOMAINS.filter(d => d.phase === phase.id)
     if (domainsInPhase.length === 0) continue
 
     // Séparateur de phase
-    merge(ws, r, 1, r, 6)
+    merge(ws, r, 1, r, 7)
     ws.getCell(r, 1).value = `  Phase ${phase.id} — ${phase.label}`
     ws.getCell(r, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PHASE_COLORS[phase.id] } }
     ws.getCell(r, 1).font = { name: 'Calibri', size: 10, bold: true, color: { argb: C.black } }
@@ -571,7 +612,21 @@ function buildActionsSheet(
         const key = `${domain.id}_${actionIdx}`
         const progress = actionProgress[key] ?? 0
         const na = actionNa[key] ?? false
-        const note = notes[key] ?? ''
+
+        // Construire le texte des notes : contenu libre + sections Tiptap
+        const noteLines: string[] = []
+        const rawNote = notes[key]
+        if (rawNote) noteLines.push(rawNote)
+        const sects = sections[key] ?? []
+        for (const sect of sects) {
+          const titleTxt = htmlToText(sect.title)
+          const contentTxt = htmlToText(sect.content)
+          if (titleTxt) noteLines.push(`▸ ${titleTxt}`)
+          if (contentTxt) noteLines.push(contentTxt)
+        }
+        const noteText = noteLines.join('\n').trim()
+
+        const annexeCount = annexesPerAction[key] ?? 0
 
         const progressStr = na ? 'N/A' : progress === 0 ? '0 %' : `${progress * 10} %`
         const statut = na ? 'Non applicable'
@@ -585,6 +640,7 @@ function buildActionsSheet(
           : progress > 0 ? C.indigoL
           : C.white
 
+        const hasContent = noteText || annexeCount > 0
         sc(ws, r, 1, `${domain.id} — ${domain.nom}`, { indent: 1, sz: 9 })
         sc(ws, r, 2, score > 0 ? score : '—', {
           ha: 'center', bg: scoreColorL(score), fg: scoreColor(score), bold: score > 0,
@@ -592,11 +648,69 @@ function buildActionsSheet(
         sc(ws, r, 3, actionText, { wrap: true, sz: 9 })
         sc(ws, r, 4, progressStr, { ha: 'center', bold: progress >= 10, fg: na ? C.grayM : C.black })
         sc(ws, r, 5, statut, { ha: 'center', bg: statutBg, sz: 9 })
-        sc(ws, r, 6, note || '', { wrap: true, sz: 8, it: !note, fg: note ? C.black : C.grayM })
+        sc(ws, r, 6, noteText || '', { wrap: true, sz: 8, it: !noteText, fg: noteText ? C.black : C.grayM })
+        sc(ws, r, 7, annexeCount > 0 ? annexeCount : '—', {
+          ha: 'center', bold: annexeCount > 0, fg: annexeCount > 0 ? C.indigo : C.grayM,
+        })
 
-        ws.getRow(r).height = note ? 38 : 20; r++
+        ws.getRow(r).height = hasContent ? Math.max(30, Math.min(100, Math.ceil(noteText.length / 55) * 14)) : 20
+        r++
       }
     }
+  }
+  return ws
+}
+
+// ─── Sheet 6 : Annexes ───────────────────────────────────────────────────────
+
+interface AttachmentRow {
+  name: string
+  action_key: string
+  mime: string | null
+  size: number | null
+  annexe_index: number | null
+}
+
+function buildAnnexesSheet(wb: ExcelJS.Workbook, attachments: AttachmentRow[]) {
+  const ws = wb.addWorksheet('Annexes')
+  ws.properties.tabColor = { argb: C.purple }
+  ws.columns = [
+    { width: 8 }, { width: 40 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 12 },
+  ]
+  let r = 1
+
+  titleRow(ws, r++, 'Pièces jointes — Annexes du diagnostic', 6, C.purple)
+  blank(ws, r++, 8)
+
+  if (attachments.length === 0) {
+    merge(ws, r, 1, r, 6)
+    sc(ws, r, 1, 'Aucune pièce jointe pour ce diagnostic.', { fg: C.grayM, it: true, ha: 'center' })
+    return ws
+  }
+
+  hdRow(ws, r++, ['Annexe #', 'Nom du fichier', 'Action', 'Domaine', 'Type MIME', 'Taille'], C.purple)
+
+  for (const att of attachments) {
+    // Extraire le domaine depuis action_key (ex: "DA1.1_0" → "DA1.1")
+    const domainId = att.action_key.split('_').slice(0, -1).join('_')
+    const domain = DOMAINS.find(d => d.id === domainId)
+    const domainName = domain ? `${domain.id} — ${domain.nom}` : domainId
+
+    const sizeStr = att.size
+      ? att.size >= 1024 * 1024
+        ? `${(att.size / (1024 * 1024)).toFixed(1)} Mo`
+        : `${Math.round(att.size / 1024)} Ko`
+      : '—'
+
+    sc(ws, r, 1, att.annexe_index != null ? `A${String(att.annexe_index).padStart(3, '0')}` : '—', {
+      ha: 'center', bold: true, bg: C.purpleL, fg: C.purple,
+    })
+    sc(ws, r, 2, att.name, { bold: false })
+    sc(ws, r, 3, att.action_key, { sz: 9, fg: C.grayM })
+    sc(ws, r, 4, domainName, { sz: 9 })
+    sc(ws, r, 5, att.mime ?? '—', { sz: 9, fg: C.grayM })
+    sc(ws, r, 6, sizeStr, { ha: 'right', sz: 9 })
+    ws.getRow(r).height = 15; r++
   }
   return ws
 }
@@ -673,15 +787,32 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       if (org?.nom) orgName = org.nom
     }
 
-    // Charger les notes
+    // Charger les notes (contenu libre + sections Tiptap)
     const { data: notesRows } = await admin
       .from('guided_action_notes')
-      .select('action_key, content')
+      .select('action_key, content, sections')
       .eq('diagnostic_id', params.id)
 
     const notes: Record<string, string> = {}
+    const sections: Record<string, NoteSection[]> = {}
     for (const row of (notesRows ?? [])) {
-      notes[row.action_key] = row.content ?? ''
+      if (row.content) notes[row.action_key] = row.content
+      if (row.sections) sections[row.action_key] = row.sections as NoteSection[]
+    }
+
+    // Charger les pièces jointes (métadonnées uniquement — pas de transit de fichiers)
+    const { data: attachmentRows } = await admin
+      .from('guided_action_attachments')
+      .select('name, action_key, mime, size, annexe_index')
+      .eq('diagnostic_id', params.id)
+      .order('annexe_index', { ascending: true, nullsFirst: false })
+
+    const attachments = (attachmentRows ?? []) as AttachmentRow[]
+
+    // Index par action_key pour le Plan d'actions
+    const annexesPerAction: Record<string, number> = {}
+    for (const att of attachments) {
+      annexesPerAction[att.action_key] = (annexesPerAction[att.action_key] ?? 0) + 1
     }
 
     // Données du diagnostic
@@ -709,10 +840,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     wb.modified = new Date()
 
     buildCouvertureSheet(wb, orgName, year, avgScore, evaluatedDomains.length, exportDate)
-    buildSyntheseSheet(wb, scores)
+    buildSyntheseSheet(wb, scores, actionProgress, actionNa)
     buildDomainesSheet(wb, scores, actionProgress, actionNa)
-    buildActionsSheet(wb, scores, actionProgress, actionNa, notes)
+    buildActionsSheet(wb, scores, actionProgress, actionNa, notes, sections, annexesPerAction)
     if (aiAnalysis) buildAnalyseSheet(wb, aiAnalysis)
+    buildAnnexesSheet(wb, attachments)
 
     const buffer = await wb.xlsx.writeBuffer()
 
