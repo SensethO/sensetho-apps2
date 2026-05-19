@@ -435,6 +435,43 @@ function ScoreSelector({ score, readOnly, onChange, suggestedScore }: {
   )
 }
 
+// ─── ViewTabs ─────────────────────────────────────────────────────────────────
+
+const VIEW_TABS = [
+  { id: 'dashboard' as const, label: 'Tableau de bord', icon: '🎯' },
+  { id: 'summary'   as const, label: 'Synthèse',        icon: '📊' },
+  { id: 'step'      as const, label: 'Questionnaire',   icon: '📝' },
+]
+
+function ViewTabs({
+  view,
+  setView,
+}: {
+  view: 'dashboard' | 'summary' | 'step'
+  setView: (v: 'dashboard' | 'summary' | 'step') => void
+}) {
+  return (
+    <div className="flex gap-1 mb-5 p-1 rounded-xl"
+      style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      {VIEW_TABS.map(tab => {
+        const active = view === tab.id
+        return (
+          <button
+            key={tab.id}
+            onClick={() => setView(tab.id)}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all"
+            style={active
+              ? { backgroundColor: 'var(--accent, #6366f1)', color: '#fff', boxShadow: '0 1px 4px rgba(99,102,241,0.3)' }
+              : { color: 'var(--text-muted)' }}>
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── ShareModal ───────────────────────────────────────────────────────────────
 
 function ShareModal({ diagnosticId, onClose }: { diagnosticId: string; onClose: () => void }) {
@@ -744,12 +781,6 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           </button>
         )}
         {/* Vue */}
-        <button onClick={() => setView(v => v === 'dashboard' ? 'summary' : v === 'summary' ? 'step' : 'dashboard')}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
-          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-          <Icon name={view === 'step' ? 'barChart' : view === 'summary' ? 'list' : 'barChart'} size={13} />
-          {view === 'dashboard' ? 'Synthèse' : view === 'summary' ? 'Questionnaire' : 'Tableau de bord'}
-        </button>
       </div>
     )
   }, [diagnostic, saveStatus, isOwner, view]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -984,20 +1015,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   if (view === 'summary') {
     return (
       <div className="space-y-6 max-w-3xl mx-auto">
-        {/* Navigation */}
-        <div className="flex items-center gap-2">
-          <button onClick={() => setView('dashboard')}
-            className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-            <Icon name="chevronLeft" size={14} />
-            Tableau de bord
-          </button>
-          <button onClick={() => setView('step')}
-            className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
-            style={{ borderColor: '#6366f1', color: '#6366f1' }}>
-            📝 Questionnaire
-          </button>
-        </div>
+        <ViewTabs view={view} setView={setView} />
 
         {/* Scores globaux */}
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
@@ -1140,13 +1158,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
-        {/* Bouton retour */}
-        <button onClick={() => setView('summary')}
-          className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
-          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-          <Icon name="chevronLeft" size={14} />
-          Synthèse
-        </button>
+        <ViewTabs view={view} setView={setView} />
 
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1332,7 +1344,9 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   // ── Vue QUESTIONNAIRE ─────────────────────────────────────────────────────
   return (
-    <div className="flex gap-4 max-w-5xl mx-auto">
+    <div className="max-w-5xl mx-auto">
+      <ViewTabs view={view} setView={setView} />
+    <div className="flex gap-4">
       {/* Colonne phases + domaines */}
       <div className="w-52 flex-shrink-0">
         <div className="sticky top-0 space-y-1">
@@ -1370,19 +1384,6 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             )
           })}
 
-          {/* Boutons vue */}
-          <div className="mt-2 flex flex-col gap-1">
-            <button onClick={() => setView('summary')}
-              className="w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-center border transition-colors"
-              style={{ borderColor: '#6366f1', color: '#6366f1', borderStyle: 'dashed' }}>
-              📊 Synthèse
-            </button>
-            <button onClick={() => setView('dashboard')}
-              className="w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-center border transition-colors"
-              style={{ borderColor: '#8b5cf6', color: '#8b5cf6', borderStyle: 'dashed' }}>
-              🎯 Tableau de bord
-            </button>
-          </div>
         </div>
       </div>
 
@@ -1490,6 +1491,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           <PdfReportLazy data={pdfData} />
         </div>
       )}
+    </div>
     </div>
   )
 }
