@@ -550,7 +550,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1)
   const [activeDomainId, setActiveDomainId] = useState<string>(DOMAINS[0].id)
-  const [view, setView] = useState<'step' | 'summary' | 'dashboard'>('step')
+  const [view, setView] = useState<'step' | 'summary' | 'dashboard'>('dashboard')
   const [exportingPDF, setExportingPDF] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
   const [pdfData, setPdfData] = useState<GuidedPDFData | null>(null)
@@ -744,11 +744,11 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           </button>
         )}
         {/* Vue */}
-        <button onClick={() => setView(v => v === 'dashboard' ? 'step' : v === 'step' ? 'summary' : 'step')}
+        <button onClick={() => setView(v => v === 'dashboard' ? 'summary' : v === 'summary' ? 'step' : 'dashboard')}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
           style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-          <Icon name={view === 'step' ? 'barChart' : 'list'} size={13} />
-          {view === 'step' ? 'Synthèse' : 'Questionnaire'}
+          <Icon name={view === 'step' ? 'barChart' : view === 'summary' ? 'list' : 'barChart'} size={13} />
+          {view === 'dashboard' ? 'Synthèse' : view === 'summary' ? 'Questionnaire' : 'Tableau de bord'}
         </button>
       </div>
     )
@@ -986,16 +986,16 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       <div className="space-y-6 max-w-3xl mx-auto">
         {/* Navigation */}
         <div className="flex items-center gap-2">
-          <button onClick={() => setView('step')}
+          <button onClick={() => setView('dashboard')}
             className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
             <Icon name="chevronLeft" size={14} />
-            Questionnaire
+            Tableau de bord
           </button>
-          <button onClick={() => setView('dashboard')}
+          <button onClick={() => setView('step')}
             className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
-            style={{ borderColor: '#8b5cf6', color: '#8b5cf6' }}>
-            🎯 Tableau de bord
+            style={{ borderColor: '#6366f1', color: '#6366f1' }}>
+            📝 Questionnaire
           </button>
         </div>
 
@@ -1141,11 +1141,11 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
         {/* Bouton retour */}
-        <button onClick={() => setView('step')}
+        <button onClick={() => setView('summary')}
           className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
           style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
           <Icon name="chevronLeft" size={14} />
-          Retour au questionnaire
+          Synthèse
         </button>
 
         {/* KPIs */}
