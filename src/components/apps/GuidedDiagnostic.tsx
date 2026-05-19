@@ -1481,7 +1481,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             <Icon name="download" size={13} />
             {exportingExcel ? 'Export…' : 'Excel'}
           </button>
-          <button onClick={handleExportPDF} disabled={exportingPDF || evalCount === 0}
+          <button onClick={handleExportPDF} disabled={exportingPDF}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
             <Icon name="fileText" size={13} />
