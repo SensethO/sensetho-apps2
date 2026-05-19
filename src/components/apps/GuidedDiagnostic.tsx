@@ -563,6 +563,8 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [view, setView] = useState<'step' | 'summary' | 'dashboard'>('dashboard')
   const [exportingPDF, setExportingPDF] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
+  const [exportingAnnexes, setExportingAnnexes] = useState(false)
+  const [annexesCount, setAnnexesCount] = useState<{ done: number; total: number } | null>(null)
   const [pdfData, setPdfData] = useState<GuidedPDFData | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
@@ -745,6 +747,18 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           <Icon name="fileText" size={13} />
           {exportingPDF ? '…' : 'PDF'}
         </button>
+        {/* Annexes */}
+        <button onClick={handleExportAnnexes} disabled={exportingAnnexes}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+          title="Télécharger toutes les pièces jointes (direct SharePoint)">
+          <Icon name="paperclip" size={13} />
+          {exportingAnnexes
+            ? annexesCount
+              ? `${annexesCount.done}/${annexesCount.total}…`
+              : '…'
+            : 'Annexes'}
+        </button>
         {/* Partager */}
         {isOwner && (
           <button onClick={() => setShowShare(true)}
@@ -756,7 +770,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         {/* Vue */}
       </div>
     )
-  }, [diagnostic, saveStatus, isOwner, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [diagnostic, saveStatus, isOwner, view, exportingAnnexes, annexesCount]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // ── Debounce save ─────────────────────────────────────────────────────────
@@ -948,6 +962,55 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       URL.revokeObjectURL(url)
     } catch (e) { console.error('[exportExcel]', e) }
     finally { setExportingExcel(false) }
+  }
+
+  // ── Export annexes ────────────────────────────────────────────────────────
+  /**
+   * Téléchargement séquentiel de toutes les pièces jointes du diagnostic.
+   * Flux : endpoint batch → URLs SharePoint directes → <a> click navigateur.
+   * Zéro octet de données de fichier ne transite par Vercel ou Supabase.
+   */
+  async function handleExportAnnexes() {
+    if (!diagnostic || exportingAnnexes) return
+    setExportingAnnexes(true)
+    setAnnexesCount(null)
+    try {
+      // 1. Récupérer les métadonnées + URLs SharePoint directes (JSON léger, pas de données fichier)
+      const res = await fetch(`/api/guided-diagnostic/${diagnostic.id}/notes/annexes-urls`)
+      if (!res.ok) {
+        console.error('[exportAnnexes] endpoint error', res.status)
+        return
+      }
+      const json = await res.json() as { data: Array<{ name: string; url: string }> }
+      const files = json.data ?? []
+
+      if (files.length === 0) {
+        alert('Ce diagnostic ne contient aucune pièce jointe.')
+        return
+      }
+
+      setAnnexesCount({ done: 0, total: files.length })
+
+      // 2. Téléchargement séquentiel — chaque fichier est téléchargé directement depuis SharePoint
+      for (let i = 0; i < files.length; i++) {
+        const { name, url } = files[i]
+        const a = document.createElement('a')
+        a.href = url          // URL pré-authentifiée SharePoint — navigateur → SharePoint direct
+        a.download = name
+        a.rel = 'noopener'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setAnnexesCount({ done: i + 1, total: files.length })
+        // Délai entre chaque téléchargement pour éviter le blocage navigateur
+        if (i < files.length - 1) await new Promise(r => setTimeout(r, 400))
+      }
+    } catch (e) {
+      console.error('[exportAnnexes]', e)
+    } finally {
+      setExportingAnnexes(false)
+      setTimeout(() => setAnnexesCount(null), 3000)
+    }
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
