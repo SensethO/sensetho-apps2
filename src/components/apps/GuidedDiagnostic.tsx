@@ -561,7 +561,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1)
   const [activeDomainId, setActiveDomainId] = useState<string>(DOMAINS[0].id)
-  const [view, setView] = useState<'intro' | 'step' | 'summary' | 'dashboard'>('dashboard')
+  const [view, setView] = useState<'intro' | 'step' | 'summary' | 'dashboard'>('intro')
   const [exportingPDF, setExportingPDF] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
   const [exportingAnnexes, setExportingAnnexes] = useState(false)
@@ -1024,31 +1024,9 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const activeDomain = DOMAINS.find(d => d.id === activeDomainId)!
   const phaseForActive = PHASES.find(p => p.id === activeDomain?.phase)!
 
-  // ── Pas d'org sélectionnée ────────────────────────────────────────────────
-  if (!org) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-        <div className="text-5xl">🏢</div>
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Sélectionnez une organisation dans le panneau de gauche<br />pour commencer le diagnostic.
-        </p>
-      </div>
-    )
-  }
-
-  if (loadingDiag) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  if (!diagnostic) {
-    return <div className="text-sm text-center py-10" style={{ color: 'var(--text-muted)' }}>Impossible de charger le diagnostic.</div>
-  }
-
-  // ── Vue PRÉSENTATION ─────────────────────────────────────────────────────
+  // ── Vue PRÉSENTATION — affichée même sans org sélectionnée ──────────────
+  // Placée avant les guards !org / loadingDiag / !diagnostic
+  // pour que la page de présentation soit toujours accessible.
   if (view === 'intro') {
     const evalCount = DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).length
     const completionPct = Math.round((evalCount / DOMAINS.length) * 100)
@@ -1193,6 +1171,30 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         )}
       </div>
     )
+  }
+
+  // ── Guards : org / chargement / diagnostic ──────────────────────────────
+  if (!org) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+        <div className="text-5xl">🏢</div>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+          Sélectionnez une organisation dans le panneau de gauche<br />pour commencer le diagnostic.
+        </p>
+      </div>
+    )
+  }
+
+  if (loadingDiag) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (!diagnostic) {
+    return <div className="text-sm text-center py-10" style={{ color: 'var(--text-muted)' }}>Impossible de charger le diagnostic.</div>
   }
 
   // ── Vue SYNTHÈSE ──────────────────────────────────────────────────────────
@@ -1518,13 +1520,19 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           </div>
         </div>
 
-        {/* Export */}
+        {/* Export — même ordre et style que le header : Excel | PDF | Annexes */}
         <div className="flex gap-2 justify-end">
           <button onClick={handleExportExcel} disabled={exportingExcel}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
             <Icon name="download" size={13} />
-            {exportingExcel ? 'Export…' : 'Exporter Excel'}
+            {exportingExcel ? 'Export…' : 'Excel'}
+          </button>
+          <button onClick={handleExportPDF} disabled={exportingPDF || evalCount === 0}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+            <Icon name="fileText" size={13} />
+            {exportingPDF ? 'Génération…' : 'PDF'}
           </button>
           <button onClick={handleExportAnnexes} disabled={exportingAnnexes}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg border transition-colors hover:opacity-80 disabled:opacity-50"
@@ -1532,13 +1540,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             <Icon name="paperclip" size={13} />
             {exportingAnnexes
               ? annexesCount ? `${annexesCount.done}/${annexesCount.total}…` : '…'
-              : 'Exporter Annexes'}
-          </button>
-          <button onClick={handleExportPDF} disabled={exportingPDF || evalCount === 0}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors disabled:opacity-50"
-            style={{ backgroundColor: '#6366f1' }}>
-            <Icon name="fileText" size={13} />
-            {exportingPDF ? 'Génération PDF…' : 'Exporter PDF'}
+              : 'Annexes'}
           </button>
         </div>
 
