@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
 import Icon from '@/components/ui/Icon'
 import type { RseContext } from '@/components/rse/RseAppShell'
+import ViewTabs from '@/components/rse/ViewTabs'
 import type { GuidedPDFData, GuidedPhaseReport, GuidedDomainReport } from './GuidedDiagnosticPDFReport'
 import type { NoteSection } from './GuidedActionNotePanel'
 
@@ -435,42 +436,14 @@ function ScoreSelector({ score, readOnly, onChange, suggestedScore }: {
   )
 }
 
-// ─── ViewTabs ─────────────────────────────────────────────────────────────────
+// ─── Onglets de navigation (ViewTabs) — définis localement pour ce composant ──
+// Le composant ViewTabs est importé depuis @/components/rse/ViewTabs (partagé RSE).
 
-const VIEW_TABS = [
+const GUIDED_TABS = [
   { id: 'dashboard' as const, label: 'Tableau de bord', icon: '🎯' },
   { id: 'summary'   as const, label: 'Synthèse',        icon: '📊' },
   { id: 'step'      as const, label: 'Questionnaire',   icon: '📝' },
-]
-
-function ViewTabs({
-  view,
-  setView,
-}: {
-  view: 'dashboard' | 'summary' | 'step'
-  setView: (v: 'dashboard' | 'summary' | 'step') => void
-}) {
-  return (
-    <div className="flex gap-1 mb-5 p-1 rounded-xl"
-      style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-      {VIEW_TABS.map(tab => {
-        const active = view === tab.id
-        return (
-          <button
-            key={tab.id}
-            onClick={() => setView(tab.id)}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all"
-            style={active
-              ? { backgroundColor: 'var(--accent, #6366f1)', color: '#fff', boxShadow: '0 1px 4px rgba(99,102,241,0.3)' }
-              : { color: 'var(--text-muted)' }}>
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+] as const
 
 // ─── ShareModal ───────────────────────────────────────────────────────────────
 
@@ -1015,7 +988,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   if (view === 'summary') {
     return (
       <div className="space-y-6 max-w-3xl mx-auto">
-        <ViewTabs view={view} setView={setView} />
+        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} />
 
         {/* Scores globaux */}
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
@@ -1158,7 +1131,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
-        <ViewTabs view={view} setView={setView} />
+        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} />
 
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1345,7 +1318,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   // ── Vue QUESTIONNAIRE ─────────────────────────────────────────────────────
   return (
     <div className="max-w-5xl mx-auto">
-      <ViewTabs view={view} setView={setView} />
+      <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} />
     <div className="flex gap-4">
       {/* Colonne phases + domaines */}
       <div className="w-52 flex-shrink-0">
