@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS public.guided_diagnostics (
   ai_analysis         TEXT,
   ai_scores           JSONB,
   ai_generated_at     TIMESTAMPTZ,
+  -- Compteur monotone pour la génération des préfixes d'annexes (A001_, A002_…).
+  -- Incrémenté atomiquement via increment_attachment_counter() à chaque upload.
+  -- Ne jamais réinitialiser : garantit l'unicité même après suppression d'annexes.
+  attachment_counter  INTEGER NOT NULL DEFAULT 0,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, organisation_id, year)
@@ -122,6 +126,22 @@ CREATE POLICY "shares_owner" ON public.guided_diagnostic_shares
 -- Un utilisateur partagé peut voir son propre partage
 CREATE POLICY "shares_as_guest" ON public.guided_diagnostic_shares
   FOR SELECT USING (shared_with_user_id = auth.uid());
+
+-- ── Fonction : incrémenter le compteur d'annexes (atomique) ──────────────────
+-- Retourne la nouvelle valeur du compteur (utilisée comme index du préfixe A001_).
+-- SECURITY DEFINER : appelée avec les droits du service role depuis les API routes.
+-- Ne jamais appeler directement côté client.
+CREATE OR REPLACE FUNCTION public.increment_attachment_counter(p_id uuid)
+RETURNS int
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  UPDATE public.guided_diagnostics
+  SET attachment_counter = attachment_counter + 1
+  WHERE id = p_id
+  RETURNING attachment_counter;
+$$;
 
 -- ── Fonction utilitaire : vérifier un abonnement actif ────────────────────────
 CREATE OR REPLACE FUNCTION public.has_app_subscription(p_app_slug TEXT)

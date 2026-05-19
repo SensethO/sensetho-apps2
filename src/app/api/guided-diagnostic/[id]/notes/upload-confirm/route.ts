@@ -40,9 +40,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       name?: string
       mime?: string
       size?: number
+      annexeIndex?: number
     }
 
-    const { actionKey, attachmentId, spItemId, name, mime, size } = body
+    const { actionKey, attachmentId, spItemId, name, mime, size, annexeIndex } = body
 
     if (!actionKey) return NextResponse.json({ error: 'actionKey required' }, { status: 400 })
     if (!spItemId) return NextResponse.json({ error: 'spItemId required' }, { status: 400 })
@@ -63,8 +64,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         sharepoint_item_id: spItemId,
         mime: mime ?? null,
         size: size ?? null,
+        annexe_index: annexeIndex ?? null,
       })
-      .select('id, name, sharepoint_item_id, mime, size')
+      .select('id, name, sharepoint_item_id, mime, size, annexe_index')
       .single()
 
     if (dbErr) {

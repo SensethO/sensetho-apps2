@@ -45,9 +45,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const diagnosticId = params.id
     const attachmentId = crypto.randomUUID()
 
-    // Sanitize filename
-    const safeName = filename.replace(/[/\\:*?"<>|]/g, '_')
-    const finalName = safeName
+    // Sanitize filename (strip forbidden SP chars)
+    const safeName = filename.replace(/[/\\:*?"<>|]/g, '_').trim()
+
+    // ── Générer le préfixe A001_ de manière atomique ──────────────────────────
+    // increment_attachment_counter() incrémente guided_diagnostics.attachment_counter
+    // et retourne la nouvelle valeur — opération atomique, garantit l'unicité.
+    const admin = createAdminClient()
+    const { data: counterData, error: counterError } = await admin
+      .rpc('increment_attachment_counter', { p_id: diagnosticId })
+    if (counterError || counterData == null) {
+      console.error('[upload-session/counter] error', counterError)
+      return NextResponse.json({ error: 'Failed to generate annexe index' }, { status: 500 })
+    }
+    const annexeIndex = counterData as number
+    const prefix = 'A' + String(annexeIndex).padStart(3, '0') + '_'
+    const finalName = prefix + safeName
 
     // Create SharePoint upload session
     const config = await getConfigForApp('guided-diagnostic')
@@ -75,6 +88,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       uploadUrl: spJson.uploadUrl,
       attachmentId,
       finalName,
+      annexeIndex,
     })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
