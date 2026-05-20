@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import Icon from '@/components/ui/Icon'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ViewTabs from '@/components/rse/ViewTabs'
@@ -1106,6 +1107,27 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
             style={{ backgroundColor: 'var(--accent, #6366f1)' }}>
             📝 {evalCount > 0 ? 'Continuer le questionnaire' : 'Commencer l\'évaluation'}
           </button>
+        </div>
+
+        {/* Navigation vers applications RSE liées */}
+        <div className="rounded-2xl p-5 border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+          <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Applications RSE liées</h3>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Link href="/rse/iso26000" className="flex items-start gap-3 p-3 rounded-xl border transition-all hover:opacity-80" style={{ borderColor: 'var(--border)' }}>
+              <span className="text-xl">🔍</span>
+              <div>
+                <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>Diagnostic RSE ISO 26000</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Diagnostic complet sur les 37 domaines ISO 26000</div>
+              </div>
+            </Link>
+            <Link href="/rse/odd-iso26000" className="flex items-start gap-3 p-3 rounded-xl border transition-all hover:opacity-80" style={{ borderColor: 'var(--border)' }}>
+              <span className="text-xl">🌍</span>
+              <div>
+                <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>ISO 26000 &amp; ODD</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Explorez les correspondances ISO 26000 et les 17 ODD</div>
+              </div>
+            </Link>
+          </div>
         </div>
 
         {showShare && diagnostic && (
