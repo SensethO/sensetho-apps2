@@ -410,6 +410,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
       .then(r => r.json())
       .then(j => { if (j.data?.sections) setNoteMap(j.data.sections) })
       .catch(() => { /* */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diagnostic?.id])
 
   // ── Save scores/progress/na (debounced) ────────────────────────────────────
@@ -490,6 +491,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         )}
       </div>
     )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diagnostic, isOwner, saveStatus, view])
 
   // ── Computed values ────────────────────────────────────────────────────────
@@ -853,7 +855,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
               <div key={qc.id}>
                 <button
                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => setExpandedQc(prev => { const n = new Set(prev); n.has(qc.id) ? n.delete(qc.id) : n.add(qc.id); return n })}
+                  onClick={() => setExpandedQc(prev => { const n = new Set(prev); if (n.has(qc.id)) n.delete(qc.id); else n.add(qc.id); return n })}
                 >
                   <span className="text-base">{qc.icone}</span>
                   <div className="flex-1 min-w-0">

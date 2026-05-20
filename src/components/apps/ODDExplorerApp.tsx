@@ -313,6 +313,7 @@ function MatrixView({ onOddSelect }: { onOddSelect: (odd: string) => void }) {
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function ODDExplorerApp({ ctx: _ctx }: { ctx: RseContext }) {
   const [view, setView]                 = useState<OddView>('intro')
   const [selectedOdd, setSelectedOdd]   = useState<string | null>(null)
