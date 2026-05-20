@@ -99,7 +99,7 @@ export function useFavorites(userId: string | null | undefined) {
             } catch { /* silencieux */ }
           }
         )
-        .subscribe((status, err) => {
+        .subscribe((_status: string, err?: Error) => {
           if (err) console.warn('[useFavorites] realtime subscribe error (non-fatal):', err)
         })
     } catch (e) {
