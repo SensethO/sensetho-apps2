@@ -387,7 +387,8 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
       channel = supabase.channel(`iso26000-diag:${org.id}:${year}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'iso26000_diagnostics', filter: `organisation_id=eq.${org.id}` },
           (payload: { new: Record<string, unknown> }) => {
-            if ((payload.new as DiagnosticRecord).year === year) setDiag(payload.new as DiagnosticRecord)
+            const rec = payload.new as unknown as DiagnosticRecord
+            if (rec.year === year) setDiag(rec)
           }
         ).subscribe((_s: string, err?: Error) => { if (err) console.warn('[ISO26000] realtime:', err) })
     } catch { /* non-fatal */ }
