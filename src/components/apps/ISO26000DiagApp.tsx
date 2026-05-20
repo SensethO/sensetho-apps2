@@ -655,7 +655,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
       const avg = ds.length > 0 ? ds.reduce((a, d) => a + scores[d.id], 0) / ds.length : 0
       return { pilier: p, label: p === 'G' ? 'Gouvernance' : p === 'E' ? 'Environnement' : 'Social', avg, count: ds.length, total: qcs.flatMap(q => q.domaines).length }
     })
-    const oddCovered = [...new Set(ALL_DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).flatMap(d => d.ods))]
+    const oddCovered = Array.from(new Set(ALL_DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).flatMap(d => d.ods)))
 
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
