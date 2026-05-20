@@ -68,34 +68,49 @@ export function useFavorites(userId: string | null | undefined) {
   }, [userId])
 
   // ── Realtime — synchronisation cross-onglets / cross-navigateurs ───────────
+  // Optionnel : si WebSocket bloqué (Firefox strict mode, réseau restreint…)
+  // l'app continue de fonctionner normalement grâce à l'UI optimiste.
   useEffect(() => {
     if (!userId) return
 
     const supabase = createClient()
+    let channel: ReturnType<typeof supabase.channel> | null = null
 
-    const channel = supabase
-      .channel(`favorites:${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_app_favorites',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload: { eventType: string; new: Record<string, unknown>; old: Record<string, unknown> }) => {
-          if (payload.eventType === 'INSERT') {
-            const appId = payload.new['app_id'] as string
-            setFavoriteIds(prev => prev.includes(appId) ? prev : [...prev, appId])
-          } else if (payload.eventType === 'DELETE') {
-            const appId = payload.old['app_id'] as string
-            setFavoriteIds(prev => prev.filter(id => id !== appId))
+    try {
+      channel = supabase
+        .channel(`favorites:${userId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'user_app_favorites',
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload: { eventType: string; new: Record<string, unknown>; old: Record<string, unknown> }) => {
+            try {
+              if (payload.eventType === 'INSERT') {
+                const appId = payload.new['app_id'] as string
+                setFavoriteIds(prev => prev.includes(appId) ? prev : [...prev, appId])
+              } else if (payload.eventType === 'DELETE') {
+                const appId = payload.old['app_id'] as string
+                setFavoriteIds(prev => prev.filter(id => id !== appId))
+              }
+            } catch { /* silencieux */ }
           }
-        }
-      )
-      .subscribe()
+        )
+        .subscribe((status, err) => {
+          if (err) console.warn('[useFavorites] realtime subscribe error (non-fatal):', err)
+        })
+    } catch (e) {
+      console.warn('[useFavorites] realtime unavailable (non-fatal):', e)
+    }
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      if (channel) {
+        try { supabase.removeChannel(channel) } catch { /* silencieux */ }
+      }
+    }
   }, [userId])
 
   // ── Toggle favori (optimistic) ─────────────────────────────────────────────
