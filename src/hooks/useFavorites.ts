@@ -83,12 +83,12 @@ export function useFavorites(userId: string | null | undefined) {
           table: 'user_app_favorites',
           filter: `user_id=eq.${userId}`,
         },
-        (payload) => {
+        (payload: { eventType: string; new: Record<string, unknown>; old: Record<string, unknown> }) => {
           if (payload.eventType === 'INSERT') {
-            const appId = (payload.new as { app_id: string }).app_id
+            const appId = payload.new['app_id'] as string
             setFavoriteIds(prev => prev.includes(appId) ? prev : [...prev, appId])
           } else if (payload.eventType === 'DELETE') {
-            const appId = (payload.old as { app_id: string }).app_id
+            const appId = payload.old['app_id'] as string
             setFavoriteIds(prev => prev.filter(id => id !== appId))
           }
         }
