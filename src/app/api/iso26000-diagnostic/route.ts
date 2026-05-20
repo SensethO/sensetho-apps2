@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Subscription required' }, { status: 403 })
     }
 
-    const { org_id, year, secteur } = await req.json()
+    const { org_id, year } = await req.json()
     if (!org_id || !year) {
       return NextResponse.json({ error: 'org_id and year are required' }, { status: 400 })
     }
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await admin
       .from('iso26000_diagnostics')
       .upsert(
-        { user_id: user.id, organisation_id: org_id, year, secteur: secteur ?? null },
+        { user_id: user.id, organisation_id: org_id, year },
         { onConflict: 'user_id,organisation_id,year', ignoreDuplicates: false }
       )
       .select()
