@@ -210,7 +210,7 @@ function fmtSize(bytes: number): string {
 
 async function getSignedUrl(diagnosticId: string, spItemId: string): Promise<string> {
   const res = await fetch(
-    `${apiBase}/${diagnosticId}/notes/signed-url?item_id=${encodeURIComponent(spItemId)}`
+    `/api/guided-diagnostic/${diagnosticId}/notes/signed-url?item_id=${encodeURIComponent(spItemId)}`
   )
   if (!res.ok) throw new Error('Impossible de générer le lien')
   const { url } = await res.json()
@@ -374,7 +374,7 @@ function AttachmentItem({
     setRenaming(true)
     try {
       const res = await fetch(
-        `${apiBase}/${diagnosticId}/notes/attachment?attachment_id=${encodeURIComponent(att.id)}`,
+        `/api/guided-diagnostic/${diagnosticId}/notes/attachment?attachment_id=${encodeURIComponent(att.id)}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -643,7 +643,7 @@ function SectionEditor({
 
         // Étape 1 : obtenir la session d'upload SharePoint
         const sessionRes = await fetch(
-          `${apiBase}/${diagnosticId}/notes/upload-session`,
+          `/api/guided-diagnostic/${diagnosticId}/notes/upload-session`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -683,7 +683,7 @@ function SectionEditor({
 
         // Étape 3 : confirmer l'enregistrement DB
         const confirmRes = await fetch(
-          `${apiBase}/${diagnosticId}/notes/upload-confirm`,
+          `/api/guided-diagnostic/${diagnosticId}/notes/upload-confirm`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -724,7 +724,7 @@ function SectionEditor({
   async function deleteAttachment(att: AttachmentMeta) {
     try {
       await fetch(
-        `${apiBase}/${diagnosticId}/notes/attachment?attachment_id=${encodeURIComponent(att.id)}`,
+        `/api/guided-diagnostic/${diagnosticId}/notes/attachment?attachment_id=${encodeURIComponent(att.id)}`,
         { method: 'DELETE' }
       )
       onChange({
@@ -885,8 +885,6 @@ interface Props {
   onSectionsChange: (sections: NoteSection[]) => void
   /** Prefix used for annexe refs. Default: 'A' */
   refPrefix?: string
-  /** Base API path. Default: '/api/guided-diagnostic' */
-  apiBase?: string
 }
 
 function newSection(): NoteSection {
@@ -916,7 +914,6 @@ export default function GuidedActionNotePanel({
   notesRemoteVersion,
   onSectionsChange,
   refPrefix = 'A',
-  apiBase = '/api/guided-diagnostic',
 }: Props) {
   const [sections, setSections] = useState<NoteSection[]>(() =>
     initialSections.length > 0 ? initialSections : [newSection()]
@@ -989,7 +986,7 @@ export default function GuidedActionNotePanel({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await fetch(`${apiBase}/${diagnosticId}/notes`, {
+        await fetch(`/api/guided-diagnostic/${diagnosticId}/notes`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action_key: actionKey, sections: newSections }),

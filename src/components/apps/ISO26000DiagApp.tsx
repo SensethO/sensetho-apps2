@@ -6,13 +6,6 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ViewTabs from '@/components/rse/ViewTabs'
-import type { NoteSection } from './GuidedActionNotePanel'
-
-// ── Lazy panels (évite de charger Tiptap dans le bundle principal)
-const GuidedActionNotePanelLazy = dynamic(
-  () => import('./GuidedActionNotePanel'),
-  { ssr: false, loading: () => null },
-)
 
 // ── Lazy annexes modal
 const ISO26000AnnexesModal = dynamic(
@@ -348,7 +341,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const [showShare, setShowShare]   = useState(false)
   const [showAnnexes, setShowAnnexes] = useState(false)
   const [generatingAI, setGenAI]    = useState(false)
-  const [noteMap, setNoteMap]       = useState<Record<string, NoteSection[]>>({})
+  const [noteMap, setNoteMap]       = useState<Record<string, unknown[]>>({})
   const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -994,19 +987,6 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           </div>
         )}
 
-        {/* Note panel Tiptap */}
-        {diagnostic && (
-          <GuidedActionNotePanelLazy
-            diagnosticId={diagnostic.id}
-            actionKey={actionKey(activeDomain.id, 0)}
-            initialSections={noteMap[actionKey(activeDomain.id, 0)] ?? []}
-            note={noteTextMap[actionKey(activeDomain.id, 0)] ?? ''}
-            onNoteChange={(v) => setNoteTextMap(prev => ({ ...prev, [actionKey(activeDomain.id, 0)]: v }))}
-            onSectionsChange={(sections) => setNoteMap(prev => ({ ...prev, [actionKey(activeDomain.id, 0)]: sections }))}
-            apiBase="/api/iso26000-diagnostic"
-            readOnly={!isOwner}
-          />
-        )}
 
         {/* Bottom export */}
         <div className="flex gap-2 pt-2">
