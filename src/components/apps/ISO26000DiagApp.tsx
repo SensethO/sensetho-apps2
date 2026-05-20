@@ -341,7 +341,9 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const [showShare, setShowShare]   = useState(false)
   const [showAnnexes, setShowAnnexes] = useState(false)
   const [generatingAI, setGenAI]    = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [noteMap, setNoteMap]       = useState<Record<string, unknown[]>>({})
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
