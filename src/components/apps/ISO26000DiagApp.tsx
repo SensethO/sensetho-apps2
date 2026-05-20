@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ViewTabs from '@/components/rse/ViewTabs'
+import type { NoteSection } from './GuidedActionNotePanel'
 
 // ── Lazy panels (évite de charger Tiptap dans le bundle principal)
 const GuidedActionNotePanelLazy = dynamic(
@@ -42,11 +43,6 @@ interface ShareEntry {
   profiles: { email: string; full_name: string | null } | null
 }
 
-interface NoteSection {
-  id: string
-  title: string
-  content: string
-}
 
 interface ActionDomain {
   id: string
