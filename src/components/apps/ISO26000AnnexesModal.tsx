@@ -202,7 +202,7 @@ function groupByQc(items: AnnexeItem[]): QcGroup[] {
 
   // Regrouper par QC
   const qcMap = new Map<string, QcGroup>()
-  for (const domain of domainMap.values()) {
+  for (const domain of Array.from(domainMap.values())) {
     if (!qcMap.has(domain.qcId)) {
       qcMap.set(domain.qcId, {
         qcId: domain.qcId,
