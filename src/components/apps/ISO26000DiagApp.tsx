@@ -349,6 +349,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const [showAnnexes, setShowAnnexes] = useState(false)
   const [generatingAI, setGenAI]    = useState(false)
   const [noteMap, setNoteMap]       = useState<Record<string, NoteSection[]>>({})
+  const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // ── Load / create diagnostic ───────────────────────────────────────────────
@@ -405,7 +406,10 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     if (!diagnostic) return
     fetch(`/api/iso26000-diagnostic/${diagnostic.id}/notes`)
       .then(r => r.json())
-      .then(j => { if (j.data?.sections) setNoteMap(j.data.sections) })
+      .then(j => {
+      if (j.data?.sections) setNoteMap(j.data.sections)
+      if (j.data?.notes)    setNoteTextMap(j.data.notes)
+    })
       .catch(() => { /* */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diagnostic?.id])
@@ -996,7 +1000,10 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
             diagnosticId={diagnostic.id}
             actionKey={actionKey(activeDomain.id, 0)}
             initialSections={noteMap[actionKey(activeDomain.id, 0)] ?? []}
-            attachmentsApiBase={`/api/iso26000-diagnostic/${diagnostic.id}/notes`}
+            note={noteTextMap[actionKey(activeDomain.id, 0)] ?? ''}
+            onNoteChange={(v) => setNoteTextMap(prev => ({ ...prev, [actionKey(activeDomain.id, 0)]: v }))}
+            onSectionsChange={(sections) => setNoteMap(prev => ({ ...prev, [actionKey(activeDomain.id, 0)]: sections }))}
+            apiBase="/api/iso26000-diagnostic"
             readOnly={!isOwner}
           />
         )}
