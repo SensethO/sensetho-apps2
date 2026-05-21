@@ -20,6 +20,30 @@ async function getAccessLevel(userId: string, diagnosticId: string): Promise<'ow
   return share.permission === 'edit' ? 'editor' : 'reader'
 }
 
+/** GET /api/iso26000-diagnostic/[id] — récupérer un diagnostic par ID */
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const supabase = createUserClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const access = await getAccessLevel(user.id, params.id)
+    if (!access) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const admin = createAdminClient()
+    const { data, error } = await admin
+      .from('iso26000_diagnostics')
+      .select('*')
+      .eq('id', params.id)
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ data })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+}
+
 /** PATCH /api/iso26000-diagnostic/[id] — sauvegarder scores, progress, na, secteur */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
