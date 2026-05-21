@@ -219,25 +219,33 @@ function OddCard({
   return (
     <button
       onClick={onClick}
-      className="relative flex flex-col rounded-xl border-2 transition-all overflow-hidden text-center hover:shadow-md"
-      style={{ borderColor: selected ? meta.couleur : `${meta.couleur}44`, backgroundColor: selected ? `${meta.couleur}18` : 'transparent' }}
+      className="relative flex flex-col transition-all hover:scale-105 hover:shadow-md"
+      style={{ outline: selected ? `3px solid ${meta.couleur}` : '3px solid transparent', borderRadius: 8 }}
     >
-      <img
-        src={oddImgSrc(num)}
-        alt={`ODD ${num}`}
-        className="w-full aspect-square object-cover"
-        loading="lazy"
-      />
-      <div className="px-1.5 pt-1 pb-1.5 flex flex-col gap-0.5">
-        <div className="w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+      {/* Image pleine — pas de padding en dessous */}
+      <div className="relative w-full">
+        <img
+          src={oddImgSrc(num)}
+          alt={`ODD ${num}`}
+          className="w-full aspect-square object-cover rounded-lg"
+          loading="lazy"
+        />
+        {/* Badge numérique coin bas-droit */}
+        {evaluated > 0 && (
           <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${coveragePct}%`, backgroundColor: meta.couleur }}
-          />
-        </div>
-        <div className="text-xs font-semibold" style={{ color: meta.couleur }}>
-          {evaluated > 0 ? `${evaluated}/${total}` : `${total} dom.`}
-        </div>
+            className="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white shadow"
+            style={{ backgroundColor: meta.couleur, fontSize: 10 }}
+          >
+            {evaluated}
+          </div>
+        )}
+      </div>
+      {/* Barre de couverture sous la carte */}
+      <div className="w-full h-1 rounded-full mt-1 overflow-hidden bg-gray-200 dark:bg-gray-700">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${coveragePct}%`, backgroundColor: meta.couleur }}
+        />
       </div>
     </button>
   )
