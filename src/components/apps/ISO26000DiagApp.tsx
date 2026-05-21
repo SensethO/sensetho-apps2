@@ -159,6 +159,17 @@ const QC_LIST: CoreSubject[] = [
 // Flat list of all domains
 const ALL_DOMAINS = QC_LIST.flatMap(qc => qc.domaines)
 
+// ─── ODD labels & mapping statique ───────────────────────────────────────────
+const ODD_LABELS: Record<string, string> = {
+  ODD1: 'Pas de pauvreté', ODD2: 'Faim zéro', ODD3: 'Bonne santé', ODD4: 'Éducation de qualité',
+  ODD5: 'Égalité des sexes', ODD6: 'Eau propre', ODD7: 'Énergie propre', ODD8: 'Travail décent',
+  ODD9: 'Industrie & innovation', ODD10: 'Inégalités réduites', ODD11: 'Villes durables',
+  ODD12: 'Consommation responsable', ODD13: 'Action climatique', ODD14: 'Vie aquatique',
+  ODD15: 'Vie terrestre', ODD16: 'Paix & justice', ODD17: 'Partenariats',
+}
+const ODD_TO_DOMAINS: Record<string, ActionDomain[]> = {}
+ALL_DOMAINS.forEach(d => { d.ods.forEach(odd => { if (!ODD_TO_DOMAINS[odd]) ODD_TO_DOMAINS[odd] = []; ODD_TO_DOMAINS[odd].push(d) }) })
+
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
 
 function actionKey(domainId: string, actionIndex: number) {
@@ -208,6 +219,9 @@ const ISO_TABS = [
   { id: 'dashboard' as const, label: 'Tableau de bord', icon: '🎯' },
   { id: 'summary'   as const, label: 'Synthèse',        icon: '📊' },
   { id: 'step'      as const, label: 'Questionnaire',   icon: '📝' },
+  { id: 'odd'       as const, label: 'Vue ODD',         icon: '🌍' },
+  { id: 'plan'      as const, label: "Plan d'actions",  icon: '✅' },
+  { id: 'search'    as const, label: 'Recherche',       icon: '🔍' },
 ] as const
 type IsoView = typeof ISO_TABS[number]['id']
 
@@ -351,6 +365,9 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
   const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
   const [expandedNoteKey, setExpandedNoteKey] = useState<string | null>(null)
+  const [selectedOdd, setSelectedOdd]         = useState<string | null>(null)
+  const [searchQuery, setSearchQuery]         = useState('')
+  const [planQcFilter, setPlanQcFilter]       = useState('all')
   // Fermer les notes quand on change de domaine (hook avant tout early return)
   useEffect(() => { setExpandedNoteKey(null) }, [selectedDomain?.id])
   const notesSaveTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -867,6 +884,313 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           <button disabled className="px-4 py-2 text-sm rounded-lg border transition-colors opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
           <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
         </div>
+
+        {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
+        {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+      </div>
+    )
+  }
+
+  // ── VUE ODD ────────────────────────────────────────────────────────────────
+  if (view === 'odd') {
+    const oddDomains = selectedOdd ? (ODD_TO_DOMAINS[selectedOdd] ?? []) : []
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto">
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+
+        {/* Grille 17 ODD */}
+        <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+          <h3 className="font-semibold text-sm mb-4" style={{ color: 'var(--text)' }}>
+            Objectifs de Développement Durable — sélectionnez un ODD pour voir les domaines ISO 26000 associés
+          </h3>
+          <div className="grid grid-cols-6 sm:grid-cols-9 gap-2">
+            {Array.from({ length: 17 }, (_, i) => {
+              const oddId = `ODD${i + 1}`
+              const count = (ODD_TO_DOMAINS[oddId] ?? []).length
+              const isSelected = selectedOdd === oddId
+              return (
+                <button
+                  key={oddId}
+                  onClick={() => setSelectedOdd(prev => prev === oddId ? null : oddId)}
+                  className="flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all hover:scale-105"
+                  style={{
+                    borderColor: isSelected ? ODD_COLORS[oddId] : 'var(--border)',
+                    backgroundColor: isSelected ? `${ODD_COLORS[oddId]}22` : 'var(--bg)',
+                  }}
+                  title={`ODD ${i + 1} — ${ODD_LABELS[oddId]}`}
+                >
+                  <div className="w-8 h-8 rounded-lg text-white text-[11px] font-bold flex items-center justify-center shadow-sm" style={{ backgroundColor: ODD_COLORS[oddId] }}>
+                    {i + 1}
+                  </div>
+                  <span className="text-[9px] text-center leading-tight hidden sm:block" style={{ color: 'var(--text-muted)' }}>
+                    {count} dom.
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Domaines pour l'ODD sélectionné */}
+        {selectedOdd ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: ODD_COLORS[selectedOdd] }}>
+                {selectedOdd.replace('ODD', '')}
+              </div>
+              <div>
+                <div className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{ODD_LABELS[selectedOdd]}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{oddDomains.length} domaine{oddDomains.length > 1 ? 's' : ''} ISO 26000 associé{oddDomains.length > 1 ? 's' : ''}</div>
+              </div>
+            </div>
+            {oddDomains.map(domain => {
+              const qc = QC_LIST.find(q => q.domaines.some(d => d.id === domain.id))!
+              const s = scores[domain.id] ?? 0
+              const pct = Math.round(domain.actions.filter((_, i) => !actionNa[actionKey(domain.id, i)] && (actionProgress[actionKey(domain.id, i)] ?? 0) > 0).length / domain.actions.length * 100)
+              return (
+                <div key={domain.id} className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+                  <div className="flex items-start gap-3 p-4">
+                    <span className="text-xl flex-shrink-0">{qc.icone}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm" style={{ color: 'var(--text)' }}>{domain.nom}</div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>{domain.isoRef} · {qc.nom}</div>
+                      <div className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>{domain.description}</div>
+                      {pct > 0 && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex-1 h-1 rounded-full bg-gray-200 dark:bg-gray-700">
+                            <div className="h-1 rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{pct}% actions</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                      <span className="text-sm font-bold" style={{ color: s > 0 ? qc.couleur : 'var(--text-muted)' }}>{s > 0 ? `${s}/5` : '—'}</span>
+                      <button
+                        onClick={() => { setSelectedDomain(domain); setExpandedQc(new Set([qc.id])); setView('step') }}
+                        className="text-xs px-2 py-1 rounded-lg border transition-colors hover:opacity-70"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                      >
+                        Évaluer →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-4xl mb-3">🌍</div>
+            <p>Sélectionnez un ODD pour explorer les domaines ISO 26000 associés</p>
+          </div>
+        )}
+
+        {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
+        {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+      </div>
+    )
+  }
+
+  // ── VUE PLAN D'ACTIONS ─────────────────────────────────────────────────────
+  if (view === 'plan') {
+    const filteredQcs = planQcFilter === 'all' ? QC_LIST : QC_LIST.filter(qc => qc.id === planQcFilter)
+    const totalActions = ALL_DOMAINS.reduce((acc, d) => acc + d.actions.length, 0)
+    const doneActions  = ALL_DOMAINS.reduce((acc, d) =>
+      acc + d.actions.filter((_, i) => (actionProgress[actionKey(d.id, i)] ?? 0) > 0).length, 0)
+
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto">
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+
+        {/* Header */}
+        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>Plan d&apos;actions ISO 26000</h3>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{doneActions}/{totalActions} actions démarrées</p>
+            </div>
+            <div className="w-24 h-2 rounded-full bg-gray-200 dark:bg-gray-700">
+              <div className="h-2 rounded-full bg-indigo-500 transition-all" style={{ width: `${Math.round(doneActions / totalActions * 100)}%` }} />
+            </div>
+          </div>
+          {/* Filtres QC */}
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setPlanQcFilter('all')}
+              className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+              style={{ backgroundColor: planQcFilter === 'all' ? 'var(--accent, #6366f1)' : 'var(--bg)', color: planQcFilter === 'all' ? 'white' : 'var(--text-muted)', borderColor: 'var(--border)' }}
+            >
+              Toutes
+            </button>
+            {QC_LIST.map(qc => (
+              <button
+                key={qc.id}
+                onClick={() => setPlanQcFilter(qc.id)}
+                className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                style={{ backgroundColor: planQcFilter === qc.id ? qc.couleur : 'var(--bg)', color: planQcFilter === qc.id ? 'white' : 'var(--text-muted)', borderColor: 'var(--border)' }}
+              >
+                {qc.icone} {qc.nom.split(' ').slice(0, 2).join(' ')}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions par QC / domaine */}
+        {filteredQcs.map(qc => (
+          <div key={qc.id} className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center gap-3 px-4 py-3" style={{ backgroundColor: `${qc.couleur}18` }}>
+              <span className="text-lg">{qc.icone}</span>
+              <div className="flex-1">
+                <div className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{qc.nom}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{qc.isoRef} · {qc.domaines.length} domaines</div>
+              </div>
+              <span className="text-sm font-bold" style={{ color: qc.couleur }}>{getQcScore(qc, scores).toFixed(1)}/5</span>
+            </div>
+            <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+              {qc.domaines.map(domain => {
+                const s = scores[domain.id] ?? 0
+                const domainActions = domain.actions.map((action, i) => ({
+                  action, i,
+                  key: actionKey(domain.id, i),
+                  prog: actionProgress[actionKey(domain.id, i)] ?? 0,
+                  na: actionNa[actionKey(domain.id, i)] ?? false,
+                }))
+                const started = domainActions.filter(a => a.prog > 0).length
+                return (
+                  <div key={domain.id} className="px-4 py-3" style={{ backgroundColor: 'var(--bg-card)' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="flex-1">
+                        <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{domain.nom}</span>
+                        <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>{domain.isoRef}</span>
+                      </div>
+                      <span className="text-xs font-bold" style={{ color: s > 0 ? qc.couleur : 'var(--text-muted)' }}>{s > 0 ? `${s}/5` : '—'}</span>
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{started}/{domainActions.length}</span>
+                      <button
+                        onClick={() => { setSelectedDomain(domain); setExpandedQc(new Set([qc.id])); setView('step') }}
+                        className="text-[10px] px-2 py-0.5 rounded border transition-colors hover:opacity-70"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                      >→</button>
+                    </div>
+                    <div className="space-y-1.5">
+                      {domainActions.map(({ action, key, prog, na }) => (
+                        <div key={key} className={`flex items-center gap-2 ${na ? 'opacity-40' : ''}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${prog > 0 ? '' : 'bg-gray-300 dark:bg-gray-600'}`} style={prog > 0 ? { backgroundColor: qc.couleur } : {}} />
+                          <span className="text-xs flex-1 leading-tight" style={{ color: 'var(--text-muted)' }}>{action}</span>
+                          <span className="text-[10px] flex-shrink-0 w-8 text-right" style={{ color: 'var(--text-muted)' }}>{prog > 0 ? `${prog}/10` : na ? 'N/A' : ''}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* Bottom export */}
+        <div className="flex gap-2 justify-center pt-2">
+          <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
+        </div>
+
+        {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
+        {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+      </div>
+    )
+  }
+
+  // ── VUE RECHERCHE ──────────────────────────────────────────────────────────
+  if (view === 'search') {
+    const q = searchQuery.trim().toLowerCase()
+    type SearchResult = { type: 'domain'; domain: ActionDomain; qc: typeof QC_LIST[0] } | { type: 'action'; domain: ActionDomain; qc: typeof QC_LIST[0]; action: string; idx: number } | { type: 'kpi'; domain: ActionDomain; qc: typeof QC_LIST[0]; kpi: string; idx: number }
+    const results: SearchResult[] = []
+    if (q.length >= 2) {
+      QC_LIST.forEach(qc => {
+        qc.domaines.forEach(domain => {
+          if (domain.nom.toLowerCase().includes(q) || domain.description.toLowerCase().includes(q)) {
+            results.push({ type: 'domain', domain, qc })
+          }
+          domain.actions.forEach((action, idx) => {
+            if (action.toLowerCase().includes(q)) results.push({ type: 'action', domain, qc, action, idx })
+          })
+          domain.kpis.forEach((kpi, idx) => {
+            if (kpi.toLowerCase().includes(q)) results.push({ type: 'kpi', domain, qc, kpi, idx })
+          })
+        })
+      })
+    }
+
+    const highlight = (text: string, query: string) => {
+      if (!query) return <>{text}</>
+      const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+      return <>{parts.map((p, i) => p.toLowerCase() === query ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 rounded px-0.5">{p}</mark> : p)}</>
+    }
+
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto">
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+
+        {/* Barre de recherche */}
+        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg">🔍</span>
+            <input
+              type="text"
+              autoFocus
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Rechercher un domaine, une action, un KPI…"
+              className="w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)', color: 'var(--text)' }}
+            />
+          </div>
+          {q.length >= 2 && (
+            <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>{results.length} résultat{results.length > 1 ? 's' : ''} pour &quot;{q}&quot;</p>
+          )}
+        </div>
+
+        {/* Résultats */}
+        {q.length < 2 ? (
+          <div className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-4xl mb-3">🔍</div>
+            <p>Tapez au moins 2 caractères pour rechercher</p>
+          </div>
+        ) : results.length === 0 ? (
+          <div className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-4xl mb-3">😶</div>
+            <p>Aucun résultat pour &quot;{q}&quot;</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {results.map((r, idx) => {
+              const badge = r.type === 'domain' ? { label: 'Domaine', color: r.qc.couleur } : r.type === 'action' ? { label: 'Action', color: '#6366f1' } : { label: 'KPI', color: '#f59e0b' }
+              const text = r.type === 'domain' ? r.domain.nom : r.type === 'action' ? r.action : r.kpi
+              const sub = r.type === 'domain' ? r.domain.description : `${r.domain.nom} · ${r.qc.nom}`
+              return (
+                <div key={idx} className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+                  <div className="flex items-start gap-3 px-4 py-3">
+                    <span className="text-lg flex-shrink-0">{r.qc.icone}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold text-white" style={{ backgroundColor: badge.color }}>{badge.label}</span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.domain.isoRef}</span>
+                      </div>
+                      <div className="text-sm font-medium leading-snug" style={{ color: 'var(--text)' }}>{highlight(text, q)}</div>
+                      {r.type !== 'domain' && <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</div>}
+                    </div>
+                    <button
+                      onClick={() => { setSelectedDomain(r.domain); setExpandedQc(new Set([r.qc.id])); setView('step') }}
+                      className="flex-shrink-0 text-xs px-2 py-1 rounded-lg border transition-colors hover:opacity-70"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                    >
+                      Évaluer →
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
         {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
