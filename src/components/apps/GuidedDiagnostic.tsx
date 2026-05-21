@@ -296,6 +296,9 @@ const DOMAINS: Domain[] = [
   },
 ]
 
+/** Lookup rapide domainId → Domain */
+const DOMAIN_BY_ID: Record<string, Domain> = Object.fromEntries(DOMAINS.map(d => [d.id, d]))
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function scoreColor(s: number) {
@@ -401,39 +404,20 @@ function computeSuggestedScore(
   return 0
 }
 
-function ScoreSelector({ score, readOnly, onChange, suggestedScore }: {
-  score: number; readOnly: boolean; onChange: (v: number) => void; suggestedScore?: number | null
+function ScoreSelector({ score, readOnly, onChange }: {
+  score: number; readOnly: boolean; onChange: (v: number) => void
 }) {
   return (
-    <div className="space-y-2">
-      <div className="flex gap-1.5 flex-wrap">
-        {[0, 1, 2, 3, 4, 5].map(v => (
-          <button key={v} disabled={readOnly} onClick={() => onChange(v)}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
-            style={score === v
-              ? { backgroundColor: scoreColor(v), color: '#fff', borderColor: scoreColor(v) }
-              : { backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
-            {v} — {SCORE_LABELS[v]}
-          </button>
-        ))}
-      </div>
-      {/* Score suggéré par la progression des actions */}
-      {!readOnly && suggestedScore != null && suggestedScore !== score && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
-          style={{ backgroundColor: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)' }}>
-          <span style={{ color: 'var(--text-muted)' }}>
-            💡 Score suggéré par vos actions :
-          </span>
-          <span className="font-semibold" style={{ color: scoreColor(suggestedScore) }}>
-            {suggestedScore} — {SCORE_LABELS[suggestedScore]}
-          </span>
-          <button onClick={() => onChange(suggestedScore)}
-            className="ml-auto text-xs font-medium px-2 py-0.5 rounded transition-colors hover:opacity-80"
-            style={{ backgroundColor: '#6366f1', color: '#fff' }}>
-            Appliquer
-          </button>
-        </div>
-      )}
+    <div className="flex gap-1.5 flex-wrap">
+      {[0, 1, 2, 3, 4, 5].map(v => (
+        <button key={v} disabled={readOnly} onClick={() => onChange(v)}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+          style={score === v
+            ? { backgroundColor: scoreColor(v), color: '#fff', borderColor: scoreColor(v) }
+            : { backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
+          {v} — {SCORE_LABELS[v]}
+        </button>
+      ))}
     </div>
   )
 }
@@ -798,12 +782,30 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
   function setProgress(key: string, value: number) {
     const p = { ...actionProgress, [key]: value }
-    setActionProgress(p); scheduleSave(scores, p, actionNa)
+    setActionProgress(p)
+    // Auto-calculer le score du domaine depuis la progression des actions
+    const domainId = key.replace(/_\d+$/, '')
+    const domain = DOMAIN_BY_ID[domainId]
+    let s = scores
+    if (domain) {
+      const computed = computeSuggestedScore(domain, p, actionNa)
+      if (computed !== null) { s = { ...scores, [domainId]: computed }; setScores(s) }
+    }
+    scheduleSave(s, p, actionNa)
   }
 
   function toggleNa(key: string) {
     const n = { ...actionNa, [key]: !actionNa[key] }
-    setActionNa(n); scheduleSave(scores, actionProgress, n)
+    setActionNa(n)
+    // Recalculer le score du domaine quand une action passe en N/A
+    const domainId = key.replace(/_\d+$/, '')
+    const domain = DOMAIN_BY_ID[domainId]
+    let s = scores
+    if (domain) {
+      const computed = computeSuggestedScore(domain, actionProgress, n)
+      if (computed !== null) { s = { ...scores, [domainId]: computed }; setScores(s) }
+    }
+    scheduleSave(s, actionProgress, n)
   }
 
   function updateNote(key: string, value: string) {
@@ -1601,8 +1603,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
               Niveau de maturité RSE
             </label>
             <ScoreSelector score={scores[activeDomain.id] ?? 0} readOnly={readOnly}
-              onChange={v => setScore(activeDomain.id, v)}
-              suggestedScore={computeSuggestedScore(activeDomain, actionProgress, actionNa)} />
+              onChange={v => setScore(activeDomain.id, v)} />
           </div>
 
           {/* Actions prioritaires */}
