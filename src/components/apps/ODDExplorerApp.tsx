@@ -278,32 +278,33 @@ function DomainCard({
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800">
-      <button className="w-full flex items-start gap-3 p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors" onClick={() => onToggle(domain.id)}>
-        <div className="flex-shrink-0 mt-0.5 text-xl">{qc.icone}</div>
+      <button className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors" onClick={() => onToggle(domain.id)}>
+        <div className="flex-shrink-0 text-xl">{qc.icone}</div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${pilier.bg} ${pilier.text}`}>{pilier.label}</span>
             <span className="text-xs text-gray-400 dark:text-gray-500">{domain.isoRef}</span>
           </div>
           <div className="font-semibold text-gray-900 dark:text-white text-sm">{domain.nom}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-2">{qc.nom}</div>
-          {/* Barre de maturité automatique */}
-          <div className="flex items-center gap-2">
-            <div className="flex gap-0.5 flex-1">
-              {[1,2,3,4,5].map(lvl => (
-                <div
-                  key={lvl}
-                  className="h-2 flex-1 rounded-sm transition-all duration-500"
-                  style={{ backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#e5e7eb' }}
-                />
-              ))}
-            </div>
-            <span className="text-xs font-semibold flex-shrink-0" style={{ color: maturity.color, minWidth: 80 }}>
-              {score > 0 ? `${score}/5 · ${maturity.label}` : maturity.label}
-            </span>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{qc.nom}</div>
+        </div>
+        {/* Cercles de maturité + badge (style app.sensetho.fr) */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {[1,2,3,4,5].map(lvl => (
+            <div
+              key={lvl}
+              className="w-3.5 h-3.5 rounded-full transition-all duration-500"
+              style={{ backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#d1d5db' }}
+            />
+          ))}
+          <div
+            className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ml-1 flex-shrink-0"
+            style={{ backgroundColor: score > 0 ? maturity.color : '#6b7280' }}
+          >
+            {score}
           </div>
         </div>
-        <svg className={`flex-shrink-0 w-4 h-4 text-gray-400 transition-transform mt-1 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+        <svg className={`flex-shrink-0 w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
       </button>
       {isExpanded && (
         <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
@@ -622,36 +623,38 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
           {selectedOdd && selectedMeta && selectedNum !== null && (
             <div className="space-y-4">
               <div className="rounded-xl p-5 text-white" style={{ backgroundColor: selectedMeta.couleur }}>
+                {/* Ligne principale : image + titre + % couverture */}
                 <div className="flex items-start gap-4">
                   <img
                     src={oddImgSrc(selectedNum)}
                     alt={`ODD ${selectedNum}`}
-                    className="w-16 h-16 rounded-lg object-cover flex-shrink-0 shadow-md"
+                    className="w-20 h-20 rounded-lg object-cover flex-shrink-0 shadow-md"
                   />
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium uppercase tracking-wide opacity-80 mb-1">ODD {selectedNum}</div>
-                    <h2 className="text-xl font-bold mb-2">{selectedMeta.nom}</h2>
+                    <h2 className="text-xl font-bold mb-1">{selectedMeta.nom}</h2>
                     <p className="text-sm opacity-90 leading-relaxed">{selectedMeta.description}</p>
                   </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-white/20">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="font-semibold">{oddCoverage[selectedOdd]?.evaluated ?? 0}</span>
-                      <span className="opacity-80">/ {ODD_MAPPING[selectedOdd].length} domaine{ODD_MAPPING[selectedOdd].length > 1 ? 's' : ''} évalués</span>
-                    </div>
-                    <div className="text-2xl font-bold">
+                  <div className="flex-shrink-0 text-right">
+                    <div className="text-4xl font-bold leading-none">
                       {oddCoverage[selectedOdd]?.total > 0
                         ? Math.round((oddCoverage[selectedOdd].evaluated / oddCoverage[selectedOdd].total) * 100)
                         : 0}%
-                      <span className="text-sm font-normal opacity-70 ml-1">couverture</span>
                     </div>
+                    <div className="text-sm opacity-70 mt-0.5">couverture</div>
                   </div>
-                  <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden">
+                </div>
+                {/* Barre de progression + texte */}
+                <div className="mt-4 pt-4 border-t border-white/20">
+                  <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden mb-2">
                     <div
                       className="h-full bg-white rounded-full transition-all duration-500"
                       style={{ width: `${oddCoverage[selectedOdd]?.total > 0 ? Math.round((oddCoverage[selectedOdd].evaluated / oddCoverage[selectedOdd].total) * 100) : 0}%` }}
                     />
+                  </div>
+                  <div className="text-sm opacity-80">
+                    <span className="font-semibold text-white">{oddCoverage[selectedOdd]?.evaluated ?? 0}</span>
+                    {' / '}{ODD_MAPPING[selectedOdd].length} domaine{ODD_MAPPING[selectedOdd].length > 1 ? 's' : ''} évalués
                   </div>
                 </div>
               </div>
