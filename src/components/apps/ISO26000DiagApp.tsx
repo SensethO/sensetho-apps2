@@ -350,6 +350,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const [noteMap, setNoteMap]         = useState<Record<string, unknown[]>>({})
   const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
   const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
+  const [expandedNoteKey, setExpandedNoteKey] = useState<string | null>(null)
   const notesSaveTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -873,6 +874,9 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
 
   // ── VUE QUESTIONNAIRE ─────────────────────────────────────────────────────
   const activeDomain = selectedDomain ?? QC_LIST[0].domaines[0]
+  // Fermer les notes quand on change de domaine
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setExpandedNoteKey(null) }, [activeDomain.id])
   const activeQc     = QC_LIST.find(qc => qc.domaines.some(d => d.id === activeDomain.id))!
   const domainScore  = scores[activeDomain.id] ?? 0
   const suggested    = computeSuggestedScore(activeDomain, actionProgress, actionNa)
@@ -978,12 +982,21 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
               const noteKey = `${activeDomain.id}_action_${i}`
               const prog = actionProgress[key] ?? 0
               const isNa = actionNa[key] ?? false
+              const noteOpen = expandedNoteKey === noteKey
               return (
                 <div key={key} className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                   <div className={`space-y-2 px-3 py-2 ${isNa ? 'opacity-40' : ''}`} style={{ backgroundColor: 'var(--bg)' }}>
                     <div className="flex items-start gap-2">
                       <span className="flex-shrink-0 mt-0.5 text-green-500 font-bold text-xs">✓</span>
                       <div className="flex-1 text-xs leading-relaxed font-medium" style={{ color: 'var(--text)' }}>{action}</div>
+                      <button
+                        onClick={() => setExpandedNoteKey(prev => prev === noteKey ? null : noteKey)}
+                        className="flex-shrink-0 text-[11px] px-1.5 py-0.5 rounded transition-colors"
+                        title={noteOpen ? 'Fermer notes' : 'Notes & documents'}
+                        style={{ color: noteOpen ? 'var(--accent, #6366f1)' : 'var(--text-muted)' }}
+                      >
+                        {noteOpen ? '▼' : '▶'}
+                      </button>
                       <label className="flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
                         <input type="checkbox" checked={isNa} onChange={e => isOwner && setActionNa(key, e.target.checked)} className="w-3 h-3" />
                         N/A
@@ -998,23 +1011,25 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
                       </div>
                     )}
                   </div>
-                  <div className="px-3 pb-3 pt-2">
-                    <ISO26000NotePanel
-                      apiBase="/api/iso26000-diagnostic"
-                      noteTable="iso26000_action_notes"
-                      diagnosticId={diagnostic.id}
-                      actionKey={noteKey}
-                      readOnly={!isOwner}
-                      note={noteTextMap[noteKey] ?? ''}
-                      onNoteChange={v => {
-                        setNoteTextMap(prev => ({ ...prev, [noteKey]: v }))
-                        saveNoteText(noteKey, v)
-                      }}
-                      initialSections={(noteMap[noteKey] as import('./GuidedActionNotePanel').NoteSection[]) ?? []}
-                      notesRemoteVersion={notesRemoteVersion}
-                      onSectionsChange={s => setNoteMap(prev => ({ ...prev, [noteKey]: s }))}
-                    />
-                  </div>
+                  {noteOpen && (
+                    <div className="px-3 pb-3 pt-2">
+                      <ISO26000NotePanel
+                        apiBase="/api/iso26000-diagnostic"
+                        noteTable="iso26000_action_notes"
+                        diagnosticId={diagnostic.id}
+                        actionKey={noteKey}
+                        readOnly={!isOwner}
+                        note={noteTextMap[noteKey] ?? ''}
+                        onNoteChange={v => {
+                          setNoteTextMap(prev => ({ ...prev, [noteKey]: v }))
+                          saveNoteText(noteKey, v)
+                        }}
+                        initialSections={(noteMap[noteKey] as import('./GuidedActionNotePanel').NoteSection[]) ?? []}
+                        notesRemoteVersion={notesRemoteVersion}
+                        onSectionsChange={s => setNoteMap(prev => ({ ...prev, [noteKey]: s }))}
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1031,25 +1046,35 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
                 <li key={i} className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                   <div className="flex items-start gap-2 px-3 py-2" style={{ backgroundColor: 'var(--bg)' }}>
                     <span className="flex-shrink-0 mt-0.5 font-bold text-xs" style={{ color: 'var(--accent, #6366f1)' }}>→</span>
-                    <span className="text-xs leading-relaxed" style={{ color: 'var(--text)' }}>{kpi}</span>
+                    <span className="flex-1 text-xs leading-relaxed" style={{ color: 'var(--text)' }}>{kpi}</span>
+                    <button
+                      onClick={() => setExpandedNoteKey(prev => prev === kpiKey ? null : kpiKey)}
+                      className="flex-shrink-0 text-[11px] px-1.5 py-0.5 rounded transition-colors"
+                      title={expandedNoteKey === kpiKey ? 'Fermer notes' : 'Notes & documents'}
+                      style={{ color: expandedNoteKey === kpiKey ? 'var(--accent, #6366f1)' : 'var(--text-muted)' }}
+                    >
+                      {expandedNoteKey === kpiKey ? '▼' : '▶'}
+                    </button>
                   </div>
-                  <div className="px-3 pb-3 pt-2">
-                    <ISO26000NotePanel
-                      apiBase="/api/iso26000-diagnostic"
-                      noteTable="iso26000_action_notes"
-                      diagnosticId={diagnostic.id}
-                      actionKey={kpiKey}
-                      readOnly={!isOwner}
-                      note={noteTextMap[kpiKey] ?? ''}
-                      onNoteChange={v => {
-                        setNoteTextMap(prev => ({ ...prev, [kpiKey]: v }))
-                        saveNoteText(kpiKey, v)
-                      }}
-                      initialSections={(noteMap[kpiKey] as import('./GuidedActionNotePanel').NoteSection[]) ?? []}
-                      notesRemoteVersion={notesRemoteVersion}
-                      onSectionsChange={s => setNoteMap(prev => ({ ...prev, [kpiKey]: s }))}
-                    />
-                  </div>
+                  {expandedNoteKey === kpiKey && (
+                    <div className="px-3 pb-3 pt-2">
+                      <ISO26000NotePanel
+                        apiBase="/api/iso26000-diagnostic"
+                        noteTable="iso26000_action_notes"
+                        diagnosticId={diagnostic.id}
+                        actionKey={kpiKey}
+                        readOnly={!isOwner}
+                        note={noteTextMap[kpiKey] ?? ''}
+                        onNoteChange={v => {
+                          setNoteTextMap(prev => ({ ...prev, [kpiKey]: v }))
+                          saveNoteText(kpiKey, v)
+                        }}
+                        initialSections={(noteMap[kpiKey] as import('./GuidedActionNotePanel').NoteSection[]) ?? []}
+                        notesRemoteVersion={notesRemoteVersion}
+                        onSectionsChange={s => setNoteMap(prev => ({ ...prev, [kpiKey]: s }))}
+                      />
+                    </div>
+                  )}
                 </li>
               )
             })}

@@ -272,6 +272,10 @@ function DomainCard({
   const { qc, domain } = entry
   const pilier = PILIER_STYLES[qc.pilier]
   const isExpanded = expandedId === domain.id
+  const [expandedNoteAction, setExpandedNoteAction] = useState<string | null>(null)
+
+  // Reset note panel when domain collapses
+  useEffect(() => { if (!isExpanded) setExpandedNoteAction(null) }, [isExpanded])
 
   // Maturity bar (score 0-5, aligné ISO 26000)
   const MATURITY_LEVELS = [
@@ -363,13 +367,24 @@ function DomainCard({
               <ul className="space-y-3">
                 {domain.actions.map((action, i) => {
                   const actionKey = `${domain.id}_action_${i}`
+                  const noteOpen = expandedNoteAction === actionKey
                   return (
                     <li key={i} className="rounded-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
                       <div className="flex items-start gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700/40">
                         <span className="flex-shrink-0 mt-0.5 text-green-500 font-bold text-xs">✓</span>
-                        <span className="text-xs text-gray-700 dark:text-gray-200 font-medium leading-relaxed">{action}</span>
+                        <span className="flex-1 text-xs text-gray-700 dark:text-gray-200 font-medium leading-relaxed">{action}</span>
+                        {diagId && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setExpandedNoteAction(prev => prev === actionKey ? null : actionKey) }}
+                            className="flex-shrink-0 text-[11px] px-1.5 py-0.5 rounded transition-colors"
+                            title={noteOpen ? 'Fermer notes' : 'Notes & documents'}
+                            style={{ color: noteOpen ? '#6366f1' : '#9ca3af' }}
+                          >
+                            {noteOpen ? '▼' : '▶'}
+                          </button>
+                        )}
                       </div>
-                      {diagId && (
+                      {diagId && noteOpen && (
                         <div className="px-3 pb-3 pt-2">
                           <ODDNotePanel
                             apiBase="/api/iso26000-diagnostic"
