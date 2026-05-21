@@ -202,7 +202,7 @@ function StatsBar() {
 
 // ─── ODD pictogram helper ─────────────────────────────────────────────────────
 function oddImgSrc(num: number) {
-  return `https://sdgs.un.org/sites/default/files/2019-01/E-WEB-Goal-${String(num).padStart(2, '0')}.png`
+  return `https://sdgs.un.org/sites/default/files/goals/E_SDG_Icons-${String(num).padStart(2, '0')}.jpg`
 }
 
 // ─── ODD Card ─────────────────────────────────────────────────────────────────
