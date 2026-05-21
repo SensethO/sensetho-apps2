@@ -365,7 +365,19 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
       const j = await res.json()
       if (j.data) {
         setDiag(j.data); setIsOwner(j.isOwner ?? true)
-        setLoading(false); return
+        setLoading(false)
+        // Sync au chargement : récupère les scores guidés vers iso26000 pour les 13 domaines partagés
+        fetch('/api/sync-diagnostic-scores', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_id: org!.id, year, source: 'guided' }),
+        }).then(r => r.json()).then(sync => {
+          if ((sync.synced ?? 0) > 0) {
+            fetch(`/api/iso26000-diagnostic?org_id=${org!.id}&year=${year}`)
+              .then(r => r.json()).then(fresh => { if (fresh.data) setDiag(fresh.data) })
+              .catch(() => {})
+          }
+        }).catch(() => {})
+        return
       }
       // Create
       const cr = await fetch('/api/iso26000-diagnostic', {
