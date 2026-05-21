@@ -471,7 +471,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         setDiagId(j.data.id)
         setDiagScores(j.data.scores ?? {})
       } else {
-        // Create if doesn't exist
+        // Créer si inexistant
         const cr = await fetch('/api/iso26000-diagnostic', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ org_id: org!.id, year }),
@@ -479,6 +479,19 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         const cj = await cr.json()
         if (cj.data) { setDiagId(cj.data.id); setDiagScores(cj.data.scores ?? {}) }
       }
+      // Sync au chargement : récupère les scores du diagnostic guidé vers iso26000
+      fetch('/api/sync-diagnostic-scores', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: org!.id, year, source: 'guided' }),
+      }).then(r => r.json()).then(sync => {
+        // Si des domaines ont été synchés, recharger les scores
+        if ((sync.synced ?? 0) > 0) {
+          fetch(`/api/iso26000-diagnostic?org_id=${org!.id}&year=${year}`)
+            .then(r => r.json()).then(fresh => {
+              if (fresh.data?.scores) setDiagScores(fresh.data.scores)
+            }).catch(() => {})
+        }
+      }).catch(() => {})
     }
     load()
   }, [org, year])
@@ -487,17 +500,30 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   useEffect(() => {
     if (!diagId) return
     const supabase = createClient()
+    let realtimeOk = false
+
     const channel = supabase
       .channel(`odd_diag_scores_${diagId}`)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'iso26000_diagnostics',
         filter: `id=eq.${diagId}`,
       }, (payload: { new: Record<string, unknown> }) => {
+        realtimeOk = true
         const updated = payload.new as { scores?: Record<string, number> }
         if (updated.scores) setDiagScores(updated.scores)
       })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
+      .subscribe((status: string) => { if (status === 'SUBSCRIBED') realtimeOk = true })
+
+    // Polling fallback si Realtime KO (toutes les 4s)
+    const poll = setInterval(() => {
+      if (realtimeOk) return
+      fetch(`/api/iso26000-diagnostic/${diagId}`)
+        .then(r => r.json())
+        .then(j => { if (j.data?.scores) setDiagScores(j.data.scores) })
+        .catch(() => {})
+    }, 4000)
+
+    return () => { supabase.removeChannel(channel); clearInterval(poll) }
   }, [diagId])
 
   useEffect(() => {
