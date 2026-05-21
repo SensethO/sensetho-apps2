@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import ViewTabs from '@/components/rse/ViewTabs'
 import type { RseContext } from '@/components/rse/RseAppShell'
+const ODDNotePanel = dynamic(() => import('./GuidedActionNotePanel'), { ssr: false, loading: () => null })
 
 // ─── Données ISO 26000 (source de vérité locale) ─────────────────────────────
 
@@ -217,7 +219,22 @@ function OddCard({ oddKey, selected, onClick }: { oddKey: string; selected: bool
 }
 
 // ─── Domain Card ──────────────────────────────────────────────────────────────
-function DomainCard({ entry, expandedId, onToggle }: { entry: MappingEntry; expandedId: string | null; onToggle: (id: string) => void }) {
+function DomainCard({
+  entry, expandedId, onToggle,
+  diagId, domainScore, noteText, noteSections, notesRemoteVersion,
+  onNoteChange, onSectionsChange,
+}: {
+  entry: MappingEntry
+  expandedId: string | null
+  onToggle: (id: string) => void
+  diagId?: string | null
+  domainScore?: number
+  noteText?: string
+  noteSections?: unknown[]
+  notesRemoteVersion?: number
+  onNoteChange?: (v: string) => void
+  onSectionsChange?: (s: unknown[]) => void
+}) {
   const { qc, domain } = entry
   const pilier = PILIER_STYLES[qc.pilier]
   const isExpanded = expandedId === domain.id
@@ -229,6 +246,9 @@ function DomainCard({ entry, expandedId, onToggle }: { entry: MappingEntry; expa
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${pilier.bg} ${pilier.text}`}>{pilier.label}</span>
             <span className="text-xs text-gray-400 dark:text-gray-500">{domain.isoRef}</span>
+            {domainScore !== undefined && domainScore > 0 && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">{domainScore}/4</span>
+            )}
           </div>
           <div className="font-semibold text-gray-900 dark:text-white text-sm">{domain.nom}</div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{qc.nom}</div>
@@ -258,6 +278,23 @@ function DomainCard({ entry, expandedId, onToggle }: { entry: MappingEntry; expa
                 ))}
                 {domain.actions.length > 4 && <li className="text-xs text-gray-400 ml-4">+{domain.actions.length - 4} autres actions…</li>}
               </ul>
+            </div>
+          )}
+          {diagId && (
+            <div className="mt-3 border-t border-gray-100 dark:border-gray-700 pt-3">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes & documents</div>
+              <ODDNotePanel
+                apiBase="/api/iso26000-diagnostic"
+                noteTable="iso26000_action_notes"
+                diagnosticId={diagId}
+                actionKey={`domain_${domain.id}`}
+                readOnly={false}
+                note={noteText ?? ''}
+                onNoteChange={v => onNoteChange?.(v)}
+                initialSections={(noteSections ?? []) as import('./GuidedActionNotePanel').NoteSection[]}
+                notesRemoteVersion={notesRemoteVersion ?? 0}
+                onSectionsChange={s => onSectionsChange?.(s)}
+              />
             </div>
           )}
         </div>
@@ -313,12 +350,66 @@ function MatrixView({ onOddSelect }: { onOddSelect: (odd: string) => void }) {
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function ODDExplorerApp({ ctx: _ctx }: { ctx: RseContext }) {
+export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   const [view, setView]                 = useState<OddView>('intro')
   const [selectedOdd, setSelectedOdd]   = useState<string | null>(null)
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null)
   const [pilierFilter, setPilierFilter] = useState<'all' | 'G' | 'E' | 'S'>('all')
+
+  const { org, year } = ctx
+  const [diagId, setDiagId] = useState<string | null>(null)
+  const [diagScores, setDiagScores] = useState<Record<string, number>>({})
+  const [noteMap, setNoteMap] = useState<Record<string, unknown[]>>({})
+  const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
+  const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
+  const notesSaveTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+
+  useEffect(() => {
+    if (!org || !year) { setDiagId(null); setDiagScores({}); return }
+    async function load() {
+      const res = await fetch(`/api/iso26000-diagnostic?org_id=${org!.id}&year=${year}`)
+      const j = await res.json()
+      if (j.data) {
+        setDiagId(j.data.id)
+        setDiagScores(j.data.scores ?? {})
+      } else {
+        // Create if doesn't exist
+        const cr = await fetch('/api/iso26000-diagnostic', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_id: org!.id, year }),
+        })
+        const cj = await cr.json()
+        if (cj.data) { setDiagId(cj.data.id); setDiagScores(cj.data.scores ?? {}) }
+      }
+    }
+    load()
+  }, [org, year])
+
+  useEffect(() => {
+    if (!diagId) return
+    fetch(`/api/iso26000-diagnostic/${diagId}/notes`)
+      .then(r => r.json())
+      .then(j => {
+        if (j.data?.sections) setNoteMap(j.data.sections)
+        if (j.data?.notes) setNoteTextMap(j.data.notes)
+        setNotesRemoteVersion(v => v + 1)
+      })
+      .catch(() => {})
+  }, [diagId])
+
+  const saveNoteText = useCallback((key: string, value: string) => {
+    if (!diagId) return
+    const existing = notesSaveTimerRef.current.get(key)
+    if (existing) clearTimeout(existing)
+    const t = setTimeout(async () => {
+      await fetch(`/api/iso26000-diagnostic/${diagId}/notes`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_key: key, content: value }),
+      })
+      notesSaveTimerRef.current.delete(key)
+    }, 800)
+    notesSaveTimerRef.current.set(key, t)
+  }, [diagId])
 
   const ODD_KEYS = Array.from({ length: 17 }, (_, i) => `ODD${i + 1}`)
 
@@ -470,7 +561,22 @@ export default function ODDExplorerApp({ ctx: _ctx }: { ctx: RseContext }) {
                 <div className="space-y-3">
                   <div className="text-sm text-gray-500">{filteredEntries.length} domaine{filteredEntries.length > 1 ? 's' : ''} d&apos;action · Cliquez pour développer</div>
                   {filteredEntries.map(entry => (
-                    <DomainCard key={entry.domain.id} entry={entry} expandedId={expandedDomain} onToggle={(id) => setExpandedDomain(prev => prev === id ? null : id)} />
+                    <DomainCard
+                      key={entry.domain.id}
+                      entry={entry}
+                      expandedId={expandedDomain}
+                      onToggle={(id) => setExpandedDomain(prev => prev === id ? null : id)}
+                      diagId={diagId}
+                      domainScore={diagScores[entry.domain.id]}
+                      noteText={noteTextMap[`domain_${entry.domain.id}`]}
+                      noteSections={noteMap[`domain_${entry.domain.id}`] as unknown[]}
+                      notesRemoteVersion={notesRemoteVersion}
+                      onNoteChange={v => {
+                        setNoteTextMap(prev => ({ ...prev, [`domain_${entry.domain.id}`]: v }))
+                        saveNoteText(`domain_${entry.domain.id}`, v)
+                      }}
+                      onSectionsChange={s => setNoteMap(prev => ({ ...prev, [`domain_${entry.domain.id}`]: s as unknown[] }))}
+                    />
                   ))}
                 </div>
               ) : (

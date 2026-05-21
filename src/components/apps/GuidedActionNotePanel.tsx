@@ -208,9 +208,9 @@ function fmtSize(bytes: number): string {
 
 // ─── getSignedUrl ──────────────────────────────────────────────────────────────
 
-async function getSignedUrl(diagnosticId: string, spItemId: string): Promise<string> {
+async function getSignedUrl(apiBase: string, diagnosticId: string, spItemId: string): Promise<string> {
   const res = await fetch(
-    `/api/guided-diagnostic/${diagnosticId}/notes/signed-url?item_id=${encodeURIComponent(spItemId)}`
+    `${apiBase}/${diagnosticId}/notes/signed-url?item_id=${encodeURIComponent(spItemId)}`
   )
   if (!res.ok) throw new Error('Impossible de générer le lien')
   const { url } = await res.json()
@@ -222,9 +222,11 @@ async function getSignedUrl(diagnosticId: string, spItemId: string): Promise<str
 function DownloadAllButton({
   attachments,
   diagnosticId,
+  apiBase,
 }: {
   attachments: AttachmentMeta[]
   diagnosticId: string
+  apiBase: string
 }) {
   const [downloading, setDownloading] = useState(false)
   const [done, setDone] = useState(0)
@@ -235,7 +237,7 @@ function DownloadAllButton({
     try {
       for (const att of attachments) {
         try {
-          const url = await getSignedUrl(diagnosticId, att.path)
+          const url = await getSignedUrl(apiBase, diagnosticId, att.path)
           const a = document.createElement('a')
           a.href = url
           a.download = att.name
@@ -277,6 +279,7 @@ function AttachmentItem({
   onDelete,
   onRename,
   readOnly,
+  apiBase,
 }: {
   att: AttachmentMeta
   diagnosticId: string
@@ -284,6 +287,7 @@ function AttachmentItem({
   onDelete: () => void
   onRename?: (newName: string) => void
   readOnly: boolean
+  apiBase: string
 }) {
   const [loading, setLoading] = useState<'open' | 'download' | null>(null)
   const [editing, setEditing]   = useState(false)
@@ -313,17 +317,17 @@ function AttachmentItem({
   useEffect(() => {
     if (!isImage) return
     let cancelled = false
-    getSignedUrl(diagnosticId, att.path)
+    getSignedUrl(apiBase, diagnosticId, att.path)
       .then(url => { if (!cancelled) setThumbUrl(url) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [att.path, diagnosticId, isImage])
+  }, [att.path, diagnosticId, isImage, apiBase])
 
   // Note: pas de thumbnail vidéo (endpoint non disponible dans sensetho-apps2)
 
   async function openViewer() {
     setLoading('open')
-    try { setViewerUrl(await getSignedUrl(diagnosticId, att.path)) }
+    try { setViewerUrl(await getSignedUrl(apiBase, diagnosticId, att.path)) }
     catch (e) { alert(e instanceof Error ? e.message : 'Erreur') }
     finally { setLoading(null) }
   }
@@ -333,7 +337,7 @@ function AttachmentItem({
     if (videoUrl) { setVideoOpen(true); return }
     setVideoLoading(true)
     try {
-      const url = await getSignedUrl(diagnosticId, att.path)
+      const url = await getSignedUrl(apiBase, diagnosticId, att.path)
       setVideoUrl(url)
       setVideoOpen(true)
     } catch (e) {
@@ -346,7 +350,7 @@ function AttachmentItem({
   async function downloadFile() {
     setLoading('download')
     try {
-      const url = await getSignedUrl(diagnosticId, att.path)
+      const url = await getSignedUrl(apiBase, diagnosticId, att.path)
       const a = document.createElement('a')
       a.href = url
       a.download = att.name
@@ -374,7 +378,7 @@ function AttachmentItem({
     setRenaming(true)
     try {
       const res = await fetch(
-        `/api/guided-diagnostic/${diagnosticId}/notes/attachment?attachment_id=${encodeURIComponent(att.id)}`,
+        `${apiBase}/${diagnosticId}/notes/attachment?attachment_id=${encodeURIComponent(att.id)}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -593,6 +597,7 @@ function SectionEditor({
   onChange,
   onDelete,
   readOnly,
+  apiBase,
 }: {
   section: NoteSection
   index: number
@@ -603,6 +608,7 @@ function SectionEditor({
   onChange: (updated: NoteSection) => void
   onDelete: () => void
   readOnly: boolean
+  apiBase: string
 }) {
   const initialized = useRef(false)
   void initialized // suppress unused warning
@@ -643,7 +649,7 @@ function SectionEditor({
 
         // Étape 1 : obtenir la session d'upload SharePoint
         const sessionRes = await fetch(
-          `/api/guided-diagnostic/${diagnosticId}/notes/upload-session`,
+          `${apiBase}/${diagnosticId}/notes/upload-session`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -683,7 +689,7 @@ function SectionEditor({
 
         // Étape 3 : confirmer l'enregistrement DB
         const confirmRes = await fetch(
-          `/api/guided-diagnostic/${diagnosticId}/notes/upload-confirm`,
+          `${apiBase}/${diagnosticId}/notes/upload-confirm`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -724,7 +730,7 @@ function SectionEditor({
   async function deleteAttachment(att: AttachmentMeta) {
     try {
       await fetch(
-        `/api/guided-diagnostic/${diagnosticId}/notes/attachment?attachment_id=${encodeURIComponent(att.id)}`,
+        `${apiBase}/${diagnosticId}/notes/attachment?attachment_id=${encodeURIComponent(att.id)}`,
         { method: 'DELETE' }
       )
       onChange({
@@ -805,6 +811,7 @@ function SectionEditor({
               <DownloadAllButton
                 attachments={section.attachments}
                 diagnosticId={diagnosticId}
+                apiBase={apiBase}
               />
             )}
             {section.attachments.map(att => (
@@ -823,6 +830,7 @@ function SectionEditor({
                   })
                 } : undefined}
                 readOnly={readOnly}
+                apiBase={apiBase}
               />
             ))}
           </div>
@@ -885,6 +893,10 @@ interface Props {
   onSectionsChange: (sections: NoteSection[]) => void
   /** Prefix used for annexe refs. Default: 'A' */
   refPrefix?: string
+  /** API base path (without trailing slash). Default: '/api/guided-diagnostic' */
+  apiBase?: string
+  /** Supabase table name for Realtime subscription. Default: 'guided_action_notes' */
+  noteTable?: string
 }
 
 function newSection(): NoteSection {
@@ -914,6 +926,8 @@ export default function GuidedActionNotePanel({
   notesRemoteVersion,
   onSectionsChange,
   refPrefix = 'A',
+  apiBase = '/api/guided-diagnostic',
+  noteTable = 'guided_action_notes',
 }: Props) {
   const [sections, setSections] = useState<NoteSection[]>(() =>
     initialSections.length > 0 ? initialSections : [newSection()]
@@ -953,7 +967,7 @@ export default function GuidedActionNotePanel({
         {
           event:  '*',
           schema: 'public',
-          table:  'guided_action_notes',
+          table:  noteTable,
           filter: `diagnostic_id=eq.${diagnosticId}`,
         },
         (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
@@ -986,7 +1000,7 @@ export default function GuidedActionNotePanel({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await fetch(`/api/guided-diagnostic/${diagnosticId}/notes`, {
+        await fetch(`${apiBase}/${diagnosticId}/notes`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action_key: actionKey, sections: newSections }),
@@ -996,7 +1010,7 @@ export default function GuidedActionNotePanel({
         saveTimerRef.current = null
       }
     }, 800)
-  }, [diagnosticId, actionKey, readOnly])
+  }, [diagnosticId, actionKey, readOnly, apiBase])
 
   // Computed: does this action have any saved content?
   const totalAttachments = sections.reduce((n, s) => n + s.attachments.length, 0)
@@ -1091,6 +1105,7 @@ export default function GuidedActionNotePanel({
             onChange={updated => handleSectionChange(i, updated)}
             onDelete={() => deleteSection(i)}
             readOnly={readOnly}
+            apiBase={apiBase}
           />
         ))}
 

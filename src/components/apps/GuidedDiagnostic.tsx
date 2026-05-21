@@ -770,10 +770,17 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         })
         setSaveStatus('saved')
         setTimeout(() => setSaveStatus('idle'), 2000)
+        // Sync overlapping domain scores to iso26000_diagnostics
+        if (org && year) {
+          fetch('/api/sync-diagnostic-scores', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ org_id: org.id, year, source: 'guided' }),
+          }).catch(() => {})
+        }
       } catch { setSaveStatus('idle') }
       finally { diagSavePending.current = false }
     }, 700)
-  }, [diagnostic])
+  }, [diagnostic, org, year])
 
   function setScore(domainId: string, score: number) {
     const s = { ...scores, [domainId]: score }

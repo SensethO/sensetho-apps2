@@ -13,6 +13,12 @@ const ISO26000AnnexesModal = dynamic(
   { ssr: false, loading: () => null },
 )
 
+// ── Lazy note panel
+const ISO26000NotePanel = dynamic(
+  () => import('./GuidedActionNotePanel'),
+  { ssr: false, loading: () => null },
+)
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface DiagnosticRecord {
@@ -341,10 +347,10 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const [showShare, setShowShare]   = useState(false)
   const [showAnnexes, setShowAnnexes] = useState(false)
   const [generatingAI, setGenAI]    = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [noteMap, setNoteMap]       = useState<Record<string, unknown[]>>({})
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [noteMap, setNoteMap]         = useState<Record<string, unknown[]>>({})
   const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
+  const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
+  const notesSaveTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // ── Load / create diagnostic ───────────────────────────────────────────────
@@ -404,6 +410,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
       .then(j => {
       if (j.data?.sections) setNoteMap(j.data.sections)
       if (j.data?.notes)    setNoteTextMap(j.data.notes)
+      setNotesRemoteVersion(v => v + 1)
     })
       .catch(() => { /* */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -421,7 +428,29 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
       })
       setSave(res.ok ? 'saved' : 'error')
       setTimeout(() => setSave('idle'), 2000)
+      // Sync overlapping domain scores to guided_diagnostics
+      if (patch.scores && org && year) {
+        fetch('/api/sync-diagnostic-scores', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_id: org.id, year, source: 'iso26000' }),
+        }).catch(() => {})
+      }
     }, 800)
+  }, [diagnostic, isOwner, org, year])
+
+  const saveNoteText = useCallback((key: string, value: string) => {
+    if (!diagnostic || !isOwner) return
+    const existing = notesSaveTimerRef.current.get(key)
+    if (existing) clearTimeout(existing)
+    const t = setTimeout(async () => {
+      await fetch(`/api/iso26000-diagnostic/${diagnostic.id}/notes`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_key: key, content: value }),
+      })
+      notesSaveTimerRef.current.delete(key)
+    }, 800)
+    notesSaveTimerRef.current.set(key, t)
   }, [diagnostic, isOwner])
 
   const setScore = useCallback((domainId: string, score: number) => {
@@ -989,6 +1018,27 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           </div>
         )}
 
+        {/* Notes du domaine */}
+        <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+          <div className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>📝 Notes & documents</span>
+          </div>
+          <ISO26000NotePanel
+            apiBase="/api/iso26000-diagnostic"
+            noteTable="iso26000_action_notes"
+            diagnosticId={diagnostic.id}
+            actionKey={`domain_${activeDomain.id}`}
+            readOnly={!isOwner}
+            note={noteTextMap[`domain_${activeDomain.id}`] ?? ''}
+            onNoteChange={v => {
+              setNoteTextMap(prev => ({ ...prev, [`domain_${activeDomain.id}`]: v }))
+              saveNoteText(`domain_${activeDomain.id}`, v)
+            }}
+            initialSections={(noteMap[`domain_${activeDomain.id}`] as import('./GuidedActionNotePanel').NoteSection[]) ?? []}
+            notesRemoteVersion={notesRemoteVersion}
+            onSectionsChange={s => setNoteMap(prev => ({ ...prev, [`domain_${activeDomain.id}`]: s }))}
+          />
+        </div>
 
         {/* Bottom export */}
         <div className="flex gap-2 pt-2">
