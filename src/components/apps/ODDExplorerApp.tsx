@@ -264,16 +264,17 @@ function DomainCard({
   const pilier = PILIER_STYLES[qc.pilier]
   const isExpanded = expandedId === domain.id
 
-  // Maturity bar (score 0-4)
+  // Maturity bar (score 0-5, aligné ISO 26000)
   const MATURITY_LEVELS = [
     { label: 'Non évalué', color: '#9ca3af' },
-    { label: 'Inexistant',    color: '#ef4444' },
-    { label: 'Initié',        color: '#f97316' },
-    { label: 'En dév.',       color: '#eab308' },
-    { label: 'Maîtrisé',      color: '#22c55e' },
+    { label: 'Inexistant',  color: '#ef4444' },
+    { label: 'Initié',      color: '#f97316' },
+    { label: 'En dév.',     color: '#eab308' },
+    { label: 'Maîtrisé',   color: '#22c55e' },
+    { label: 'Exemplaire',  color: '#0ea5e9' },
   ]
   const score = domainScore ?? 0
-  const maturity = MATURITY_LEVELS[Math.min(score, 4)]
+  const maturity = MATURITY_LEVELS[Math.min(score, 5)]
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800">
@@ -289,7 +290,7 @@ function DomainCard({
           {/* Barre de maturité automatique */}
           <div className="flex items-center gap-2">
             <div className="flex gap-0.5 flex-1">
-              {[1,2,3,4].map(lvl => (
+              {[1,2,3,4,5].map(lvl => (
                 <div
                   key={lvl}
                   className="h-2 flex-1 rounded-sm transition-all duration-500"
@@ -297,8 +298,8 @@ function DomainCard({
                 />
               ))}
             </div>
-            <span className="text-xs font-semibold flex-shrink-0" style={{ color: maturity.color, minWidth: 72 }}>
-              {score > 0 ? `${score}/4 · ${maturity.label}` : maturity.label}
+            <span className="text-xs font-semibold flex-shrink-0" style={{ color: maturity.color, minWidth: 80 }}>
+              {score > 0 ? `${score}/5 · ${maturity.label}` : maturity.label}
             </span>
           </div>
         </div>
@@ -633,9 +634,25 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                     <p className="text-sm opacity-90 leading-relaxed">{selectedMeta.description}</p>
                   </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-white/20 flex items-center gap-2 text-sm">
-                  <span className="font-semibold">{ODD_MAPPING[selectedOdd].length}</span>
-                  <span className="opacity-80">domaine{ODD_MAPPING[selectedOdd].length > 1 ? 's' : ''} ISO 26000 contribue{ODD_MAPPING[selectedOdd].length > 1 ? 'nt' : ''} à cet objectif</span>
+                <div className="mt-4 pt-4 border-t border-white/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-semibold">{oddCoverage[selectedOdd]?.evaluated ?? 0}</span>
+                      <span className="opacity-80">/ {ODD_MAPPING[selectedOdd].length} domaine{ODD_MAPPING[selectedOdd].length > 1 ? 's' : ''} évalués</span>
+                    </div>
+                    <div className="text-2xl font-bold">
+                      {oddCoverage[selectedOdd]?.total > 0
+                        ? Math.round((oddCoverage[selectedOdd].evaluated / oddCoverage[selectedOdd].total) * 100)
+                        : 0}%
+                      <span className="text-sm font-normal opacity-70 ml-1">couverture</span>
+                    </div>
+                  </div>
+                  <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-white rounded-full transition-all duration-500"
+                      style={{ width: `${oddCoverage[selectedOdd]?.total > 0 ? Math.round((oddCoverage[selectedOdd].evaluated / oddCoverage[selectedOdd].total) * 100) : 0}%` }}
+                    />
+                  </div>
                 </div>
               </div>
 
