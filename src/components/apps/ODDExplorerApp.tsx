@@ -255,7 +255,7 @@ function OddCard({
 function DomainCard({
   entry, expandedId, onToggle,
   diagId, domainScore, noteTextMap, noteMap, notesRemoteVersion,
-  onNoteChange, onSectionsChange,
+  onNoteChange, onSectionsChange, onScoreChange,
 }: {
   entry: MappingEntry
   expandedId: string | null
@@ -267,6 +267,7 @@ function DomainCard({
   notesRemoteVersion?: number
   onNoteChange?: (key: string, v: string) => void
   onSectionsChange?: (key: string, s: unknown[]) => void
+  onScoreChange?: (domainId: string, score: number) => void
 }) {
   const { qc, domain } = entry
   const pilier = PILIER_STYLES[qc.pilier]
@@ -316,7 +317,32 @@ function DomainCard({
       </button>
       {isExpanded && (
         <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
-          <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">{domain.description}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">{domain.description}</p>
+
+          {/* ── Sélecteur niveau de maturité ────────────────────────────────── */}
+          {diagId && (
+            <div className="mb-4">
+              <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
+                Niveau de maturité
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {MATURITY_LEVELS.map((lvl, idx) => (
+                  <button
+                    key={idx}
+                    onClick={e => { e.stopPropagation(); onScoreChange?.(domain.id, idx) }}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all border-2 hover:opacity-90"
+                    style={
+                      score === idx
+                        ? { backgroundColor: lvl.color, borderColor: lvl.color, color: 'white' }
+                        : { backgroundColor: 'transparent', borderColor: '#d1d5db', color: '#6b7280' }
+                    }
+                  >
+                    {idx} — {lvl.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mb-3">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Autres ODD couverts</div>
             <div className="flex flex-wrap gap-1.5">
@@ -433,6 +459,8 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
   const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
   const notesSaveTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const scoreTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const diagScoresRef    = useRef<Record<string, number>>({})
 
   useEffect(() => {
     if (!org || !year) { setDiagId(null); setDiagScores({}); return }
@@ -483,6 +511,35 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
       })
       .catch(() => {})
   }, [diagId])
+
+  // Garde diagScoresRef synchronisé pour les closures de setTimeout
+  useEffect(() => { diagScoresRef.current = diagScores }, [diagScores])
+
+  const saveScore = useCallback((domainId: string, score: number) => {
+    if (!diagId) return
+    // Mise à jour immédiate du state local
+    setDiagScores(prev => {
+      const next = { ...prev, [domainId]: score }
+      diagScoresRef.current = next
+      return next
+    })
+    // Debounce save + sync
+    if (scoreTimerRef.current) clearTimeout(scoreTimerRef.current)
+    scoreTimerRef.current = setTimeout(async () => {
+      await fetch(`/api/iso26000-diagnostic/${diagId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scores: diagScoresRef.current }),
+      })
+      // Sync vers guided_diagnostics si domaine partagé
+      if (org?.id) {
+        fetch('/api/sync-diagnostic-scores', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_id: org.id, year, source: 'iso26000' }),
+        }).catch(() => {})
+      }
+      scoreTimerRef.current = null
+    }, 800)
+  }, [diagId, org, year])
 
   const saveNoteText = useCallback((key: string, value: string) => {
     if (!diagId) return
@@ -614,7 +671,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         <div className="space-y-6">
           <div>
             <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Sélectionnez un Objectif de Développement Durable</h2>
-            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-9 gap-2">
+            <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 gap-3">
               {ODD_KEYS.map(odd => (
                 <OddCard
                   key={odd}
@@ -685,7 +742,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
 
               {filteredEntries.length > 0 ? (
                 <div className="space-y-3">
-                  <div className="text-sm text-gray-500">{filteredEntries.length} domaine{filteredEntries.length > 1 ? 's' : ''} d&apos;action · Cliquez pour développer</div>
+                  <div className="text-sm text-gray-500">{filteredEntries.length} domaine{filteredEntries.length > 1 ? 's' : ''} d&apos;action — cliquez pour évaluer</div>
                   {filteredEntries.map(entry => (
                     <DomainCard
                       key={entry.domain.id}
@@ -702,6 +759,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                         saveNoteText(key, v)
                       }}
                       onSectionsChange={(key, s) => setNoteMap(prev => ({ ...prev, [key]: s as unknown[] }))}
+                      onScoreChange={saveScore}
                     />
                   ))}
                 </div>
