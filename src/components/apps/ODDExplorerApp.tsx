@@ -5,6 +5,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import ViewTabs from '@/components/rse/ViewTabs'
 import type { RseContext } from '@/components/rse/RseAppShell'
+import { createClient } from '@/lib/supabase/client'
 const ODDNotePanel = dynamic(() => import('./GuidedActionNotePanel'), { ssr: false, loading: () => null })
 
 // ─── Données ISO 26000 (source de vérité locale) ─────────────────────────────
@@ -206,23 +207,38 @@ function oddImgSrc(num: number) {
 }
 
 // ─── ODD Card ─────────────────────────────────────────────────────────────────
-function OddCard({ oddKey, selected, onClick }: { oddKey: string; selected: boolean; onClick: () => void }) {
+function OddCard({
+  oddKey, selected, onClick, evaluated, total,
+}: {
+  oddKey: string; selected: boolean; onClick: () => void
+  evaluated: number; total: number
+}) {
   const meta = ODD_META[oddKey]
   const num = parseInt(oddKey.replace('ODD', ''), 10)
-  const count = ODD_MAPPING[oddKey].length
+  const coveragePct = total > 0 ? Math.round((evaluated / total) * 100) : 0
   return (
     <button
       onClick={onClick}
-      className="relative flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 transition-all text-center"
-      style={{ borderColor: selected ? meta.couleur : `${meta.couleur}55`, backgroundColor: selected ? `${meta.couleur}22` : 'transparent' }}
+      className="relative flex flex-col rounded-xl border-2 transition-all overflow-hidden text-center hover:shadow-md"
+      style={{ borderColor: selected ? meta.couleur : `${meta.couleur}44`, backgroundColor: selected ? `${meta.couleur}18` : 'transparent' }}
     >
       <img
         src={oddImgSrc(num)}
         alt={`ODD ${num}`}
-        className="w-12 h-12 rounded object-cover"
+        className="w-full aspect-square object-cover"
         loading="lazy"
       />
-      <div className="text-xs opacity-80 leading-tight" style={{ color: meta.couleur }}>{count} domaine{count > 1 ? 's' : ''}</div>
+      <div className="px-1.5 pt-1 pb-1.5 flex flex-col gap-0.5">
+        <div className="w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{ width: `${coveragePct}%`, backgroundColor: meta.couleur }}
+          />
+        </div>
+        <div className="text-xs font-semibold" style={{ color: meta.couleur }}>
+          {evaluated > 0 ? `${evaluated}/${total}` : `${total} dom.`}
+        </div>
+      </div>
     </button>
   )
 }
@@ -247,6 +263,18 @@ function DomainCard({
   const { qc, domain } = entry
   const pilier = PILIER_STYLES[qc.pilier]
   const isExpanded = expandedId === domain.id
+
+  // Maturity bar (score 0-4)
+  const MATURITY_LEVELS = [
+    { label: 'Non évalué', color: '#9ca3af' },
+    { label: 'Inexistant',    color: '#ef4444' },
+    { label: 'Initié',        color: '#f97316' },
+    { label: 'En dév.',       color: '#eab308' },
+    { label: 'Maîtrisé',      color: '#22c55e' },
+  ]
+  const score = domainScore ?? 0
+  const maturity = MATURITY_LEVELS[Math.min(score, 4)]
+
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800">
       <button className="w-full flex items-start gap-3 p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors" onClick={() => onToggle(domain.id)}>
@@ -255,14 +283,26 @@ function DomainCard({
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${pilier.bg} ${pilier.text}`}>{pilier.label}</span>
             <span className="text-xs text-gray-400 dark:text-gray-500">{domain.isoRef}</span>
-            {domainScore !== undefined && domainScore > 0 && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">{domainScore}/4</span>
-            )}
           </div>
           <div className="font-semibold text-gray-900 dark:text-white text-sm">{domain.nom}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{qc.nom}</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-2">{qc.nom}</div>
+          {/* Barre de maturité automatique */}
+          <div className="flex items-center gap-2">
+            <div className="flex gap-0.5 flex-1">
+              {[1,2,3,4].map(lvl => (
+                <div
+                  key={lvl}
+                  className="h-2 flex-1 rounded-sm transition-all duration-500"
+                  style={{ backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#e5e7eb' }}
+                />
+              ))}
+            </div>
+            <span className="text-xs font-semibold flex-shrink-0" style={{ color: maturity.color, minWidth: 72 }}>
+              {score > 0 ? `${score}/4 · ${maturity.label}` : maturity.label}
+            </span>
+          </div>
         </div>
-        <svg className={`flex-shrink-0 w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+        <svg className={`flex-shrink-0 w-4 h-4 text-gray-400 transition-transform mt-1 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
       </button>
       {isExpanded && (
         <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
@@ -405,6 +445,23 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
     load()
   }, [org, year])
 
+  // Realtime subscription → scores live depuis iso26000_diagnostics
+  useEffect(() => {
+    if (!diagId) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`odd_diag_scores_${diagId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'iso26000_diagnostics',
+        filter: `id=eq.${diagId}`,
+      }, (payload: { new: Record<string, unknown> }) => {
+        const updated = payload.new as { scores?: Record<string, number> }
+        if (updated.scores) setDiagScores(updated.scores)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [diagId])
+
   useEffect(() => {
     if (!diagId) return
     fetch(`/api/iso26000-diagnostic/${diagId}/notes`)
@@ -433,8 +490,20 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
 
   const ODD_KEYS = Array.from({ length: 17 }, (_, i) => `ODD${i + 1}`)
 
-  const selectedMeta   = selectedOdd ? ODD_META[selectedOdd] : null
-  const selectedNum    = selectedOdd ? parseInt(selectedOdd.replace('ODD', ''), 10) : null
+  const selectedMeta = selectedOdd ? ODD_META[selectedOdd] : null
+  const selectedNum  = selectedOdd ? parseInt(selectedOdd.replace('ODD', ''), 10) : null
+
+  // Couverture par ODD : nb de domaines avec score > 0
+  const oddCoverage = useMemo(() => {
+    const result: Record<string, { evaluated: number; total: number }> = {}
+    for (const oddKey of ODD_KEYS) {
+      const domains = ODD_MAPPING[oddKey]
+      const evaluated = domains.filter(e => (diagScores[e.domain.id] ?? 0) > 0).length
+      result[oddKey] = { evaluated, total: domains.length }
+    }
+    return result
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagScores])
 
   const filteredEntries = useMemo(() => {
     if (!selectedOdd) return []
@@ -535,9 +604,16 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         <div className="space-y-6">
           <div>
             <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Sélectionnez un Objectif de Développement Durable</h2>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-2">
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-9 gap-2">
               {ODD_KEYS.map(odd => (
-                <OddCard key={odd} oddKey={odd} selected={selectedOdd === odd} onClick={() => handleSelectOdd(odd)} />
+                <OddCard
+                  key={odd}
+                  oddKey={odd}
+                  selected={selectedOdd === odd}
+                  onClick={() => handleSelectOdd(odd)}
+                  evaluated={oddCoverage[odd]?.evaluated ?? 0}
+                  total={oddCoverage[odd]?.total ?? 0}
+                />
               ))}
             </div>
           </div>
