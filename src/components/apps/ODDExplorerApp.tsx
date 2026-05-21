@@ -200,6 +200,11 @@ function StatsBar() {
   )
 }
 
+// ─── ODD pictogram helper ─────────────────────────────────────────────────────
+function oddImgSrc(num: number) {
+  return `https://sdgs.un.org/sites/default/files/2019-01/E-WEB-Goal-${String(num).padStart(2, '0')}.png`
+}
+
 // ─── ODD Card ─────────────────────────────────────────────────────────────────
 function OddCard({ oddKey, selected, onClick }: { oddKey: string; selected: boolean; onClick: () => void }) {
   const meta = ODD_META[oddKey]
@@ -208,12 +213,16 @@ function OddCard({ oddKey, selected, onClick }: { oddKey: string; selected: bool
   return (
     <button
       onClick={onClick}
-      className="relative flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 transition-all text-center"
-      style={{ backgroundColor: selected ? meta.couleur : `${meta.couleur}22`, borderColor: selected ? meta.couleur : 'transparent' }}
+      className="relative flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 transition-all text-center"
+      style={{ borderColor: selected ? meta.couleur : `${meta.couleur}55`, backgroundColor: selected ? `${meta.couleur}22` : 'transparent' }}
     >
-      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: meta.couleur }}>{num}</div>
-      <div className="text-xs font-medium leading-tight" style={{ color: selected ? 'white' : meta.couleur }}>{meta.nom}</div>
-      <div className="text-xs opacity-80" style={{ color: selected ? 'rgba(255,255,255,0.85)' : meta.couleur }}>{count} domaine{count > 1 ? 's' : ''}</div>
+      <img
+        src={oddImgSrc(num)}
+        alt={`ODD ${num}`}
+        className="w-12 h-12 rounded object-cover"
+        loading="lazy"
+      />
+      <div className="text-xs opacity-80 leading-tight" style={{ color: meta.couleur }}>{count} domaine{count > 1 ? 's' : ''}</div>
     </button>
   )
 }
@@ -221,7 +230,7 @@ function OddCard({ oddKey, selected, onClick }: { oddKey: string; selected: bool
 // ─── Domain Card ──────────────────────────────────────────────────────────────
 function DomainCard({
   entry, expandedId, onToggle,
-  diagId, domainScore, noteText, noteSections, notesRemoteVersion,
+  diagId, domainScore, noteTextMap, noteMap, notesRemoteVersion,
   onNoteChange, onSectionsChange,
 }: {
   entry: MappingEntry
@@ -229,11 +238,11 @@ function DomainCard({
   onToggle: (id: string) => void
   diagId?: string | null
   domainScore?: number
-  noteText?: string
-  noteSections?: unknown[]
+  noteTextMap?: Record<string, string>
+  noteMap?: Record<string, unknown[]>
   notesRemoteVersion?: number
-  onNoteChange?: (v: string) => void
-  onSectionsChange?: (s: unknown[]) => void
+  onNoteChange?: (key: string, v: string) => void
+  onSectionsChange?: (key: string, s: unknown[]) => void
 }) {
   const { qc, domain } = entry
   const pilier = PILIER_STYLES[qc.pilier]
@@ -263,38 +272,47 @@ function DomainCard({
             <div className="flex flex-wrap gap-1.5">
               {domain.ods.map(odd => {
                 const m = ODD_META[odd]; const n = parseInt(odd.replace('ODD',''),10)
-                return <span key={odd} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: m.couleur }}>ODD{n} · {m.nom}</span>
+                return (
+                  <span key={odd} className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: m.couleur }}>
+                    <img src={oddImgSrc(n)} alt={`ODD${n}`} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" />
+                    ODD{n} · {m.nom}
+                  </span>
+                )
               })}
             </div>
           </div>
           {domain.actions.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Actions clés</div>
-              <ul className="space-y-1">
-                {domain.actions.slice(0, 4).map((action, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
-                    <span className="flex-shrink-0 mt-0.5 text-green-500">✓</span><span>{action}</span>
-                  </li>
-                ))}
-                {domain.actions.length > 4 && <li className="text-xs text-gray-400 ml-4">+{domain.actions.length - 4} autres actions…</li>}
+              <ul className="space-y-3">
+                {domain.actions.map((action, i) => {
+                  const actionKey = `${domain.id}_action_${i}`
+                  return (
+                    <li key={i} className="rounded-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+                      <div className="flex items-start gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700/40">
+                        <span className="flex-shrink-0 mt-0.5 text-green-500 font-bold text-xs">✓</span>
+                        <span className="text-xs text-gray-700 dark:text-gray-200 font-medium leading-relaxed">{action}</span>
+                      </div>
+                      {diagId && (
+                        <div className="px-3 pb-3 pt-2">
+                          <ODDNotePanel
+                            apiBase="/api/iso26000-diagnostic"
+                            noteTable="iso26000_action_notes"
+                            diagnosticId={diagId}
+                            actionKey={actionKey}
+                            readOnly={false}
+                            note={noteTextMap?.[actionKey] ?? ''}
+                            onNoteChange={v => onNoteChange?.(actionKey, v)}
+                            initialSections={(noteMap?.[actionKey] ?? []) as import('./GuidedActionNotePanel').NoteSection[]}
+                            notesRemoteVersion={notesRemoteVersion ?? 0}
+                            onSectionsChange={s => onSectionsChange?.(actionKey, s)}
+                          />
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
-            </div>
-          )}
-          {diagId && (
-            <div className="mt-3 border-t border-gray-100 dark:border-gray-700 pt-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes & documents</div>
-              <ODDNotePanel
-                apiBase="/api/iso26000-diagnostic"
-                noteTable="iso26000_action_notes"
-                diagnosticId={diagId}
-                actionKey={`domain_${domain.id}`}
-                readOnly={false}
-                note={noteText ?? ''}
-                onNoteChange={v => onNoteChange?.(v)}
-                initialSections={(noteSections ?? []) as import('./GuidedActionNotePanel').NoteSection[]}
-                notesRemoteVersion={notesRemoteVersion ?? 0}
-                onSectionsChange={s => onSectionsChange?.(s)}
-              />
             </div>
           )}
         </div>
@@ -316,7 +334,9 @@ function MatrixView({ onOddSelect }: { onOddSelect: (odd: string) => void }) {
               const meta = ODD_META[odd]; const num = parseInt(odd.replace('ODD',''),10)
               return (
                 <th key={odd} className="p-1">
-                  <button onClick={() => onOddSelect(odd)} className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs hover:opacity-80 transition-opacity mx-auto" style={{ backgroundColor: meta.couleur }} title={meta.nom}>{num}</button>
+                  <button onClick={() => onOddSelect(odd)} className="hover:opacity-80 transition-opacity mx-auto block" title={meta.nom}>
+                    <img src={oddImgSrc(num)} alt={`ODD ${num}`} className="w-7 h-7 rounded object-cover" />
+                  </button>
                 </th>
               )
             })}
@@ -526,9 +546,11 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
             <div className="space-y-4">
               <div className="rounded-xl p-5 text-white" style={{ backgroundColor: selectedMeta.couleur }}>
                 <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                    <span className="text-3xl font-black text-white">{selectedNum}</span>
-                  </div>
+                  <img
+                    src={oddImgSrc(selectedNum)}
+                    alt={`ODD ${selectedNum}`}
+                    className="w-16 h-16 rounded-lg object-cover flex-shrink-0 shadow-md"
+                  />
                   <div className="flex-1">
                     <div className="text-xs font-medium uppercase tracking-wide opacity-80 mb-1">ODD {selectedNum}</div>
                     <h2 className="text-xl font-bold mb-2">{selectedMeta.nom}</h2>
@@ -568,14 +590,14 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                       onToggle={(id) => setExpandedDomain(prev => prev === id ? null : id)}
                       diagId={diagId}
                       domainScore={diagScores[entry.domain.id]}
-                      noteText={noteTextMap[`domain_${entry.domain.id}`]}
-                      noteSections={noteMap[`domain_${entry.domain.id}`] as unknown[]}
+                      noteTextMap={noteTextMap}
+                      noteMap={noteMap}
                       notesRemoteVersion={notesRemoteVersion}
-                      onNoteChange={v => {
-                        setNoteTextMap(prev => ({ ...prev, [`domain_${entry.domain.id}`]: v }))
-                        saveNoteText(`domain_${entry.domain.id}`, v)
+                      onNoteChange={(key, v) => {
+                        setNoteTextMap(prev => ({ ...prev, [key]: v }))
+                        saveNoteText(key, v)
                       }}
-                      onSectionsChange={s => setNoteMap(prev => ({ ...prev, [`domain_${entry.domain.id}`]: s as unknown[] }))}
+                      onSectionsChange={(key, s) => setNoteMap(prev => ({ ...prev, [key]: s as unknown[] }))}
                     />
                   ))}
                 </div>
