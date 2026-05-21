@@ -351,6 +351,8 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
   const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
   const [expandedNoteKey, setExpandedNoteKey] = useState<string | null>(null)
+  // Fermer les notes quand on change de domaine (hook avant tout early return)
+  useEffect(() => { setExpandedNoteKey(null) }, [selectedDomain?.id])
   const notesSaveTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -874,9 +876,6 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
 
   // ── VUE QUESTIONNAIRE ─────────────────────────────────────────────────────
   const activeDomain = selectedDomain ?? QC_LIST[0].domaines[0]
-  // Fermer les notes quand on change de domaine
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setExpandedNoteKey(null) }, [activeDomain.id])
   const activeQc     = QC_LIST.find(qc => qc.domaines.some(d => d.id === activeDomain.id))!
   const domainScore  = scores[activeDomain.id] ?? 0
   const suggested    = computeSuggestedScore(activeDomain, actionProgress, actionNa)
