@@ -700,7 +700,17 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   }
 
   if (!diagnostic) {
-    return <div className="text-sm text-center py-10" style={{ color: 'var(--text-muted)' }}>Impossible de charger le diagnostic.</div>
+    return (
+      <div className="space-y-6">
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+          <div className="text-4xl">🏢</div>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Sélectionnez une organisation dans le panneau de gauche<br />pour accéder au diagnostic.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   // ── VUE TABLEAU DE BORD ───────────────────────────────────────────────────
@@ -1205,13 +1215,17 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const suggested    = computeSuggestedScore(activeDomain, actionProgress, actionNa)
 
   return (
-    <div className="flex gap-0 h-[calc(100vh-180px)] min-h-[500px]">
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 180px)', minHeight: '500px' }}>
+      {/* Bandeau d'onglets — identique à toutes les vues */}
+      <div className="flex-shrink-0 pb-3">
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+      </div>
+
+      {/* Corps questionnaire (sidebar + contenu) */}
+      <div className="flex flex-1 gap-0 overflow-hidden rounded-xl border" style={{ borderColor: 'var(--border)' }}>
       {/* Sidebar QC / Domaines */}
       <div className="w-64 flex-shrink-0 overflow-y-auto border-r" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
-        <div className="p-3">
-          <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
-        </div>
-        <div className="px-2 pb-4 space-y-1">
+        <div className="px-2 pb-4 pt-3 space-y-1">
           {QC_LIST.map(qc => {
             const isExpanded = expandedQc.has(qc.id)
             const qcEval = qc.domaines.filter(d => (scores[d.id] ?? 0) > 0).length
@@ -1450,6 +1464,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
         </div>
       </div>
+      </div>{/* fin body sidebar+contenu */}
 
       {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
       {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
