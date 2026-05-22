@@ -150,11 +150,33 @@ function buildOddMapping(): Record<string, MappingEntry[]> {
 }
 const ODD_MAPPING = buildOddMapping()
 
+// ─── Flat domain list + QC start indices (module-level constants) ─────────────
+const ALL_DOMAINS_FLAT: MappingEntry[] = QC_LIST.flatMap(qc => qc.domaines.map(d => ({ qc, domain: d })))
+const QC_START_INDICES: number[] = (() => {
+  const indices: number[] = []
+  let idx = 0
+  for (const qc of QC_LIST) { indices.push(idx); idx += qc.domaines.length }
+  return indices
+})()
+
+// ─── Maturity levels ──────────────────────────────────────────────────────────
+const MATURITY_LEVELS = [
+  { label: 'Non évalué',       color: '#9ca3af' },
+  { label: 'Inexistant',       color: '#ef4444' },
+  { label: 'Initié',           color: '#f97316' },
+  { label: 'En développement', color: '#eab308' },
+  { label: 'Maîtrisé',        color: '#22c55e' },
+  { label: 'Exemplaire',       color: '#0ea5e9' },
+]
+
 // ─── ViewTabs ─────────────────────────────────────────────────────────────────
 const ODD_TABS = [
-  { id: 'intro'    as const, label: 'Présentation', icon: '📋' },
-  { id: 'explorer' as const, label: 'Explorateur',  icon: '🌍' },
-  { id: 'matrice'  as const, label: 'Matrice',      icon: '📊' },
+  { id: 'accueil'    as const, label: 'Accueil',         icon: '🏠' },
+  { id: 'diagnostic' as const, label: 'Diagnostic ISO',  icon: '📝' },
+  { id: 'odd'        as const, label: 'Vue ODD',         icon: '🌍' },
+  { id: 'dashboard'  as const, label: 'Tableau de bord', icon: '🎯' },
+  { id: 'plan'       as const, label: "Plan d'actions",  icon: '✅' },
+  { id: 'search'     as const, label: 'Recherche',       icon: '🔍' },
 ] as const
 type OddView = typeof ODD_TABS[number]['id']
 
@@ -163,42 +185,6 @@ const PILIER_STYLES: Record<string, { bg: string; text: string; label: string }>
   G: { bg: 'bg-blue-100 dark:bg-blue-900/30',   text: 'text-blue-700 dark:text-blue-300',  label: 'Gouvernance' },
   E: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: 'Environnement' },
   S: { bg: 'bg-red-100 dark:bg-red-900/30',     text: 'text-red-700 dark:text-red-300',    label: 'Social' },
-}
-
-// ─── Stats ────────────────────────────────────────────────────────────────────
-function StatsBar() {
-  const stats = useMemo(() => {
-    const byPilier: Record<string, Set<string>> = { G: new Set(), E: new Set(), S: new Set() }
-    const oddCoverage = new Set<string>()
-    let totalDomains = 0
-    for (const qc of QC_LIST) {
-      totalDomains += qc.domaines.length
-      for (const domain of qc.domaines) {
-        for (const odd of domain.ods) {
-          byPilier[qc.pilier].add(domain.id)
-          oddCoverage.add(odd)
-        }
-      }
-    }
-    return { G: byPilier.G.size, E: byPilier.E.size, S: byPilier.S.size, oddCount: oddCoverage.size, totalDomains }
-  }, [])
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-      {[
-        { label: 'ODD couverts',    value: stats.oddCount,    sub: 'sur 17',    color: 'text-purple-600 dark:text-purple-400' },
-        { label: 'Domaines',        value: stats.totalDomains,sub: 'au total',  color: 'text-indigo-600 dark:text-indigo-400' },
-        { label: 'Gouvernance',     value: stats.G,           sub: 'domaines',  color: 'text-blue-600 dark:text-blue-400' },
-        { label: 'Environnement',   value: stats.E,           sub: 'domaines',  color: 'text-green-600 dark:text-green-400' },
-        { label: 'Social',          value: stats.S,           sub: 'domaines',  color: 'text-red-600 dark:text-red-400' },
-      ].map(s => (
-        <div key={s.label} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
-          <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">{s.sub}</div>
-          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-0.5">{s.label}</div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ─── ODD pictogram helper ─────────────────────────────────────────────────────
@@ -222,7 +208,6 @@ function OddCard({
       className="relative flex flex-col transition-all hover:scale-105 hover:shadow-md"
       style={{ outline: selected ? `3px solid ${meta.couleur}` : '3px solid transparent', borderRadius: 8 }}
     >
-      {/* Image pleine — pas de padding en dessous */}
       <div className="relative w-full">
         <img
           src={oddImgSrc(num)}
@@ -230,7 +215,6 @@ function OddCard({
           className="w-full aspect-square object-cover rounded-lg"
           loading="lazy"
         />
-        {/* Badge numérique coin bas-droit */}
         {evaluated > 0 && (
           <div
             className="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white shadow"
@@ -240,7 +224,6 @@ function OddCard({
           </div>
         )}
       </div>
-      {/* Barre de couverture sous la carte */}
       <div className="w-full h-1 rounded-full mt-1 overflow-hidden bg-gray-200 dark:bg-gray-700">
         <div
           className="h-full rounded-full transition-all duration-500"
@@ -274,18 +257,8 @@ function DomainCard({
   const isExpanded = expandedId === domain.id
   const [expandedNoteAction, setExpandedNoteAction] = useState<string | null>(null)
 
-  // Reset note panel when domain collapses
   useEffect(() => { if (!isExpanded) setExpandedNoteAction(null) }, [isExpanded])
 
-  // Maturity bar (score 0-5, aligné ISO 26000)
-  const MATURITY_LEVELS = [
-    { label: 'Non évalué', color: '#9ca3af' },
-    { label: 'Inexistant',  color: '#ef4444' },
-    { label: 'Initié',      color: '#f97316' },
-    { label: 'En dév.',     color: '#eab308' },
-    { label: 'Maîtrisé',   color: '#22c55e' },
-    { label: 'Exemplaire',  color: '#0ea5e9' },
-  ]
   const score = domainScore ?? 0
   const maturity = MATURITY_LEVELS[Math.min(score, 5)]
 
@@ -301,7 +274,6 @@ function DomainCard({
           <div className="font-semibold text-gray-900 dark:text-white text-sm">{domain.nom}</div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{qc.nom}</div>
         </div>
-        {/* Cercles de maturité + badge (style app.sensetho.fr) */}
         <div className="flex items-center gap-1 flex-shrink-0">
           {[1,2,3,4,5].map(lvl => (
             <div
@@ -322,13 +294,9 @@ function DomainCard({
       {isExpanded && (
         <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
           <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">{domain.description}</p>
-
-          {/* ── Sélecteur niveau de maturité ────────────────────────────────── */}
           {diagId && (
             <div className="mb-4">
-              <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
-                Niveau de maturité
-              </div>
+              <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Niveau de maturité</div>
               <div className="flex flex-wrap gap-2">
                 {MATURITY_LEVELS.map((lvl, idx) => (
                   <button
@@ -462,20 +430,24 @@ function MatrixView({ onOddSelect }: { onOddSelect: (odd: string) => void }) {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
-  const [view, setView]                 = useState<OddView>('intro')
-  const [selectedOdd, setSelectedOdd]   = useState<string | null>(null)
-  const [expandedDomain, setExpandedDomain] = useState<string | null>(null)
-  const [pilierFilter, setPilierFilter] = useState<'all' | 'G' | 'E' | 'S'>('all')
+  const [view, setView]                       = useState<OddView>('accueil')
+  const [selectedOdd, setSelectedOdd]         = useState<string | null>(null)
+  const [expandedDomain, setExpandedDomain]   = useState<string | null>(null)
+  const [pilierFilter, setPilierFilter]       = useState<'all' | 'G' | 'E' | 'S'>('all')
+  const [diagDomainIndex, setDiagDomainIndex] = useState(0)
+  const [planQcFilter, setPlanQcFilter]       = useState('all')
+  const [searchQuery, setSearchQuery]         = useState('')
+  const [showMatrix, setShowMatrix]           = useState(false)
 
   const { org, year } = ctx
-  const [diagId, setDiagId] = useState<string | null>(null)
-  const [diagScores, setDiagScores] = useState<Record<string, number>>({})
-  const [noteMap, setNoteMap] = useState<Record<string, unknown[]>>({})
-  const [noteTextMap, setNoteTextMap] = useState<Record<string, string>>({})
+  const [diagId, setDiagId]                   = useState<string | null>(null)
+  const [diagScores, setDiagScores]           = useState<Record<string, number>>({})
+  const [noteMap, setNoteMap]                 = useState<Record<string, unknown[]>>({})
+  const [noteTextMap, setNoteTextMap]         = useState<Record<string, string>>({})
   const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
   const notesSaveTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const scoreTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const diagScoresRef    = useRef<Record<string, number>>({})
+  const scoreTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const diagScoresRef     = useRef<Record<string, number>>({})
 
   useEffect(() => {
     if (!org || !year) { setDiagId(null); setDiagScores({}); return }
@@ -486,7 +458,6 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         setDiagId(j.data.id)
         setDiagScores(j.data.scores ?? {})
       } else {
-        // Créer si inexistant
         const cr = await fetch('/api/iso26000-diagnostic', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ org_id: org!.id, year }),
@@ -494,12 +465,10 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         const cj = await cr.json()
         if (cj.data) { setDiagId(cj.data.id); setDiagScores(cj.data.scores ?? {}) }
       }
-      // Sync au chargement : récupère les scores du diagnostic guidé vers iso26000
       fetch('/api/sync-diagnostic-scores', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ org_id: org!.id, year, source: 'guided' }),
       }).then(r => r.json()).then(sync => {
-        // Si des domaines ont été synchés, recharger les scores
         if ((sync.synced ?? 0) > 0) {
           fetch(`/api/iso26000-diagnostic?org_id=${org!.id}&year=${year}`)
             .then(r => r.json()).then(fresh => {
@@ -511,12 +480,10 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
     load()
   }, [org, year])
 
-  // Realtime subscription → scores live depuis iso26000_diagnostics
   useEffect(() => {
     if (!diagId) return
     const supabase = createClient()
     let realtimeOk = false
-
     const channel = supabase
       .channel(`odd_diag_scores_${diagId}`)
       .on('postgres_changes', {
@@ -528,8 +495,6 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         if (updated.scores) setDiagScores(updated.scores)
       })
       .subscribe((status: string) => { if (status === 'SUBSCRIBED') realtimeOk = true })
-
-    // Polling fallback si Realtime KO (toutes les 4s)
     const poll = setInterval(() => {
       if (realtimeOk) return
       fetch(`/api/iso26000-diagnostic/${diagId}`)
@@ -537,7 +502,6 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         .then(j => { if (j.data?.scores) setDiagScores(j.data.scores) })
         .catch(() => {})
     }, 4000)
-
     return () => { supabase.removeChannel(channel); clearInterval(poll) }
   }, [diagId])
 
@@ -553,25 +517,21 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
       .catch(() => {})
   }, [diagId])
 
-  // Garde diagScoresRef synchronisé pour les closures de setTimeout
   useEffect(() => { diagScoresRef.current = diagScores }, [diagScores])
 
   const saveScore = useCallback((domainId: string, score: number) => {
     if (!diagId) return
-    // Mise à jour immédiate du state local
     setDiagScores(prev => {
       const next = { ...prev, [domainId]: score }
       diagScoresRef.current = next
       return next
     })
-    // Debounce save + sync
     if (scoreTimerRef.current) clearTimeout(scoreTimerRef.current)
     scoreTimerRef.current = setTimeout(async () => {
       await fetch(`/api/iso26000-diagnostic/${diagId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scores: diagScoresRef.current }),
       })
-      // Sync vers guided_diagnostics si domaine partagé
       if (org?.id) {
         fetch('/api/sync-diagnostic-scores', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -601,7 +561,27 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   const selectedMeta = selectedOdd ? ODD_META[selectedOdd] : null
   const selectedNum  = selectedOdd ? parseInt(selectedOdd.replace('ODD', ''), 10) : null
 
-  // Couverture par ODD : nb de domaines avec score > 0
+  // ── Computed values ────────────────────────────────────────────────────────
+  const globalScore = useMemo(() => {
+    const allScores = ALL_DOMAINS_FLAT.map(e => diagScores[e.domain.id] ?? 0)
+    const evaluated = allScores.filter(s => s > 0)
+    if (evaluated.length === 0) return 0
+    return Math.round((evaluated.reduce((s, v) => s + v, 0) / (evaluated.length * 5)) * 100)
+  }, [diagScores])
+
+  const evaluatedDomains = useMemo(() =>
+    ALL_DOMAINS_FLAT.filter(e => (diagScores[e.domain.id] ?? 0) > 0).length,
+    [diagScores]
+  )
+
+  const qcAvgScores = useMemo(() =>
+    QC_LIST.map(qc => {
+      const scores = qc.domaines.map(d => diagScores[d.id] ?? 0)
+      return scores.reduce((s, v) => s + v, 0) / scores.length
+    }),
+    [diagScores]
+  )
+
   const oddCoverage = useMemo(() => {
     const result: Record<string, { evaluated: number; total: number }> = {}
     for (const oddKey of ODD_KEYS) {
@@ -623,80 +603,100 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
     setSelectedOdd(prev => prev === odd ? null : odd)
     setExpandedDomain(null)
     setPilierFilter('all')
-    if (view !== 'explorer') setView('explorer')
+    if (view !== 'odd') setView('odd')
   }
 
   return (
     <div className="space-y-6">
       <ViewTabs tabs={ODD_TABS} active={view} onChange={setView} />
 
-      {/* ── VUE PRÉSENTATION ──────────────────────────────────────────────── */}
-      {view === 'intro' && (
-        <div className="space-y-8">
-          {/* Hero */}
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-600 to-teal-700 p-8 text-white">
-            <div className="relative z-10">
-              <div className="text-5xl mb-4">🌍</div>
-              <h1 className="text-3xl font-bold mb-3">ISO 26000 & Objectifs de Développement Durable</h1>
-              <p className="text-lg text-white/90 max-w-2xl leading-relaxed">
-                Explorez les correspondances entre les 37 domaines d&apos;action de la norme ISO 26000 et les 17 Objectifs de Développement Durable des Nations Unies. Comprenez comment votre démarche RSE contribue à l&apos;Agenda 2030.
-              </p>
-              <div className="mt-6 flex gap-3 flex-wrap">
-                <button onClick={() => setView('explorer')} className="px-5 py-2.5 bg-white text-green-700 font-semibold rounded-lg hover:bg-green-50 transition-colors">
-                  🌍 Explorateur ODD
-                </button>
-                <button onClick={() => setView('matrice')} className="px-5 py-2.5 bg-white/20 text-white font-semibold rounded-lg hover:bg-white/30 transition-colors">
-                  📊 Matrice de correspondance
-                </button>
+      {/* ── ACCUEIL ────────────────────────────────────────────────────────────── */}
+      {view === 'accueil' && (
+        <div className="space-y-6">
+          {/* Score global + raccourcis */}
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-2 rounded-2xl p-6 bg-gradient-to-br from-green-600 to-teal-700 text-white">
+              <div className="text-sm opacity-80 mb-1">Score global ISO 26000 × ODD</div>
+              <div className="text-5xl font-bold mb-2">{diagId ? `${globalScore}%` : '—'}</div>
+              <div className="text-sm opacity-70">
+                {diagId
+                  ? `${evaluatedDomains} / ${ALL_DOMAINS_FLAT.length} domaines évalués`
+                  : 'Sélectionnez une organisation pour accéder au diagnostic'}
               </div>
+              {diagId && (
+                <div className="mt-3 h-2 bg-white/20 rounded-full overflow-hidden">
+                  <div className="h-full bg-white rounded-full transition-all duration-500" style={{ width: `${globalScore}%` }} />
+                </div>
+              )}
             </div>
-            <div className="absolute -right-16 -top-16 w-64 h-64 bg-white/5 rounded-full" />
-            <div className="absolute -right-8 -bottom-8 w-48 h-48 bg-white/5 rounded-full" />
+            <div className="flex flex-col gap-3">
+              <button onClick={() => setView('diagnostic')}
+                className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 text-left hover:shadow-md transition-all hover:border-green-300 dark:hover:border-green-600">
+                <div className="text-xl mb-1">📝</div>
+                <div className="font-semibold text-sm text-gray-900 dark:text-white">Diagnostic ISO</div>
+                <div className="text-xs text-gray-500 mt-0.5">Évaluer les 37 domaines</div>
+              </button>
+              <button onClick={() => setView('odd')}
+                className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 text-left hover:shadow-md transition-all hover:border-green-300 dark:hover:border-green-600">
+                <div className="text-xl mb-1">🌍</div>
+                <div className="font-semibold text-sm text-gray-900 dark:text-white">Vue ODD</div>
+                <div className="text-xs text-gray-500 mt-0.5">Explorer par objectif ONU</div>
+              </button>
+            </div>
           </div>
 
-          {/* Stats */}
-          <StatsBar />
-
-          {/* Les 7 QC */}
+          {/* 7 QC cards */}
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">7 questions centrales ISO 26000</h2>
+            <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--text)' }}>Vue d&apos;ensemble — 7 questions centrales ISO 26000</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {QC_LIST.map(qc => {
-                const oddSet = new Set(qc.domaines.flatMap(d => d.ods))
+              {QC_LIST.map((qc, qcIdx) => {
+                const evaluatedInQc = qc.domaines.filter(d => (diagScores[d.id] ?? 0) > 0).length
+                const pct = Math.round((evaluatedInQc / qc.domaines.length) * 100)
+                const avgScore = qcAvgScores[qcIdx]
                 const pilierStyle = PILIER_STYLES[qc.pilier]
+                const oddSet = new Set(qc.domaines.flatMap(d => d.ods))
                 return (
-                  <div key={qc.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+                  <button
+                    key={qc.id}
+                    onClick={() => { setDiagDomainIndex(QC_START_INDICES[qcIdx]); setView('diagnostic') }}
+                    className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-left hover:shadow-md transition-all hover:border-green-300 dark:hover:border-green-600"
+                  >
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: `${qc.couleur}22` }}>{qc.icone}</div>
-                      <div>
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style={{ backgroundColor: `${qc.couleur}22` }}>{qc.icone}</div>
+                      <div className="flex-1 min-w-0">
                         <div className="font-semibold text-sm text-gray-900 dark:text-white leading-tight">{qc.nom}</div>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${pilierStyle.bg} ${pilierStyle.text}`}>{pilierStyle.label}</span>
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-3 line-clamp-3">{qc.description}</p>
-                    <div className="flex items-center justify-between text-xs text-gray-400">
-                      <span>{qc.domaines.length} domaine{qc.domaines.length > 1 ? 's' : ''}</span>
-                      <span>{oddSet.size} ODD</span>
+                    <div className="flex items-center justify-between text-xs mb-2">
+                      <span className="text-gray-500">{evaluatedInQc}/{qc.domaines.length} domaines · {oddSet.size} ODD</span>
+                      <span className="font-bold" style={{ color: pct > 0 ? qc.couleur : '#9ca3af' }}>{pct}%</span>
                     </div>
-                  </div>
+                    <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: qc.couleur }} />
+                    </div>
+                    {diagId && (
+                      <div className="mt-2 text-xs text-gray-400">Score moyen : <span className="font-semibold">{avgScore.toFixed(1)}/5</span></div>
+                    )}
+                  </button>
                 )
               })}
             </div>
           </div>
 
-          {/* Navigation vers autres apps */}
-          <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl p-6 border border-indigo-100 dark:border-indigo-800">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Applications RSE liées</h3>
+          {/* Apps liées */}
+          <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl p-5 border border-indigo-100 dark:border-indigo-800">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Applications RSE liées</h3>
             <div className="grid sm:grid-cols-2 gap-3">
-              <Link href="/rse/diagnostic-initial" className="flex items-start gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-400 hover:shadow-sm transition-all">
-                <span className="text-2xl">📋</span>
+              <Link href="/rse/diagnostic-initial" className="flex items-start gap-3 p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-400 hover:shadow-sm transition-all">
+                <span className="text-xl">📋</span>
                 <div>
                   <div className="font-semibold text-sm text-gray-900 dark:text-white">Diagnostic initial guidé RSE</div>
                   <div className="text-xs text-gray-500 mt-0.5">Évaluez rapidement vos 13 domaines prioritaires ISO 26000</div>
                 </div>
               </Link>
-              <Link href="/rse/iso26000" className="flex items-start gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-400 hover:shadow-sm transition-all">
-                <span className="text-2xl">🔍</span>
+              <Link href="/rse/iso26000" className="flex items-start gap-3 p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-400 hover:shadow-sm transition-all">
+                <span className="text-xl">🔍</span>
                 <div>
                   <div className="font-semibold text-sm text-gray-900 dark:text-white">Diagnostic RSE ISO 26000</div>
                   <div className="text-xs text-gray-500 mt-0.5">Diagnostic complet sur les 37 domaines d&apos;action</div>
@@ -707,35 +707,185 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         </div>
       )}
 
-      {/* ── VUE EXPLORATEUR ──────────────────────────────────────────────────── */}
-      {view === 'explorer' && (
+      {/* ── DIAGNOSTIC ISO ─────────────────────────────────────────────────────── */}
+      {view === 'diagnostic' && (
+        <div className="space-y-4">
+          {/* QC pills */}
+          <div className="flex flex-wrap gap-2">
+            {QC_LIST.map((qc, qcIdx) => {
+              const isCurrentQc = diagDomainIndex >= QC_START_INDICES[qcIdx] &&
+                (qcIdx === QC_LIST.length - 1 || diagDomainIndex < QC_START_INDICES[qcIdx + 1])
+              const evaluatedInQc = qc.domaines.filter(d => (diagScores[d.id] ?? 0) > 0).length
+              const pct = Math.round((evaluatedInQc / qc.domaines.length) * 100)
+              return (
+                <button
+                  key={qc.id}
+                  onClick={() => setDiagDomainIndex(QC_START_INDICES[qcIdx])}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border-2"
+                  style={isCurrentQc
+                    ? { backgroundColor: qc.couleur, borderColor: qc.couleur, color: 'white' }
+                    : { backgroundColor: 'transparent', borderColor: qc.couleur + '60', color: 'var(--text-muted)' }
+                  }
+                >
+                  {qc.icone} {qc.id}
+                  {pct > 0 && <span className="opacity-80">{pct}%</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Domain card */}
+          {(() => {
+            const entry = ALL_DOMAINS_FLAT[diagDomainIndex]
+            if (!entry) return null
+            const { qc, domain } = entry
+            const score = diagScores[domain.id] ?? 0
+            const maturity = MATURITY_LEVELS[score] ?? MATURITY_LEVELS[0]
+            return (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                {/* Header */}
+                <div className="p-5 border-b border-gray-100 dark:border-gray-700">
+                  <div className="flex items-start gap-3">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style={{ backgroundColor: `${qc.couleur}22` }}>{qc.icone}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-gray-400 mb-0.5">{qc.id} · {domain.isoRef}</div>
+                      <div className="font-bold text-gray-900 dark:text-white leading-tight">{domain.nom}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{qc.nom}</div>
+                    </div>
+                    <div className="flex-shrink-0 text-center">
+                      <div
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold text-white shadow"
+                        style={{ backgroundColor: score > 0 ? maturity.color : '#9ca3af' }}
+                      >
+                        {score}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 whitespace-nowrap">{maturity.label}</div>
+                    </div>
+                  </div>
+
+                  {/* 5 maturity circles + reset */}
+                  <div className="flex items-center gap-2 mt-4">
+                    {[1,2,3,4,5].map(lvl => (
+                      <button
+                        key={lvl}
+                        onClick={() => saveScore(domain.id, score === lvl ? 0 : lvl)}
+                        className="w-8 h-8 rounded-full transition-all hover:scale-110 border-2"
+                        style={{
+                          backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : 'transparent',
+                          borderColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#d1d5db',
+                        }}
+                        title={`${lvl} — ${MATURITY_LEVELS[lvl].label}`}
+                      />
+                    ))}
+                    {score > 0 && (
+                      <button onClick={() => saveScore(domain.id, 0)} className="ml-2 text-xs text-gray-400 hover:text-red-500 transition-colors">
+                        Réinitialiser
+                      </button>
+                    )}
+                    {!diagId && (
+                      <span className="ml-2 text-xs text-gray-400">Sélectionnez une organisation pour évaluer</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="p-5">
+                  <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-4">{domain.description}</p>
+
+                  {/* ODD tags */}
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                    {domain.ods.map(odd => {
+                      const m = ODD_META[odd]; const n = parseInt(odd.replace('ODD',''),10)
+                      return (
+                        <span key={odd} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: m.couleur }}>
+                          <img src={oddImgSrc(n)} alt={`ODD${n}`} className="w-3.5 h-3.5 rounded-sm" />
+                          ODD{n} · {m.nom}
+                        </span>
+                      )
+                    })}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Actions clés ({domain.actions.length})</div>
+                  <ul className="space-y-1.5">
+                    {domain.actions.map((action, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                        <span className="text-green-500 font-bold mt-0.5 flex-shrink-0">✓</span>
+                        <span className="leading-relaxed">{action}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Navigation ← → */}
+          <div className="flex items-center justify-between pt-1">
+            <button
+              onClick={() => setDiagDomainIndex(i => Math.max(0, i - 1))}
+              disabled={diagDomainIndex === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            >
+              ← Précédente
+            </button>
+            <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              {diagDomainIndex + 1} / {ALL_DOMAINS_FLAT.length}
+            </div>
+            <button
+              onClick={() => setDiagDomainIndex(i => Math.min(ALL_DOMAINS_FLAT.length - 1, i + 1))}
+              disabled={diagDomainIndex === ALL_DOMAINS_FLAT.length - 1}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            >
+              Suivante →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── VUE ODD ────────────────────────────────────────────────────────────── */}
+      {view === 'odd' && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Sélectionnez un Objectif de Développement Durable</h2>
-            <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 gap-3">
-              {ODD_KEYS.map(odd => (
-                <OddCard
-                  key={odd}
-                  oddKey={odd}
-                  selected={selectedOdd === odd}
-                  onClick={() => handleSelectOdd(odd)}
-                  evaluated={oddCoverage[odd]?.evaluated ?? 0}
-                  total={oddCoverage[odd]?.total ?? 0}
-                />
-              ))}
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold" style={{ color: 'var(--text)' }}>Sélectionnez un Objectif de Développement Durable</h2>
+              <button
+                onClick={() => setShowMatrix(v => !v)}
+                className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+              >
+                {showMatrix ? '🌍 Grille ODD' : '📊 Matrice'}
+              </button>
             </div>
+
+            {showMatrix ? (
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                <p className="text-sm text-gray-500 mb-3">Chaque cellule colorée indique qu&apos;un domaine contribue à l&apos;ODD. Cliquez sur un pictogramme pour explorer.</p>
+                <MatrixView onOddSelect={(odd) => { setSelectedOdd(odd); setExpandedDomain(null); setPilierFilter('all'); setShowMatrix(false) }} />
+              </div>
+            ) : (
+              <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 gap-3">
+                {ODD_KEYS.map(odd => (
+                  <OddCard
+                    key={odd}
+                    oddKey={odd}
+                    selected={selectedOdd === odd}
+                    onClick={() => handleSelectOdd(odd)}
+                    evaluated={oddCoverage[odd]?.evaluated ?? 0}
+                    total={oddCoverage[odd]?.total ?? 0}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {selectedOdd && selectedMeta && selectedNum !== null && (
             <div className="space-y-4">
               <div className="rounded-xl p-5 text-white" style={{ backgroundColor: selectedMeta.couleur }}>
-                {/* Ligne principale : image + titre + % couverture */}
                 <div className="flex items-start gap-4">
-                  <img
-                    src={oddImgSrc(selectedNum)}
-                    alt={`ODD ${selectedNum}`}
-                    className="w-20 h-20 rounded-lg object-cover flex-shrink-0 shadow-md"
-                  />
+                  <img src={oddImgSrc(selectedNum)} alt={`ODD ${selectedNum}`} className="w-20 h-20 rounded-lg object-cover flex-shrink-0 shadow-md" />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium uppercase tracking-wide opacity-80 mb-1">ODD {selectedNum}</div>
                     <h2 className="text-xl font-bold mb-1">{selectedMeta.nom}</h2>
@@ -750,7 +900,6 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                     <div className="text-sm opacity-70 mt-0.5">couverture</div>
                   </div>
                 </div>
-                {/* Barre de progression + texte */}
                 <div className="mt-4 pt-4 border-t border-white/20">
                   <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden mb-2">
                     <div
@@ -773,7 +922,9 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                     const count = p === 'all' ? ODD_MAPPING[selectedOdd].length : ODD_MAPPING[selectedOdd].filter(e => e.qc.pilier === p).length
                     if (count === 0 && p !== 'all') return null
                     return (
-                      <button key={p} onClick={() => setPilierFilter(p)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${pilierFilter === p ? 'text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`} style={pilierFilter === p ? { backgroundColor: selectedMeta.couleur } : undefined}>
+                      <button key={p} onClick={() => setPilierFilter(p)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${pilierFilter === p ? 'text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                        style={pilierFilter === p ? { backgroundColor: selectedMeta.couleur } : undefined}>
                         {labels[p]} ({count})
                       </button>
                     )
@@ -795,10 +946,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                       noteTextMap={noteTextMap}
                       noteMap={noteMap}
                       notesRemoteVersion={notesRemoteVersion}
-                      onNoteChange={(key, v) => {
-                        setNoteTextMap(prev => ({ ...prev, [key]: v }))
-                        saveNoteText(key, v)
-                      }}
+                      onNoteChange={(key, v) => { setNoteTextMap(prev => ({ ...prev, [key]: v })); saveNoteText(key, v) }}
                       onSectionsChange={(key, s) => setNoteMap(prev => ({ ...prev, [key]: s as unknown[] }))}
                       onScoreChange={saveScore}
                     />
@@ -810,7 +958,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
             </div>
           )}
 
-          {!selectedOdd && (
+          {!selectedOdd && !showMatrix && (
             <div className="text-center py-10 text-gray-400">
               <div className="text-4xl mb-2">🌍</div>
               <div className="text-sm">Sélectionnez un ODD pour voir les domaines ISO 26000 qui y contribuent.</div>
@@ -819,14 +967,290 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         </div>
       )}
 
-      {/* ── VUE MATRICE ──────────────────────────────────────────────────────── */}
-      {view === 'matrice' && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <div className="mb-4">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Matrice ISO 26000 × ODD</h2>
-            <p className="text-sm text-gray-500">Chaque cellule colorée indique qu&apos;un domaine d&apos;action contribue à l&apos;ODD correspondant. Cliquez sur un numéro pour l&apos;explorer.</p>
+      {/* ── TABLEAU DE BORD ────────────────────────────────────────────────────── */}
+      {view === 'dashboard' && (
+        <div className="space-y-6">
+          {/* Score global + ODD couverts */}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="rounded-2xl p-6 bg-gradient-to-br from-green-600 to-teal-700 text-white">
+              <div className="text-sm opacity-80 mb-1">Score global ISO 26000</div>
+              <div className="text-5xl font-bold mb-2">{diagId ? `${globalScore}%` : '—'}</div>
+              <div className="text-sm opacity-70">{evaluatedDomains} / {ALL_DOMAINS_FLAT.length} domaines évalués</div>
+              {diagId && (
+                <div className="mt-3 h-2 bg-white/20 rounded-full overflow-hidden">
+                  <div className="h-full bg-white rounded-full transition-all duration-500" style={{ width: `${globalScore}%` }} />
+                </div>
+              )}
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5">
+              <div className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">ODD couverts</div>
+              <div className="grid grid-cols-6 gap-1.5">
+                {ODD_KEYS.map(odd => {
+                  const cov = oddCoverage[odd]
+                  const covered = cov.evaluated > 0
+                  const num = parseInt(odd.replace('ODD',''),10)
+                  return (
+                    <button key={odd} onClick={() => handleSelectOdd(odd)} title={ODD_META[odd].nom}
+                      className={`transition-all hover:scale-110 rounded ${covered ? 'opacity-100' : 'opacity-25 grayscale'}`}>
+                      <img src={oddImgSrc(num)} alt={`ODD${num}`} className="w-full aspect-square rounded object-cover" />
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-2 text-xs text-gray-400">
+                {ODD_KEYS.filter(o => oddCoverage[o]?.evaluated > 0).length} / 17 ODD adressés
+              </div>
+            </div>
           </div>
-          <MatrixView onOddSelect={(odd) => { setView('explorer'); setSelectedOdd(odd); setExpandedDomain(null); setPilierFilter('all') }} />
+
+          {/* Radar + barres QC */}
+          <div className="grid sm:grid-cols-2 gap-6">
+            {/* Radar SVG */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5">
+              <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Radar — 7 questions centrales</div>
+              {(() => {
+                const n = 7; const size = 240; const cx = size/2; const cy = size/2; const r = 80
+                const rings = [0.2, 0.4, 0.6, 0.8, 1.0]
+                const axisPoints = QC_LIST.map((_, i) => {
+                  const angle = (Math.PI*2*i)/n - Math.PI/2
+                  return { x: cx + r*Math.cos(angle), y: cy + r*Math.sin(angle) }
+                })
+                const dataPoints = qcAvgScores.map((avg, i) => {
+                  const norm = Math.min(avg / 5, 1)
+                  const angle = (Math.PI*2*i)/n - Math.PI/2
+                  return { x: cx + r*norm*Math.cos(angle), y: cy + r*norm*Math.sin(angle) }
+                })
+                const polygon = dataPoints.map(p => `${p.x},${p.y}`).join(' ')
+                return (
+                  <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-xs mx-auto">
+                    {rings.map(ring => {
+                      const pts = QC_LIST.map((_, i) => {
+                        const angle = (Math.PI*2*i)/n - Math.PI/2
+                        return `${cx + r*ring*Math.cos(angle)},${cy + r*ring*Math.sin(angle)}`
+                      }).join(' ')
+                      return <polygon key={ring} points={pts} fill="none" stroke="#e5e7eb" strokeWidth="0.5" />
+                    })}
+                    {axisPoints.map((p,i) => (
+                      <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#e5e7eb" strokeWidth="0.5" />
+                    ))}
+                    <polygon points={polygon} fill="#10b981" fillOpacity="0.25" stroke="#10b981" strokeWidth="2" />
+                    {dataPoints.map((p,i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill="#10b981" />)}
+                    {QC_LIST.map((qc, i) => {
+                      const angle = (Math.PI*2*i)/n - Math.PI/2
+                      const lr = r + 20
+                      return (
+                        <text key={i} x={cx + lr*Math.cos(angle)} y={cy + lr*Math.sin(angle)}
+                          textAnchor="middle" dominantBaseline="middle" fontSize="13">
+                          {qc.icone}
+                        </text>
+                      )
+                    })}
+                  </svg>
+                )
+              })()}
+            </div>
+
+            {/* Barres par QC */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5">
+              <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Score par question centrale</div>
+              <div className="space-y-3">
+                {QC_LIST.map((qc, i) => {
+                  const pct = Math.round((qcAvgScores[i] / 5) * 100)
+                  const evaluatedInQc = qc.domaines.filter(d => (diagScores[d.id] ?? 0) > 0).length
+                  return (
+                    <div key={qc.id}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                          {qc.icone} <span className="truncate max-w-[160px]">{qc.nom}</span>
+                        </span>
+                        <span className="font-bold ml-2 flex-shrink-0" style={{ color: pct > 0 ? qc.couleur : '#9ca3af' }}>
+                          {pct}% <span className="text-gray-400 font-normal">({evaluatedInQc}/{qc.domaines.length})</span>
+                        </span>
+                      </div>
+                      <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: qc.couleur }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PLAN D'ACTIONS ─────────────────────────────────────────────────────── */}
+      {view === 'plan' && (
+        <div className="space-y-4">
+          {/* Header + filtre */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Actions prioritaires classées par niveau de maturité</div>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Les domaines les moins avancés apparaissent en premier</div>
+            </div>
+            <select
+              value={planQcFilter}
+              onChange={e => setPlanQcFilter(e.target.value)}
+              className="ml-auto px-3 py-1.5 rounded-lg border text-sm"
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text)' }}
+            >
+              <option value="all">Toutes les questions centrales</option>
+              {QC_LIST.map(qc => <option key={qc.id} value={qc.id}>{qc.icone} {qc.id} — {qc.nom}</option>)}
+            </select>
+          </div>
+
+          {(() => {
+            const filtered = planQcFilter === 'all'
+              ? ALL_DOMAINS_FLAT
+              : ALL_DOMAINS_FLAT.filter(e => e.qc.id === planQcFilter)
+
+            const sorted = [...filtered].sort((a, b) => {
+              const sA = diagScores[a.domain.id] ?? 0
+              const sB = diagScores[b.domain.id] ?? 0
+              return sA - sB
+            })
+
+            const totalActions = sorted.reduce((sum, e) => sum + e.domain.actions.length, 0)
+
+            return (
+              <div className="space-y-3">
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{sorted.length} domaines · {totalActions} actions</div>
+                {sorted.map(({ qc, domain }) => {
+                  const score = diagScores[domain.id] ?? 0
+                  const matColor = MATURITY_LEVELS[score]?.color ?? '#9ca3af'
+                  const matLabel = MATURITY_LEVELS[score]?.label ?? 'Non évalué'
+                  return (
+                    <div key={domain.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      {/* Domain header */}
+                      <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-100 dark:border-gray-700">
+                        <span className="text-xl flex-shrink-0">{qc.icone}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-gray-400">{qc.id} · {domain.isoRef}</div>
+                          <div className="font-semibold text-sm text-gray-900 dark:text-white">{domain.nom}</div>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {[1,2,3,4,5].map(lvl => (
+                            <div key={lvl} className="w-3 h-3 rounded-full transition-all"
+                              style={{ backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#e5e7eb' }} />
+                          ))}
+                          <span className="ml-1 text-xs font-bold text-white px-1.5 py-0.5 rounded-full" style={{ backgroundColor: matColor }}>
+                            {score}
+                          </span>
+                          <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>{matLabel}</span>
+                        </div>
+                      </div>
+                      {/* Actions */}
+                      <div className="px-4 py-3">
+                        <ul className="space-y-1.5">
+                          {domain.actions.map((action, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                              <span className="text-green-500 font-bold mt-0.5 flex-shrink-0">✓</span>
+                              <span className="leading-relaxed">{action}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* ── RECHERCHE ──────────────────────────────────────────────────────────── */}
+      {view === 'search' && (
+        <div className="space-y-4">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-400 text-sm">🔍</div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Rechercher (ex: bilan carbone, formation, fournisseurs...)"
+              className="w-full pl-9 pr-4 py-3 rounded-xl border text-sm"
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text)' }}
+              autoFocus
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600 text-xs">✕</button>
+            )}
+          </div>
+
+          {searchQuery.length >= 2 ? (() => {
+            const q = searchQuery.toLowerCase()
+            type SearchResult = { qc: CoreSubject; domain: ActionDomain; matchedActions: string[] }
+            const results: SearchResult[] = []
+            for (const { qc, domain } of ALL_DOMAINS_FLAT) {
+              const domainMatch = domain.nom.toLowerCase().includes(q) || domain.description.toLowerCase().includes(q)
+              const matchedActions = domain.actions.filter(a => a.toLowerCase().includes(q))
+              const kpiMatch = domain.kpis.some(k => k.toLowerCase().includes(q))
+              if (domainMatch || matchedActions.length > 0 || kpiMatch) {
+                results.push({ qc, domain, matchedActions: domainMatch ? domain.actions : matchedActions })
+              }
+            }
+
+            if (results.length === 0) {
+              return (
+                <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
+                  <div className="text-3xl mb-2">🔍</div>
+                  <div className="text-sm">Aucun résultat pour « {searchQuery} »</div>
+                </div>
+              )
+            }
+
+            return (
+              <div className="space-y-3">
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {results.length} domaine{results.length > 1 ? 's' : ''} trouvé{results.length > 1 ? 's' : ''}
+                </div>
+                {results.map(({ qc, domain, matchedActions }) => {
+                  const score = diagScores[domain.id] ?? 0
+                  const matColor = MATURITY_LEVELS[score]?.color ?? '#9ca3af'
+                  return (
+                    <div key={domain.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="text-xl flex-shrink-0">{qc.icone}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-gray-400">{qc.id} · {domain.isoRef}</div>
+                          <div className="font-semibold text-sm text-gray-900 dark:text-white">{domain.nom}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{qc.nom}</div>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {[1,2,3,4,5].map(lvl => (
+                            <div key={lvl} className="w-2.5 h-2.5 rounded-full"
+                              style={{ backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#e5e7eb' }} />
+                          ))}
+                          <span className="ml-1 text-xs font-bold text-white px-1.5 py-0.5 rounded-full" style={{ backgroundColor: matColor }}>{score}</span>
+                        </div>
+                      </div>
+                      {matchedActions.length > 0 && (
+                        <ul className="space-y-1">
+                          {matchedActions.slice(0, 5).map((action, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                              <span className="text-green-500 font-bold flex-shrink-0 mt-0.5">✓</span>
+                              <span className="leading-relaxed">{action}</span>
+                            </li>
+                          ))}
+                          {matchedActions.length > 5 && (
+                            <li className="text-xs text-gray-400 pl-4">… et {matchedActions.length - 5} action{matchedActions.length - 5 > 1 ? 's' : ''} supplémentaire{matchedActions.length - 5 > 1 ? 's' : ''}</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })() : (
+            <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-4xl mb-3">🔍</div>
+              <div className="text-sm">Saisissez au moins 2 caractères pour rechercher</div>
+              <div className="text-xs mt-1 opacity-70">Recherche dans les 37 domaines, descriptions, actions clés et indicateurs</div>
+            </div>
+          )}
         </div>
       )}
     </div>
