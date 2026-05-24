@@ -677,37 +677,13 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     )
   }
 
-  // ── Guards post-intro ──────────────────────────────────────────────────────
-  if (!org) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
-        <div className="text-5xl">🏢</div>
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sélectionnez une organisation dans le panneau de gauche<br />pour commencer le diagnostic.</p>
-      </div>
-    )
-  }
-
+  // ── Guard chargement uniquement (les autres vues gèrent l'absence de diagnostic en ligne) ─
   if (loadingDiag) {
     return (
       <div className="space-y-4">
         <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      </div>
-    )
-  }
-
-  if (!diagnostic) {
-    return (
-      <div className="space-y-6">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
-        <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
-          <div className="text-4xl">🏢</div>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            Sélectionnez une organisation dans le panneau de gauche<br />pour accéder au diagnostic.
-          </p>
         </div>
       </div>
     )
@@ -800,21 +776,32 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           })}
         </div>
 
-        {/* Bottom export */}
-        <div className="flex gap-2 justify-center pt-2">
-          <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
-          <button disabled className="px-4 py-2 text-sm rounded-lg border transition-colors opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
-          <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
-        </div>
+        {/* Bottom export — seulement si diagnostic chargé */}
+        {diagnostic && (
+          <div className="flex gap-2 justify-center pt-2">
+            <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
+            <button disabled className="px-4 py-2 text-sm rounded-lg border transition-colors opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
+            <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
+          </div>
+        )}
 
-        {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
-        {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+        {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
+        {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
     )
   }
 
   // ── VUE SYNTHÈSE ───────────────────────────────────────────────────────────
   if (view === 'summary') {
+    if (!diagnostic) return (
+      <div className="space-y-4">
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+          <div className="text-4xl">🏢</div>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sélectionnez une organisation pour accéder à la synthèse.</p>
+        </div>
+      </div>
+    )
     return (
       <div className="space-y-6 max-w-3xl mx-auto">
         <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
@@ -868,19 +855,19 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         })}
 
         {/* AI Analysis */}
-        {(diagnostic.ai_analysis || evalCount >= 5) && (
+        {(diagnostic?.ai_analysis || evalCount >= 5) && (
           <div className="rounded-xl border p-5 space-y-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>Analyse IA</h3>
               {isOwner && (
                 <button onClick={handleGenAI} disabled={generatingAI} className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:opacity-70 disabled:opacity-40" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                  {generatingAI ? 'Génération…' : diagnostic.ai_analysis ? 'Régénérer' : 'Générer'}
+                  {generatingAI ? 'Génération…' : diagnostic?.ai_analysis ? 'Régénérer' : 'Générer'}
                 </button>
               )}
             </div>
-            {diagnostic.ai_analysis ? (
+            {diagnostic?.ai_analysis ? (
               <div className="prose prose-sm dark:prose-invert max-w-none text-sm" style={{ color: 'var(--text)' }}>
-                {diagnostic.ai_analysis.split('\n').map((line, i) => <p key={i}>{line}</p>)}
+                {diagnostic?.ai_analysis?.split('\n').map((line, i) => <p key={i}>{line}</p>)}
               </div>
             ) : (
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Évaluez au moins 5 domaines pour obtenir une analyse IA.</p>
@@ -895,8 +882,8 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
         </div>
 
-        {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
-        {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+        {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
+        {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
     )
   }
@@ -996,8 +983,8 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           </div>
         )}
 
-        {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
-        {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+        {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
+        {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
     )
   }
@@ -1103,8 +1090,8 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
         </div>
 
-        {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
-        {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+        {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
+        {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
     )
   }
@@ -1202,13 +1189,22 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           </div>
         )}
 
-        {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
-        {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+        {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
+        {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
     )
   }
 
   // ── VUE QUESTIONNAIRE ─────────────────────────────────────────────────────
+  if (!diagnostic) return (
+    <div className="space-y-4">
+      <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+        <div className="text-4xl">🏢</div>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sélectionnez une organisation pour accéder au questionnaire.</p>
+      </div>
+    </div>
+  )
   const activeDomain = selectedDomain ?? QC_LIST[0].domaines[0]
   const activeQc     = QC_LIST.find(qc => qc.domaines.some(d => d.id === activeDomain.id))!
   const domainScore  = scores[activeDomain.id] ?? 0
