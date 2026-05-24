@@ -466,6 +466,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   const [planQcFilter, setPlanQcFilter]       = useState('all')
   const [searchQuery, setSearchQuery]         = useState('')
   const [showMatrix, setShowMatrix]           = useState(false)
+  const [diagExpandedNote, setDiagExpandedNote] = useState<string | null>(null)
 
   const { org, year } = ctx
   const [diagId, setDiagId]                   = useState<string | null>(null)
@@ -902,71 +903,111 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                     })}
                   </div>
 
-                  {/* Actions avec barres de progression */}
-                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  {/* Actions avec barres de progression + notes */}
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
                     Actions clés ({domain.actions.length})
                   </div>
                   <ul className="space-y-2">
                     {domain.actions.map((action, i) => {
-                      const aKey = `${domain.id}_${i}`
-                      const prog = actionProgress[aKey] ?? 0
-                      const isNa = actionNa[aKey] ?? false
-                      // Couleur selon progression : rouge→orange→jaune→vert
-                      const progColor = prog >= 9 ? '#22c55e'   // vert
-                                      : prog >= 7 ? '#84cc16'   // vert-jaune
-                                      : prog >= 5 ? '#eab308'   // jaune
-                                      : prog >= 3 ? '#f97316'   // orange
-                                      : prog >= 1 ? '#ef4444'   // rouge
-                                      : '#9ca3af'               // gris (non démarré)
-                      // Couleur du fond vide (toujours visible, légèrement colorée si démarré)
-                      const emptyColor = prog > 0 ? `${progColor}30` : '#e5e7eb'
+                      const aKey     = `${domain.id}_${i}`
+                      const noteKey  = `${domain.id}_action_${i}`
+                      const prog     = actionProgress[aKey] ?? 0
+                      const isNa     = actionNa[aKey] ?? false
+                      const noteOpen = diagExpandedNote === noteKey
+                      // Couleur : rouge → orange → jaune → vert (uniquement pour les carrés)
+                      const progColor = prog >= 9 ? '#22c55e'
+                                      : prog >= 7 ? '#84cc16'
+                                      : prog >= 5 ? '#eab308'
+                                      : prog >= 3 ? '#f97316'
+                                      : prog >= 1 ? '#ef4444'
+                                      : '#94a3b8'
                       return (
-                        <li key={i} className={`rounded-lg border overflow-hidden ${isNa ? 'opacity-60' : ''}`}
-                          style={{ borderColor: prog > 0 && !isNa ? `${progColor}60` : 'var(--border, #e5e7eb)' }}>
-                          {/* Ligne texte */}
-                          <div className={`flex items-start gap-2 px-3 py-2 ${prog > 0 && !isNa ? '' : 'bg-gray-50 dark:bg-gray-700/30'}`}
-                            style={prog > 0 && !isNa ? { backgroundColor: `${progColor}10` } : {}}>
-                            <span className="flex-shrink-0 mt-0.5 font-bold text-xs leading-none"
-                              style={{ color: prog >= 10 ? '#22c55e' : prog > 0 && !isNa ? progColor : '#9ca3af' }}>
-                              {prog >= 10 ? '✓' : '○'}
-                            </span>
-                            <span className={`flex-1 text-xs font-medium leading-relaxed ${isNa ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200'}`}>
+                        <li key={i} className={`rounded-lg border overflow-hidden ${isNa ? 'opacity-60' : ''} border-gray-200 dark:border-gray-600`}>
+
+                          {/* ① Texte de l'action */}
+                          <div className="flex items-start gap-2.5 px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50">
+                            <span className="flex-shrink-0 mt-0.5 text-xs font-bold" style={{ color: prog >= 10 ? '#22c55e' : '#94a3b8' }}>✓</span>
+                            <span className={`flex-1 text-xs font-medium leading-relaxed ${isNa ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-100'}`}>
                               {action}
                             </span>
                           </div>
-                          {/* Ligne progress */}
+
+                          {/* ② Barre de progression */}
                           {diagId && (
-                            <div className="flex items-center gap-2 px-3 pb-2 pt-1.5 bg-white dark:bg-gray-800">
-                              {/* 10 carrés toujours visibles */}
+                            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
                               <div className="flex gap-0.5">
                                 {Array.from({ length: 10 }, (_, n) => n + 1).map(n => (
                                   <button
                                     key={n}
                                     disabled={isNa}
                                     onClick={() => setActionProgressKey(aKey, prog === n ? 0 : n)}
-                                    className="w-4 h-4 rounded-sm transition-all disabled:cursor-not-allowed"
-                                    style={{
-                                      backgroundColor: !isNa && prog >= n ? progColor : emptyColor,
-                                      transform: !isNa && prog === n ? 'scaleY(1.3)' : undefined,
-                                    }}
-                                    title={n === 10 ? 'Terminée (10/10)' : `${n}/10`}
+                                    className="w-4 h-4 rounded-sm transition-colors disabled:cursor-not-allowed"
+                                    style={{ backgroundColor: !isNa && prog >= n ? progColor : '#e2e8f0' }}
+                                    title={n === 10 ? 'Terminée' : `${n}/10`}
                                   />
                                 ))}
                               </div>
-                              <span className="text-[11px] tabular-nums font-semibold w-8 text-right"
-                                style={{ color: prog > 0 && !isNa ? progColor : '#9ca3af' }}>
+                              <span className="text-[11px] tabular-nums font-semibold w-9 text-right" style={{ color: prog > 0 && !isNa ? progColor : '#94a3b8' }}>
                                 {prog > 0 ? `${prog}/10` : ''}
                               </span>
                               <button
                                 onClick={() => toggleActionNa(aKey)}
                                 className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border font-medium transition-colors ${
                                   isNa
-                                    ? 'border-orange-400 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-500'
-                                    : 'border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500 dark:border-gray-600 dark:text-gray-500'
+                                    ? 'border-orange-400 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-600'
+                                    : 'border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-orange-300 hover:text-orange-500'
                                 }`}
+                              >N/A</button>
+                            </div>
+                          )}
+
+                          {/* ③ Textarea notes inline */}
+                          {diagId && !isNa && (
+                            <div className="px-3 py-2 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+                              <textarea
+                                value={noteTextMap[noteKey] ?? ''}
+                                onChange={e => {
+                                  setNoteTextMap(prev => ({ ...prev, [noteKey]: e.target.value }))
+                                  saveNoteText(noteKey, e.target.value)
+                                }}
+                                placeholder="Notes, observations, pièces justificatives..."
+                                rows={2}
+                                className="w-full text-xs resize-none rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 px-2.5 py-1.5 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500 transition-colors"
+                              />
+                            </div>
+                          )}
+
+                          {/* ④ Notes & documents (accordéon) */}
+                          {diagId && !isNa && (
+                            <div className="border-t border-gray-100 dark:border-gray-700">
+                              <button
+                                onClick={() => setDiagExpandedNote(prev => prev === noteKey ? null : noteKey)}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
                               >
-                                N/A
+                                <svg className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                </svg>
+                                <span>Notes &amp; documents</span>
+                                <svg className={`ml-auto w-3 h-3 text-gray-400 transition-transform ${noteOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
                               </button>
+                              {noteOpen && (
+                                <div className="px-3 pb-3 bg-white dark:bg-gray-800">
+                                  <ODDNotePanel
+                                    apiBase="/api/iso26000-diagnostic"
+                                    noteTable="iso26000_action_notes"
+                                    diagnosticId={diagId}
+                                    actionKey={noteKey}
+                                    readOnly={false}
+                                    note={noteTextMap[noteKey] ?? ''}
+                                    onNoteChange={v => { setNoteTextMap(prev => ({ ...prev, [noteKey]: v })); saveNoteText(noteKey, v) }}
+                                    initialSections={(noteMap[noteKey] ?? []) as import('./GuidedActionNotePanel').NoteSection[]}
+                                    notesRemoteVersion={notesRemoteVersion}
+                                    onSectionsChange={s => setNoteMap(prev => ({ ...prev, [noteKey]: s as unknown[] }))}
+                                  />
+                                </div>
+                              )}
                             </div>
                           )}
                         </li>
