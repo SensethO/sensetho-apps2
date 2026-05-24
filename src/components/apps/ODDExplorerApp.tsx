@@ -937,23 +937,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                             </div>
                           )}
 
-                          {/* ③ Textarea notes inline */}
-                          {diagId && !isNa && (
-                            <div className="px-3 py-2 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
-                              <textarea
-                                value={noteTextMap[noteKey] ?? ''}
-                                onChange={e => {
-                                  setNoteTextMap(prev => ({ ...prev, [noteKey]: e.target.value }))
-                                  saveNoteText(noteKey, e.target.value)
-                                }}
-                                placeholder="Notes, observations, pièces justificatives..."
-                                rows={2}
-                                className="w-full text-xs resize-none rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 px-2.5 py-1.5 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500 transition-colors"
-                              />
-                            </div>
-                          )}
-
-                          {/* ④ Notes & documents (accordéon) */}
+                          {/* ③ Notes & documents (accordéon) */}
                           {diagId && !isNa && (
                             <div className="border-t border-gray-100 dark:border-gray-700">
                               <button
