@@ -1320,53 +1320,75 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
               const prog = actionProgress[key] ?? 0
               const isNa = actionNa[key] ?? false
               const noteOpen = expandedNoteKey === noteKey
+              const progColor = prog >= 9 ? '#22c55e' : prog >= 7 ? '#84cc16' : prog >= 5 ? '#eab308' : prog >= 3 ? '#f97316' : prog >= 1 ? '#ef4444' : '#94a3b8'
               return (
-                <div key={key} className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                  <div className={`space-y-2 px-3 py-2 ${isNa ? 'opacity-40' : ''}`} style={{ backgroundColor: 'var(--bg)' }}>
-                    <div className="flex items-start gap-2">
-                      <span className="flex-shrink-0 mt-0.5 text-green-500 font-bold text-xs">✓</span>
-                      <div className="flex-1 text-xs leading-relaxed font-medium" style={{ color: 'var(--text)' }}>{action}</div>
-                      <button
-                        onClick={() => setExpandedNoteKey(prev => prev === noteKey ? null : noteKey)}
-                        className="flex-shrink-0 text-[11px] px-1.5 py-0.5 rounded transition-colors"
-                        title={noteOpen ? 'Fermer notes' : 'Notes & documents'}
-                        style={{ color: noteOpen ? 'var(--accent, #6366f1)' : 'var(--text-muted)' }}
-                      >
-                        {noteOpen ? '▼' : '▶'}
-                      </button>
-                      <label className="flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
-                        <input type="checkbox" checked={isNa} onChange={e => isOwner && setActionNa(key, e.target.checked)} className="w-3 h-3" />
-                        N/A
-                      </label>
+                <div key={key} className={`rounded-lg border overflow-hidden ${isNa ? 'opacity-60' : ''}`} style={{ borderColor: 'var(--border)' }}>
+                  {/* ① Texte action */}
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50">
+                    <span className="flex-shrink-0 mt-0.5 font-bold text-xs" style={{ color: prog >= 10 ? '#22c55e' : '#94a3b8' }}>✓</span>
+                    <span className={`flex-1 text-xs font-medium leading-relaxed ${isNa ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-100'}`}>{action}</span>
+                  </div>
+                  {/* ② 10 carrés de progression + N/A */}
+                  <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+                    <div className="flex gap-0.5">
+                      {Array.from({ length: 10 }, (_, n) => n + 1).map(n => (
+                        <button
+                          key={n}
+                          disabled={isNa || !isOwner}
+                          onClick={() => setActionProgress(key, prog === n ? 0 : n)}
+                          className="w-4 h-4 rounded-sm transition-colors disabled:cursor-not-allowed"
+                          style={{ backgroundColor: !isNa && prog >= n ? progColor : '#e2e8f0' }}
+                          title={n === 10 ? 'Terminée' : `${n}/10`}
+                        />
+                      ))}
                     </div>
-                    {!isNa && (
-                      <div className="flex items-center gap-2">
-                        <input type="range" min={0} max={10} value={prog}
-                          onChange={e => isOwner && setActionProgress(key, parseInt(e.target.value))}
-                          className="flex-1 h-1.5 accent-indigo-500" disabled={!isOwner} />
-                        <span className="text-xs font-medium w-8 text-right" style={{ color: 'var(--text-muted)' }}>{prog}/10</span>
+                    <span className="text-[11px] tabular-nums font-semibold w-9 text-right" style={{ color: prog > 0 && !isNa ? progColor : '#94a3b8' }}>
+                      {prog > 0 ? `${prog}/10` : ''}
+                    </span>
+                    <button
+                      disabled={!isOwner}
+                      onClick={() => isOwner && setActionNa(key, !isNa)}
+                      className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border font-medium transition-colors disabled:cursor-not-allowed ${
+                        isNa
+                          ? 'border-orange-400 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-600'
+                          : 'border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-orange-300 hover:text-orange-500'
+                      }`}
+                    >N/A</button>
+                  </div>
+                  {/* ③ Notes & documents accordion */}
+                  <div className="border-t border-gray-100 dark:border-gray-700">
+                    <button
+                      onClick={() => setExpandedNoteKey(prev => prev === noteKey ? null : noteKey)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                      </svg>
+                      <span>Notes &amp; documents</span>
+                      <svg className={`ml-auto w-3 h-3 text-gray-400 transition-transform ${noteOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                    {noteOpen && (
+                      <div className="px-3 pb-3 bg-white dark:bg-gray-800">
+                        <ISO26000NotePanel
+                          apiBase="/api/iso26000-diagnostic"
+                          noteTable="iso26000_action_notes"
+                          diagnosticId={diagnostic.id}
+                          actionKey={noteKey}
+                          readOnly={!isOwner}
+                          note={noteTextMap[noteKey] ?? ''}
+                          onNoteChange={v => {
+                            setNoteTextMap(prev => ({ ...prev, [noteKey]: v }))
+                            saveNoteText(noteKey, v)
+                          }}
+                          initialSections={(noteMap[noteKey] as import('./GuidedActionNotePanel').NoteSection[]) ?? []}
+                          notesRemoteVersion={notesRemoteVersion}
+                          onSectionsChange={s => setNoteMap(prev => ({ ...prev, [noteKey]: s }))}
+                        />
                       </div>
                     )}
                   </div>
-                  {noteOpen && (
-                    <div className="px-3 pb-3 pt-2">
-                      <ISO26000NotePanel
-                        apiBase="/api/iso26000-diagnostic"
-                        noteTable="iso26000_action_notes"
-                        diagnosticId={diagnostic.id}
-                        actionKey={noteKey}
-                        readOnly={!isOwner}
-                        note={noteTextMap[noteKey] ?? ''}
-                        onNoteChange={v => {
-                          setNoteTextMap(prev => ({ ...prev, [noteKey]: v }))
-                          saveNoteText(noteKey, v)
-                        }}
-                        initialSections={(noteMap[noteKey] as import('./GuidedActionNotePanel').NoteSection[]) ?? []}
-                        notesRemoteVersion={notesRemoteVersion}
-                        onSectionsChange={s => setNoteMap(prev => ({ ...prev, [noteKey]: s }))}
-                      />
-                    </div>
-                  )}
                 </div>
               )
             })}
