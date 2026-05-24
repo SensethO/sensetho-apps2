@@ -152,12 +152,6 @@ const ODD_MAPPING = buildOddMapping()
 
 // ─── Flat domain list + QC start indices (module-level constants) ─────────────
 const ALL_DOMAINS_FLAT: MappingEntry[] = QC_LIST.flatMap(qc => qc.domaines.map(d => ({ qc, domain: d })))
-const QC_START_INDICES: number[] = (() => {
-  const indices: number[] = []
-  let idx = 0
-  for (const qc of QC_LIST) { indices.push(idx); idx += qc.domaines.length }
-  return indices
-})()
 
 // ─── Maturity levels ──────────────────────────────────────────────────────────
 const MATURITY_LEVELS = [
