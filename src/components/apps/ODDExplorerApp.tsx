@@ -475,7 +475,6 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   const [noteTextMap, setNoteTextMap]         = useState<Record<string, string>>({})
   const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
   const notesSaveTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const scoreTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
   const diagScoresRef     = useRef<Record<string, number>>({})
 
   const [actionProgress, setActionProgress] = useState<Record<string, number>>({})
@@ -558,29 +557,6 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   }, [diagId])
 
   useEffect(() => { diagScoresRef.current = diagScores }, [diagScores])
-
-  const saveScore = useCallback((domainId: string, score: number) => {
-    if (!diagId) return
-    setDiagScores(prev => {
-      const next = { ...prev, [domainId]: score }
-      diagScoresRef.current = next
-      return next
-    })
-    if (scoreTimerRef.current) clearTimeout(scoreTimerRef.current)
-    scoreTimerRef.current = setTimeout(async () => {
-      await fetch(`/api/iso26000-diagnostic/${diagId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scores: diagScoresRef.current }),
-      })
-      if (org?.id) {
-        fetch('/api/sync-diagnostic-scores', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ org_id: org.id, year, source: 'iso26000' }),
-        }).catch(() => {})
-      }
-      scoreTimerRef.current = null
-    }, 800)
-  }, [diagId, org, year])
 
   // ── Action progress + N/A ─────────────────────────────────────────────────
   const saveActionState = useCallback(async () => {
