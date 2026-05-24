@@ -238,7 +238,7 @@ function OddCard({
 function DomainCard({
   entry, expandedId, onToggle,
   diagId, domainScore, noteTextMap, noteMap, notesRemoteVersion,
-  onNoteChange, onSectionsChange, onScoreChange,
+  onNoteChange, onSectionsChange,
 }: {
   entry: MappingEntry
   expandedId: string | null
@@ -250,7 +250,6 @@ function DomainCard({
   notesRemoteVersion?: number
   onNoteChange?: (key: string, v: string) => void
   onSectionsChange?: (key: string, s: unknown[]) => void
-  onScoreChange?: (domainId: string, score: number) => void
 }) {
   const { qc, domain } = entry
   const pilier = PILIER_STYLES[qc.pilier]
@@ -296,22 +295,28 @@ function DomainCard({
           <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">{domain.description}</p>
           {diagId && (
             <div className="mb-4">
-              <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Niveau de maturité</div>
-              <div className="flex flex-wrap gap-2">
-                {MATURITY_LEVELS.map((lvl, idx) => (
-                  <button
-                    key={idx}
-                    onClick={e => { e.stopPropagation(); onScoreChange?.(domain.id, idx) }}
-                    className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all border-2 hover:opacity-90"
-                    style={
-                      score === idx
-                        ? { backgroundColor: lvl.color, borderColor: lvl.color, color: 'white' }
-                        : { backgroundColor: 'transparent', borderColor: '#d1d5db', color: '#6b7280' }
+              <div className="flex items-center gap-2 mb-2">
+                <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Niveau de maturité</div>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-medium">⟳ calculé depuis les actions</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[1,2,3,4,5].map(lvl => (
+                  <div key={lvl}
+                    className="w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300"
+                    style={score >= lvl
+                      ? { backgroundColor: MATURITY_LEVELS[lvl].color, borderColor: MATURITY_LEVELS[lvl].color, color: 'white' }
+                      : { backgroundColor: 'transparent', borderColor: '#e5e7eb' }
                     }
                   >
-                    {idx} — {lvl.label}
-                  </button>
+                    {score >= lvl ? lvl : ''}
+                  </div>
                 ))}
+                {score > 0 && (
+                  <span className="ml-1 text-xs font-semibold px-2.5 py-0.5 rounded-full text-white"
+                    style={{ backgroundColor: MATURITY_LEVELS[Math.min(score,5)].color }}>
+                    {score} — {MATURITY_LEVELS[Math.min(score,5)].label}
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -840,45 +845,44 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                     </div>
                   </div>
 
-                  {/* NIVEAU DE MATURITÉ + auto-calcul */}
-                  {(() => {
-                    const aKeys = domain.actions.map((_, i) => `${domain.id}_${i}`)
-                    const isAutoComputed = !!diagId && aKeys.some(k => !(actionNa[k]) && (actionProgress[k] ?? 0) > 0)
-                    return (
-                      <div className="mt-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Niveau de maturité</span>
-                          {isAutoComputed && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-medium">
-                              ⟳ calculé depuis les actions
-                            </span>
-                          )}
+                  {/* NIVEAU DE MATURITÉ — lecture seule, calculé depuis les actions */}
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Niveau de maturité</span>
+                      {diagId && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-medium">
+                          ⟳ calculé depuis les actions
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Indicateurs read-only */}
+                      {[1,2,3,4,5].map(lvl => (
+                        <div
+                          key={lvl}
+                          className="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300"
+                          style={score >= lvl
+                            ? { backgroundColor: MATURITY_LEVELS[lvl].color, borderColor: MATURITY_LEVELS[lvl].color, color: 'white' }
+                            : { backgroundColor: 'transparent', borderColor: '#e5e7eb' }
+                          }
+                          title={`${lvl} — ${MATURITY_LEVELS[lvl].label}`}
+                        >
+                          {score >= lvl ? lvl : ''}
                         </div>
-                        <div className="flex items-center gap-2">
-                          {[1,2,3,4,5].map(lvl => (
-                            <button
-                              key={lvl}
-                              onClick={isAutoComputed ? undefined : () => saveScore(domain.id, score === lvl ? 0 : lvl)}
-                              className={`w-8 h-8 rounded-full transition-all border-2 ${isAutoComputed ? 'cursor-default' : 'hover:scale-110'}`}
-                              style={{
-                                backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : 'transparent',
-                                borderColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#d1d5db',
-                              }}
-                              title={isAutoComputed ? 'Calculé automatiquement depuis les actions' : `${lvl} — ${MATURITY_LEVELS[lvl].label}`}
-                            />
-                          ))}
-                          {!isAutoComputed && score > 0 && (
-                            <button onClick={() => saveScore(domain.id, 0)} className="ml-2 text-xs text-gray-400 hover:text-red-500 transition-colors">
-                              Réinitialiser
-                            </button>
-                          )}
-                          {!diagId && (
-                            <span className="ml-2 text-xs text-gray-400">Sélectionnez une organisation pour évaluer</span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })()}
+                      ))}
+                      {/* Badge niveau actuel */}
+                      {score > 0 ? (
+                        <span className="ml-1 text-sm font-semibold px-3 py-1 rounded-full text-white transition-all duration-300"
+                          style={{ backgroundColor: maturity.color }}>
+                          {score} — {maturity.label}
+                        </span>
+                      ) : (
+                        <span className="ml-1 text-xs text-gray-400">
+                          {diagId ? 'Évaluez les actions ci-dessous pour calculer automatiquement' : 'Sélectionnez une organisation'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Body */}
@@ -904,47 +908,61 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                   </div>
                   <ul className="space-y-2">
                     {domain.actions.map((action, i) => {
-                      const aKey  = `${domain.id}_${i}`
-                      const prog  = actionProgress[aKey] ?? 0
-                      const isNa  = actionNa[aKey] ?? false
-                      const progColor = prog >= 8 ? '#22c55e' : prog >= 5 ? '#eab308' : prog > 0 ? '#f97316' : '#d1d5db'
+                      const aKey = `${domain.id}_${i}`
+                      const prog = actionProgress[aKey] ?? 0
+                      const isNa = actionNa[aKey] ?? false
+                      // Couleur selon progression : rouge→orange→jaune→vert
+                      const progColor = prog >= 9 ? '#22c55e'   // vert
+                                      : prog >= 7 ? '#84cc16'   // vert-jaune
+                                      : prog >= 5 ? '#eab308'   // jaune
+                                      : prog >= 3 ? '#f97316'   // orange
+                                      : prog >= 1 ? '#ef4444'   // rouge
+                                      : '#9ca3af'               // gris (non démarré)
+                      // Couleur du fond vide (toujours visible, légèrement colorée si démarré)
+                      const emptyColor = prog > 0 ? `${progColor}30` : '#e5e7eb'
                       return (
-                        <li key={i} className={`rounded-lg border overflow-hidden transition-opacity ${isNa ? 'opacity-50' : ''}`}
-                          style={{ borderColor: 'var(--border)' }}>
+                        <li key={i} className={`rounded-lg border overflow-hidden ${isNa ? 'opacity-60' : ''}`}
+                          style={{ borderColor: prog > 0 && !isNa ? `${progColor}60` : 'var(--border, #e5e7eb)' }}>
                           {/* Ligne texte */}
-                          <div className="flex items-start gap-2 px-3 py-2" style={{ background: 'var(--bg-subtle, #f9fafb)' }}>
-                            <span className="flex-shrink-0 mt-0.5 text-green-500 font-bold text-xs leading-none">✓</span>
+                          <div className={`flex items-start gap-2 px-3 py-2 ${prog > 0 && !isNa ? '' : 'bg-gray-50 dark:bg-gray-700/30'}`}
+                            style={prog > 0 && !isNa ? { backgroundColor: `${progColor}10` } : {}}>
+                            <span className="flex-shrink-0 mt-0.5 font-bold text-xs leading-none"
+                              style={{ color: prog >= 10 ? '#22c55e' : prog > 0 && !isNa ? progColor : '#9ca3af' }}>
+                              {prog >= 10 ? '✓' : '○'}
+                            </span>
                             <span className={`flex-1 text-xs font-medium leading-relaxed ${isNa ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200'}`}>
                               {action}
                             </span>
                           </div>
                           {/* Ligne progress */}
                           {diagId && (
-                            <div className="flex items-center gap-2 px-3 pb-2 pt-1">
-                              {/* 10 carrés */}
+                            <div className="flex items-center gap-2 px-3 pb-2 pt-1.5 bg-white dark:bg-gray-800">
+                              {/* 10 carrés toujours visibles */}
                               <div className="flex gap-0.5">
                                 {Array.from({ length: 10 }, (_, n) => n + 1).map(n => (
                                   <button
                                     key={n}
                                     disabled={isNa}
                                     onClick={() => setActionProgressKey(aKey, prog === n ? 0 : n)}
-                                    className="w-4 h-3 rounded-sm transition-all disabled:cursor-not-allowed hover:opacity-80"
-                                    style={{ backgroundColor: !isNa && prog >= n ? progColor : '#e5e7eb' }}
+                                    className="w-4 h-4 rounded-sm transition-all disabled:cursor-not-allowed"
+                                    style={{
+                                      backgroundColor: !isNa && prog >= n ? progColor : emptyColor,
+                                      transform: !isNa && prog === n ? 'scaleY(1.3)' : undefined,
+                                    }}
                                     title={n === 10 ? 'Terminée (10/10)' : `${n}/10`}
                                   />
                                 ))}
                               </div>
-                              {prog > 0 && !isNa && (
-                                <span className="text-[11px] tabular-nums font-semibold" style={{ color: progColor }}>
-                                  {prog}/10
-                                </span>
-                              )}
+                              <span className="text-[11px] tabular-nums font-semibold w-8 text-right"
+                                style={{ color: prog > 0 && !isNa ? progColor : '#9ca3af' }}>
+                                {prog > 0 ? `${prog}/10` : ''}
+                              </span>
                               <button
                                 onClick={() => toggleActionNa(aKey)}
                                 className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border font-medium transition-colors ${
                                   isNa
                                     ? 'border-orange-400 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-500'
-                                    : 'border-gray-300 text-gray-400 hover:border-gray-400 dark:border-gray-600 dark:text-gray-500'
+                                    : 'border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500 dark:border-gray-600 dark:text-gray-500'
                                 }`}
                               >
                                 N/A
@@ -1088,7 +1106,6 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                       notesRemoteVersion={notesRemoteVersion}
                       onNoteChange={(key, v) => { setNoteTextMap(prev => ({ ...prev, [key]: v })); saveNoteText(key, v) }}
                       onSectionsChange={(key, s) => setNoteMap(prev => ({ ...prev, [key]: s as unknown[] }))}
-                      onScoreChange={saveScore}
                     />
                   ))}
                 </div>
