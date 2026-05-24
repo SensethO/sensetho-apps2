@@ -239,6 +239,8 @@ function DomainCard({
   entry, expandedId, onToggle,
   diagId, domainScore, noteTextMap, noteMap, notesRemoteVersion,
   onNoteChange, onSectionsChange,
+  actionProgress, actionNa, onProgressChange, onToggleNa,
+  onNavigateToDiag,
 }: {
   entry: MappingEntry
   expandedId: string | null
@@ -250,6 +252,11 @@ function DomainCard({
   notesRemoteVersion?: number
   onNoteChange?: (key: string, v: string) => void
   onSectionsChange?: (key: string, s: unknown[]) => void
+  actionProgress?: Record<string, number>
+  actionNa?: Record<string, boolean>
+  onProgressChange?: (key: string, val: number) => void
+  onToggleNa?: (key: string) => void
+  onNavigateToDiag?: () => void
 }) {
   const { qc, domain } = entry
   const pilier = PILIER_STYLES[qc.pilier]
@@ -338,47 +345,108 @@ function DomainCard({
           </div>
           {domain.actions.length > 0 && (
             <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Actions clés</div>
-              <ul className="space-y-3">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Actions clés ({domain.actions.length})</div>
+              <ul className="space-y-2">
                 {domain.actions.map((action, i) => {
-                  const actionKey = `${domain.id}_action_${i}`
-                  const noteOpen = expandedNoteAction === actionKey
+                  const aKey    = `${domain.id}_${i}`
+                  const noteKey = `${domain.id}_action_${i}`
+                  const noteOpen  = expandedNoteAction === noteKey
+                  const prog      = actionProgress?.[aKey] ?? 0
+                  const isNa      = actionNa?.[aKey] ?? false
+                  const progColor = prog >= 9 ? '#22c55e' : prog >= 7 ? '#84cc16' : prog >= 5 ? '#eab308' : prog >= 3 ? '#f97316' : prog >= 1 ? '#ef4444' : '#94a3b8'
                   return (
-                    <li key={i} className="rounded-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <li key={i} className={`rounded-lg border overflow-hidden ${isNa ? 'opacity-60' : ''} border-gray-100 dark:border-gray-700`}>
+                      {/* ① Texte action */}
                       <div className="flex items-start gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700/40">
-                        <span className="flex-shrink-0 mt-0.5 text-green-500 font-bold text-xs">✓</span>
-                        <span className="flex-1 text-xs text-gray-700 dark:text-gray-200 font-medium leading-relaxed">{action}</span>
-                        {diagId && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setExpandedNoteAction(prev => prev === actionKey ? null : actionKey) }}
-                            className="flex-shrink-0 text-[11px] px-1.5 py-0.5 rounded transition-colors"
-                            title={noteOpen ? 'Fermer notes' : 'Notes & documents'}
-                            style={{ color: noteOpen ? '#6366f1' : '#9ca3af' }}
-                          >
-                            {noteOpen ? '▼' : '▶'}
-                          </button>
-                        )}
+                        <span className="flex-shrink-0 mt-0.5 font-bold text-xs" style={{ color: prog >= 10 ? '#22c55e' : '#94a3b8' }}>✓</span>
+                        <span className={`flex-1 text-xs font-medium leading-relaxed ${isNa ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200'}`}>{action}</span>
                       </div>
-                      {diagId && noteOpen && (
-                        <div className="px-3 pb-3 pt-2">
-                          <ODDNotePanel
-                            apiBase="/api/iso26000-diagnostic"
-                            noteTable="iso26000_action_notes"
-                            diagnosticId={diagId}
-                            actionKey={actionKey}
-                            readOnly={false}
-                            note={noteTextMap?.[actionKey] ?? ''}
-                            onNoteChange={v => onNoteChange?.(actionKey, v)}
-                            initialSections={(noteMap?.[actionKey] ?? []) as import('./GuidedActionNotePanel').NoteSection[]}
-                            notesRemoteVersion={notesRemoteVersion ?? 0}
-                            onSectionsChange={s => onSectionsChange?.(actionKey, s)}
-                          />
+                      {/* ② Barre de progression */}
+                      {diagId && onProgressChange && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+                          <div className="flex gap-0.5">
+                            {Array.from({ length: 10 }, (_, n) => n + 1).map(n => (
+                              <button key={n} disabled={isNa}
+                                onClick={() => onProgressChange(aKey, prog === n ? 0 : n)}
+                                className="w-4 h-4 rounded-sm transition-colors disabled:cursor-not-allowed"
+                                style={{ backgroundColor: !isNa && prog >= n ? progColor : '#e2e8f0' }}
+                                title={n === 10 ? 'Terminée' : `${n}/10`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[11px] tabular-nums font-semibold w-9 text-right" style={{ color: prog > 0 && !isNa ? progColor : '#94a3b8' }}>
+                            {prog > 0 ? `${prog}/10` : ''}
+                          </span>
+                          {onToggleNa && (
+                            <button onClick={() => onToggleNa(aKey)}
+                              className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border font-medium transition-colors ${
+                                isNa
+                                  ? 'border-orange-400 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-600'
+                                  : 'border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-orange-300 hover:text-orange-500'
+                              }`}>N/A</button>
+                          )}
+                        </div>
+                      )}
+                      {/* ③ Notes & documents accordion */}
+                      {diagId && !isNa && (
+                        <div className="border-t border-gray-100 dark:border-gray-700">
+                          <button
+                            onClick={e => { e.stopPropagation(); setExpandedNoteAction(prev => prev === noteKey ? null : noteKey) }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                            </svg>
+                            <span>Notes &amp; documents</span>
+                            <svg className={`ml-auto w-3 h-3 text-gray-400 transition-transform ${noteOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                          {noteOpen && (
+                            <div className="px-3 pb-3 bg-white dark:bg-gray-800">
+                              <ODDNotePanel
+                                apiBase="/api/iso26000-diagnostic"
+                                noteTable="iso26000_action_notes"
+                                diagnosticId={diagId}
+                                actionKey={noteKey}
+                                readOnly={false}
+                                note={noteTextMap?.[noteKey] ?? ''}
+                                onNoteChange={v => onNoteChange?.(noteKey, v)}
+                                initialSections={(noteMap?.[noteKey] ?? []) as import('./GuidedActionNotePanel').NoteSection[]}
+                                notesRemoteVersion={notesRemoteVersion ?? 0}
+                                onSectionsChange={s => onSectionsChange?.(noteKey, s)}
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                     </li>
                   )
                 })}
               </ul>
+            </div>
+          )}
+          {/* KPIs */}
+          {domain.kpis.length > 0 && (
+            <div className="mt-4">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Indicateurs clés (KPIs)</div>
+              <ul className="space-y-1">
+                {domain.kpis.map((kpi, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                    <span className="flex-shrink-0 mt-0.5 text-blue-400">📊</span>
+                    <span>{kpi}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {/* Navigation croisée vers Diagnostic ISO */}
+          {onNavigateToDiag && (
+            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+              <button onClick={onNavigateToDiag}
+                className="text-xs text-indigo-500 hover:text-indigo-600 font-medium flex items-center gap-1 transition-colors">
+                Voir dans Diagnostic ISO →
+              </button>
             </div>
           )}
         </div>
@@ -464,11 +532,10 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   const [selectedOdd, setSelectedOdd]         = useState<string | null>(null)
   const [expandedDomain, setExpandedDomain]   = useState<string | null>(null)
   const [pilierFilter, setPilierFilter]       = useState<'all' | 'G' | 'E' | 'S'>('all')
-  const [diagDomainIndex, setDiagDomainIndex] = useState(0)
+  const [diagQcIndex, setDiagQcIndex] = useState(0)
   const [planQcFilter, setPlanQcFilter]       = useState('all')
   const [searchQuery, setSearchQuery]         = useState('')
   const [showMatrix, setShowMatrix]           = useState(false)
-  const [diagExpandedNote, setDiagExpandedNote] = useState<string | null>(null)
 
   const { org, year } = ctx
   const [diagId, setDiagId]                   = useState<string | null>(null)
@@ -719,7 +786,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                 return (
                   <button
                     key={qc.id}
-                    onClick={() => { setDiagDomainIndex(QC_START_INDICES[qcIdx]); setView('diagnostic') }}
+                    onClick={() => { setDiagQcIndex(qcIdx); setView('diagnostic') }}
                     className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-left hover:shadow-md transition-all hover:border-green-300 dark:hover:border-green-600"
                   >
                     <div className="flex items-center gap-3 mb-3">
@@ -774,14 +841,13 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
           {/* QC pills */}
           <div className="flex flex-wrap gap-2">
             {QC_LIST.map((qc, qcIdx) => {
-              const isCurrentQc = diagDomainIndex >= QC_START_INDICES[qcIdx] &&
-                (qcIdx === QC_LIST.length - 1 || diagDomainIndex < QC_START_INDICES[qcIdx + 1])
+              const isCurrentQc = diagQcIndex === qcIdx
               const evaluatedInQc = qc.domaines.filter(d => (diagScores[d.id] ?? 0) > 0).length
               const pct = Math.round((evaluatedInQc / qc.domaines.length) * 100)
               return (
                 <button
                   key={qc.id}
-                  onClick={() => setDiagDomainIndex(QC_START_INDICES[qcIdx])}
+                  onClick={() => { setDiagQcIndex(qcIdx); setExpandedDomain(null) }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border-2"
                   style={isCurrentQc
                     ? { backgroundColor: qc.couleur, borderColor: qc.couleur, color: 'white' }
@@ -789,212 +855,78 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                   }
                 >
                   {qc.icone} {qc.id}
-                  {pct > 0 && <span className="opacity-80">{pct}%</span>}
+                  {pct > 0 && <span className="opacity-80"> {pct}%</span>}
                 </button>
               )
             })}
           </div>
 
-          {/* Domain card */}
+          {/* En-tête de la QC sélectionnée */}
           {(() => {
-            const entry = ALL_DOMAINS_FLAT[diagDomainIndex]
-            if (!entry) return null
-            const { qc, domain } = entry
-            const score = diagScores[domain.id] ?? 0
-            const maturity = MATURITY_LEVELS[score] ?? MATURITY_LEVELS[0]
+            const qc = QC_LIST[diagQcIndex]
+            const evaluatedInQc = qc.domaines.filter(d => (diagScores[d.id] ?? 0) > 0).length
+            const avgScore = qc.domaines.reduce((s, d) => s + (diagScores[d.id] ?? 0), 0) / qc.domaines.length
             return (
-              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                {/* Header */}
-                <div className="p-5 border-b border-gray-100 dark:border-gray-700">
-                  <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style={{ backgroundColor: `${qc.couleur}22` }}>{qc.icone}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-gray-400 mb-0.5">{qc.id} · {domain.isoRef}</div>
-                      <div className="font-bold text-gray-900 dark:text-white leading-tight">{domain.nom}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{qc.nom}</div>
-                    </div>
-                    <div className="flex-shrink-0 text-center">
-                      <div
-                        className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold text-white shadow"
-                        style={{ backgroundColor: score > 0 ? maturity.color : '#9ca3af' }}
-                      >
-                        {score}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1 whitespace-nowrap">{maturity.label}</div>
-                    </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style={{ backgroundColor: `${qc.couleur}22` }}>{qc.icone}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-gray-400 mb-0.5">{qc.id} · {qc.isoRef}</div>
+                    <div className="font-bold text-gray-900 dark:text-white">{qc.nom}</div>
+                    <div className="text-xs text-gray-500 mt-0.5 leading-relaxed">{qc.description}</div>
                   </div>
-
-                  {/* NIVEAU DE MATURITÉ — lecture seule, calculé depuis les actions */}
-                  <div className="mt-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Niveau de maturité</span>
-                      {diagId && (
-                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-medium">
-                          ⟳ calculé depuis les actions
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {[1,2,3,4,5].map(lvl => (
-                        <div
-                          key={lvl}
-                          className="w-9 h-9 rounded-full border-2 flex items-center justify-center text-sm font-bold select-none transition-all duration-300"
-                          style={score >= lvl
-                            ? { backgroundColor: MATURITY_LEVELS[lvl].color, borderColor: MATURITY_LEVELS[lvl].color, color: 'white' }
-                            : { backgroundColor: 'transparent', borderColor: '#d1d5db', color: '#9ca3af' }
-                          }
-                          title={`${lvl} — ${MATURITY_LEVELS[lvl].label}`}
-                        >
-                          {lvl}
-                        </div>
-                      ))}
-                      {score > 0 ? (
-                        <span className="ml-2 text-sm font-semibold px-3 py-1 rounded-full text-white transition-all duration-300"
-                          style={{ backgroundColor: maturity.color }}>
-                          {score} — {maturity.label}
-                        </span>
-                      ) : (
-                        <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
-                          {diagId ? 'Évaluez les actions ci-dessous' : 'Sélectionnez une organisation'}
-                        </span>
-                      )}
-                    </div>
+                  <div className="flex-shrink-0 text-right">
+                    <div className="text-lg font-bold" style={{ color: qc.couleur }}>{evaluatedInQc}/{qc.domaines.length}</div>
+                    <div className="text-xs text-gray-400">domaines</div>
+                    {diagId && <div className="text-xs font-semibold mt-0.5" style={{ color: qc.couleur }}>{avgScore.toFixed(1)}/5</div>}
                   </div>
-                </div>
-
-                {/* Body */}
-                <div className="p-5">
-                  <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-4">{domain.description}</p>
-
-                  {/* ODD tags */}
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {domain.ods.map(odd => {
-                      const m = ODD_META[odd]; const n = parseInt(odd.replace('ODD',''),10)
-                      return (
-                        <span key={odd} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: m.couleur }}>
-                          <img src={oddImgSrc(n)} alt={`ODD${n}`} className="w-3.5 h-3.5 rounded-sm" />
-                          ODD{n} · {m.nom}
-                        </span>
-                      )
-                    })}
-                  </div>
-
-                  {/* Actions avec barres de progression + notes */}
-                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                    Actions clés ({domain.actions.length})
-                  </div>
-                  <ul className="space-y-2">
-                    {domain.actions.map((action, i) => {
-                      const aKey     = `${domain.id}_${i}`
-                      const noteKey  = `${domain.id}_action_${i}`
-                      const prog     = actionProgress[aKey] ?? 0
-                      const isNa     = actionNa[aKey] ?? false
-                      const noteOpen = diagExpandedNote === noteKey
-                      // Couleur : rouge → orange → jaune → vert (uniquement pour les carrés)
-                      const progColor = prog >= 9 ? '#22c55e'
-                                      : prog >= 7 ? '#84cc16'
-                                      : prog >= 5 ? '#eab308'
-                                      : prog >= 3 ? '#f97316'
-                                      : prog >= 1 ? '#ef4444'
-                                      : '#94a3b8'
-                      return (
-                        <li key={i} className={`rounded-lg border overflow-hidden ${isNa ? 'opacity-60' : ''} border-gray-200 dark:border-gray-600`}>
-
-                          {/* ① Texte de l'action */}
-                          <div className="flex items-start gap-2.5 px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50">
-                            <span className="flex-shrink-0 mt-0.5 text-xs font-bold" style={{ color: prog >= 10 ? '#22c55e' : '#94a3b8' }}>✓</span>
-                            <span className={`flex-1 text-xs font-medium leading-relaxed ${isNa ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-100'}`}>
-                              {action}
-                            </span>
-                          </div>
-
-                          {/* ② Barre de progression */}
-                          {diagId && (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
-                              <div className="flex gap-0.5">
-                                {Array.from({ length: 10 }, (_, n) => n + 1).map(n => (
-                                  <button
-                                    key={n}
-                                    disabled={isNa}
-                                    onClick={() => setActionProgressKey(aKey, prog === n ? 0 : n)}
-                                    className="w-4 h-4 rounded-sm transition-colors disabled:cursor-not-allowed"
-                                    style={{ backgroundColor: !isNa && prog >= n ? progColor : '#e2e8f0' }}
-                                    title={n === 10 ? 'Terminée' : `${n}/10`}
-                                  />
-                                ))}
-                              </div>
-                              <span className="text-[11px] tabular-nums font-semibold w-9 text-right" style={{ color: prog > 0 && !isNa ? progColor : '#94a3b8' }}>
-                                {prog > 0 ? `${prog}/10` : ''}
-                              </span>
-                              <button
-                                onClick={() => toggleActionNa(aKey)}
-                                className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border font-medium transition-colors ${
-                                  isNa
-                                    ? 'border-orange-400 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-600'
-                                    : 'border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-orange-300 hover:text-orange-500'
-                                }`}
-                              >N/A</button>
-                            </div>
-                          )}
-
-                          {/* ③ Notes & documents (accordéon) */}
-                          {diagId && !isNa && (
-                            <div className="border-t border-gray-100 dark:border-gray-700">
-                              <button
-                                onClick={() => setDiagExpandedNote(prev => prev === noteKey ? null : noteKey)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
-                              >
-                                <svg className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                </svg>
-                                <span>Notes &amp; documents</span>
-                                <svg className={`ml-auto w-3 h-3 text-gray-400 transition-transform ${noteOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                              </button>
-                              {noteOpen && (
-                                <div className="px-3 pb-3 bg-white dark:bg-gray-800">
-                                  <ODDNotePanel
-                                    apiBase="/api/iso26000-diagnostic"
-                                    noteTable="iso26000_action_notes"
-                                    diagnosticId={diagId}
-                                    actionKey={noteKey}
-                                    readOnly={false}
-                                    note={noteTextMap[noteKey] ?? ''}
-                                    onNoteChange={v => { setNoteTextMap(prev => ({ ...prev, [noteKey]: v })); saveNoteText(noteKey, v) }}
-                                    initialSections={(noteMap[noteKey] ?? []) as import('./GuidedActionNotePanel').NoteSection[]}
-                                    notesRemoteVersion={notesRemoteVersion}
-                                    onSectionsChange={s => setNoteMap(prev => ({ ...prev, [noteKey]: s as unknown[] }))}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
                 </div>
               </div>
             )
           })()}
 
-          {/* Navigation ← → */}
+          {/* Liste des domaines de la QC */}
+          <div className="space-y-3">
+            {QC_LIST[diagQcIndex].domaines.map(domain => {
+              const entry = { qc: QC_LIST[diagQcIndex], domain }
+              return (
+                <DomainCard
+                  key={domain.id}
+                  entry={entry}
+                  expandedId={expandedDomain}
+                  onToggle={id => setExpandedDomain(prev => prev === id ? null : id)}
+                  diagId={diagId}
+                  domainScore={diagScores[domain.id]}
+                  actionProgress={actionProgress}
+                  actionNa={actionNa}
+                  onProgressChange={setActionProgressKey}
+                  onToggleNa={toggleActionNa}
+                  noteTextMap={noteTextMap}
+                  noteMap={noteMap}
+                  notesRemoteVersion={notesRemoteVersion}
+                  onNoteChange={(key, v) => { setNoteTextMap(prev => ({ ...prev, [key]: v })); saveNoteText(key, v) }}
+                  onSectionsChange={(key, s) => setNoteMap(prev => ({ ...prev, [key]: s as unknown[] }))}
+                />
+              )
+            })}
+          </div>
+
+          {/* Navigation entre QC */}
           <div className="flex items-center justify-between pt-1">
             <button
-              onClick={() => setDiagDomainIndex(i => Math.max(0, i - 1))}
-              disabled={diagDomainIndex === 0}
+              onClick={() => { setDiagQcIndex(i => Math.max(0, i - 1)); setExpandedDomain(null) }}
+              disabled={diagQcIndex === 0}
               className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
               style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
             >
               ← Précédente
             </button>
             <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              {diagDomainIndex + 1} / {ALL_DOMAINS_FLAT.length}
+              Question centrale {diagQcIndex + 1} / {QC_LIST.length}
             </div>
             <button
-              onClick={() => setDiagDomainIndex(i => Math.min(ALL_DOMAINS_FLAT.length - 1, i + 1))}
-              disabled={diagDomainIndex === ALL_DOMAINS_FLAT.length - 1}
+              onClick={() => { setDiagQcIndex(i => Math.min(QC_LIST.length - 1, i + 1)); setExpandedDomain(null) }}
+              disabled={diagQcIndex === QC_LIST.length - 1}
               className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
               style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
             >
@@ -1102,11 +1034,21 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                       onToggle={(id) => setExpandedDomain(prev => prev === id ? null : id)}
                       diagId={diagId}
                       domainScore={diagScores[entry.domain.id]}
+                      actionProgress={actionProgress}
+                      actionNa={actionNa}
+                      onProgressChange={setActionProgressKey}
+                      onToggleNa={toggleActionNa}
                       noteTextMap={noteTextMap}
                       noteMap={noteMap}
                       notesRemoteVersion={notesRemoteVersion}
                       onNoteChange={(key, v) => { setNoteTextMap(prev => ({ ...prev, [key]: v })); saveNoteText(key, v) }}
                       onSectionsChange={(key, s) => setNoteMap(prev => ({ ...prev, [key]: s as unknown[] }))}
+                      onNavigateToDiag={() => {
+                        const qcIdx = QC_LIST.findIndex(qc => qc.domaines.some(d => d.id === entry.domain.id))
+                        if (qcIdx >= 0) setDiagQcIndex(qcIdx)
+                        setExpandedDomain(entry.domain.id)
+                        setView('diagnostic')
+                      }}
                     />
                   ))}
                 </div>
@@ -1352,14 +1294,14 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
 
           {searchQuery.length >= 2 ? (() => {
             const q = searchQuery.toLowerCase()
-            type SearchResult = { qc: CoreSubject; domain: ActionDomain; matchedActions: string[] }
+            type SearchResult = { qc: CoreSubject; domain: ActionDomain; matchedActions: string[]; matchedKpis: string[]; domainMatch: boolean }
             const results: SearchResult[] = []
             for (const { qc, domain } of ALL_DOMAINS_FLAT) {
               const domainMatch = domain.nom.toLowerCase().includes(q) || domain.description.toLowerCase().includes(q)
               const matchedActions = domain.actions.filter(a => a.toLowerCase().includes(q))
-              const kpiMatch = domain.kpis.some(k => k.toLowerCase().includes(q))
-              if (domainMatch || matchedActions.length > 0 || kpiMatch) {
-                results.push({ qc, domain, matchedActions: domainMatch ? domain.actions : matchedActions })
+              const matchedKpis = domain.kpis.filter(k => k.toLowerCase().includes(q))
+              if (domainMatch || matchedActions.length > 0 || matchedKpis.length > 0) {
+                results.push({ qc, domain, matchedActions, matchedKpis, domainMatch })
               }
             }
 
@@ -1372,42 +1314,64 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
               )
             }
 
+            const totalMatches = results.reduce((s, r) => s + (r.domainMatch ? 1 : 0) + r.matchedActions.length + r.matchedKpis.length, 0)
+
             return (
               <div className="space-y-3">
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {results.length} domaine{results.length > 1 ? 's' : ''} trouvé{results.length > 1 ? 's' : ''}
+                  {totalMatches} résultat{totalMatches > 1 ? 's' : ''} dans {results.length} domaine{results.length > 1 ? 's' : ''}
                 </div>
-                {results.map(({ qc, domain, matchedActions }) => {
+                {results.map(({ qc, domain, matchedActions, matchedKpis, domainMatch }) => {
                   const score = diagScores[domain.id] ?? 0
                   const matColor = MATURITY_LEVELS[score]?.color ?? '#9ca3af'
+                  const qcIdx = QC_LIST.findIndex(c => c.id === qc.id)
                   return (
                     <div key={domain.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
                       <div className="flex items-center gap-3 mb-3">
                         <span className="text-xl flex-shrink-0">{qc.icone}</span>
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs text-gray-400">{qc.id} · {domain.isoRef}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                            {domainMatch && <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold text-white bg-indigo-500">Domaine</span>}
+                            <span className="text-xs text-gray-400">{qc.id} · {domain.isoRef}</span>
+                          </div>
                           <div className="font-semibold text-sm text-gray-900 dark:text-white">{domain.nom}</div>
                           <div className="text-xs text-gray-500 mt-0.5">{qc.nom}</div>
                         </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          {[1,2,3,4,5].map(lvl => (
-                            <div key={lvl} className="w-2.5 h-2.5 rounded-full"
-                              style={{ backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#e5e7eb' }} />
-                          ))}
-                          <span className="ml-1 text-xs font-bold text-white px-1.5 py-0.5 rounded-full" style={{ backgroundColor: matColor }}>{score}</span>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <div className="flex items-center gap-1">
+                            {[1,2,3,4,5].map(lvl => (
+                              <div key={lvl} className="w-2.5 h-2.5 rounded-full"
+                                style={{ backgroundColor: score >= lvl ? MATURITY_LEVELS[lvl].color : '#e5e7eb' }} />
+                            ))}
+                            <span className="ml-1 text-xs font-bold text-white px-1.5 py-0.5 rounded-full" style={{ backgroundColor: matColor }}>{score}</span>
+                          </div>
+                          <button
+                            onClick={() => { if (qcIdx >= 0) setDiagQcIndex(qcIdx); setExpandedDomain(domain.id); setView('diagnostic') }}
+                            className="text-[10px] text-indigo-500 hover:text-indigo-600 font-medium"
+                          >Voir →</button>
                         </div>
                       </div>
                       {matchedActions.length > 0 && (
-                        <ul className="space-y-1">
-                          {matchedActions.slice(0, 5).map((action, i) => (
+                        <ul className="space-y-1 mb-2">
+                          {matchedActions.slice(0, 4).map((action, i) => (
                             <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
-                              <span className="text-green-500 font-bold flex-shrink-0 mt-0.5">✓</span>
+                              <span className="flex-shrink-0 mt-0.5 text-[10px] px-1.5 py-0.5 rounded font-semibold text-white bg-green-500">Action</span>
                               <span className="leading-relaxed">{action}</span>
                             </li>
                           ))}
-                          {matchedActions.length > 5 && (
-                            <li className="text-xs text-gray-400 pl-4">… et {matchedActions.length - 5} action{matchedActions.length - 5 > 1 ? 's' : ''} supplémentaire{matchedActions.length - 5 > 1 ? 's' : ''}</li>
+                          {matchedActions.length > 4 && (
+                            <li className="text-xs text-gray-400 pl-1">… et {matchedActions.length - 4} action{matchedActions.length - 4 > 1 ? 's' : ''} supplémentaire{matchedActions.length - 4 > 1 ? 's' : ''}</li>
                           )}
+                        </ul>
+                      )}
+                      {matchedKpis.length > 0 && (
+                        <ul className="space-y-1">
+                          {matchedKpis.slice(0, 3).map((kpi, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                              <span className="flex-shrink-0 mt-0.5 text-[10px] px-1.5 py-0.5 rounded font-semibold text-white bg-blue-500">KPI</span>
+                              <span className="leading-relaxed">{kpi}</span>
+                            </li>
+                          ))}
                         </ul>
                       )}
                     </div>
