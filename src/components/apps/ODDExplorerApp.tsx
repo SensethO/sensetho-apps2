@@ -299,19 +299,26 @@ function DomainCard({
                 <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Niveau de maturité</div>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-medium">⟳ calculé depuis les actions</span>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {MATURITY_LEVELS.map((lvl, idx) => (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[1,2,3,4,5].map(lvl => (
                   <div
-                    key={idx}
-                    className="px-3 py-1.5 rounded-full text-xs font-semibold border-2 select-none transition-all duration-300"
-                    style={score === idx
-                      ? { backgroundColor: lvl.color, borderColor: lvl.color, color: 'white' }
+                    key={lvl}
+                    className="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold select-none transition-all duration-300"
+                    style={score >= lvl
+                      ? { backgroundColor: MATURITY_LEVELS[lvl].color, borderColor: MATURITY_LEVELS[lvl].color, color: 'white' }
                       : { backgroundColor: 'transparent', borderColor: '#d1d5db', color: '#9ca3af' }
                     }
+                    title={`${lvl} — ${MATURITY_LEVELS[lvl].label}`}
                   >
-                    {idx} — {lvl.label}
+                    {lvl}
                   </div>
                 ))}
+                {score > 0 && (
+                  <span className="ml-1 text-xs font-semibold px-2.5 py-1 rounded-full text-white"
+                    style={{ backgroundColor: MATURITY_LEVELS[Math.min(score,5)].color }}>
+                    {score} — {MATURITY_LEVELS[Math.min(score,5)].label}
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -827,27 +834,31 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                         </span>
                       )}
                     </div>
-                    {/* Boutons colorés avec labels — read-only */}
-                    <div className="flex flex-wrap gap-2">
-                      {MATURITY_LEVELS.map((lvl, idx) => (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {[1,2,3,4,5].map(lvl => (
                         <div
-                          key={idx}
-                          className="px-3 py-1.5 rounded-full text-xs font-semibold border-2 select-none transition-all duration-300"
-                          style={score === idx
-                            ? { backgroundColor: lvl.color, borderColor: lvl.color, color: 'white' }
+                          key={lvl}
+                          className="w-9 h-9 rounded-full border-2 flex items-center justify-center text-sm font-bold select-none transition-all duration-300"
+                          style={score >= lvl
+                            ? { backgroundColor: MATURITY_LEVELS[lvl].color, borderColor: MATURITY_LEVELS[lvl].color, color: 'white' }
                             : { backgroundColor: 'transparent', borderColor: '#d1d5db', color: '#9ca3af' }
                           }
+                          title={`${lvl} — ${MATURITY_LEVELS[lvl].label}`}
                         >
-                          {idx} — {lvl.label}
+                          {lvl}
                         </div>
                       ))}
+                      {score > 0 ? (
+                        <span className="ml-2 text-sm font-semibold px-3 py-1 rounded-full text-white transition-all duration-300"
+                          style={{ backgroundColor: maturity.color }}>
+                          {score} — {maturity.label}
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
+                          {diagId ? 'Évaluez les actions ci-dessous' : 'Sélectionnez une organisation'}
+                        </span>
+                      )}
                     </div>
-                    {!diagId && (
-                      <p className="mt-2 text-xs text-gray-400">Sélectionnez une organisation pour évaluer</p>
-                    )}
-                    {diagId && score === 0 && (
-                      <p className="mt-2 text-xs text-gray-400">Évaluez les actions ci-dessous pour calculer automatiquement</p>
-                    )}
                   </div>
                 </div>
 
