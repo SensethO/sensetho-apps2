@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import type { NoteSection } from './GuidedActionNotePanel'
 import {
   PPSession,
   Stakeholder,
@@ -124,12 +123,6 @@ function TutorialModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Radar ESG ────────────────────────────────────────────────────────────────
-
-interface RadarCategory {
-  label: string
-  value: number
-  color: string
-}
 
 function ESGRadar({ sessions }: { sessions: (SessionListItem & { materiality_scores?: MaterialityScore[] })[] }) {
   const categories: Array<{ key: 'E' | 'S' | 'G'; label: string; color: string; fill: string }> = [
@@ -370,7 +363,7 @@ function NewSessionModal({
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mode d'engagement</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mode d&apos;engagement</label>
             <select
               value={mode}
               onChange={e => setMode(e.target.value as typeof mode)}
@@ -641,7 +634,7 @@ function TabStakeholders({
         <div className="text-center py-10 text-gray-400 dark:text-gray-500">
           <p className="text-4xl mb-2">👥</p>
           <p className="text-sm">Aucune partie prenante identifiée</p>
-          <p className="text-xs mt-1">Cliquez sur "Ajouter" pour commencer la cartographie</p>
+          <p className="text-xs mt-1">Cliquez sur &quot;Ajouter&quot; pour commencer la cartographie</p>
         </div>
       )}
 
@@ -702,7 +695,7 @@ function TabMatrix({ session }: { session: PPSession }) {
       <div className="text-center py-10 text-gray-400 dark:text-gray-500">
         <p className="text-4xl mb-2">📊</p>
         <p className="text-sm">Aucune partie prenante à afficher</p>
-        <p className="text-xs mt-1">Ajoutez des parties prenantes dans l'onglet "Parties prenantes"</p>
+        <p className="text-xs mt-1">Ajoutez des parties prenantes dans l&apos;onglet &quot;Parties prenantes&quot;</p>
       </div>
     )
   }
@@ -1007,15 +1000,14 @@ function TabSurveys({
     })
 
     // Recalculer les scores de matérialité
-    const allResponses = updatedSurveys.flatMap(s => s.responses)
-    const scores = computeMaterialityScores(updatedSurveys, allResponses)
+    const scores = computeMaterialityScores(updatedSurveys)
 
     onUpdate({ surveys: updatedSurveys, materiality_scores: scores })
     setShowResponseFor(null)
     setResponseForm({ stakeholderId: '', answers: {} })
   }
 
-  function computeMaterialityScores(surveys: Survey[], _allResponses: SurveyResponse[]): MaterialityScore[] {
+  function computeMaterialityScores(surveys: Survey[]): MaterialityScore[] {
     const topicMap = new Map<string, { impact: number[]; financial: number[]; name: string }>()
 
     for (const survey of surveys) {
@@ -1213,7 +1205,7 @@ function TabSurveys({
                 disabled={wizardTopics.length === 0}
                 className="flex-1 px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg transition-colors"
               >
-                Créer l'enquête ({wizardTopics.reduce((n, id) => {
+                Créer l&apos;enquête ({wizardTopics.reduce((n, id) => {
                   const t = ESRS_TOPICS.find(e => e.id === id)
                   return n + (t?.questions.filter(q => wizardType === 'double' || q.dimension !== 'financial').length ?? 0)
                 }, 0)} questions)
@@ -1476,7 +1468,8 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key']
 
-export default function PartiesPrenantesApp({ ctx: _ }: { ctx: RseContext }) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
   const [sessions, setSessions] = useState<(SessionListItem & { materiality_scores?: MaterialityScore[] })[]>([])
   const [activeSession, setActiveSession] = useState<PPSession | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('pp')
@@ -1586,7 +1579,7 @@ export default function PartiesPrenantesApp({ ctx: _ }: { ctx: RseContext }) {
               onClick={() => setShowTutorial(true)}
               className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
             >
-              ? Guide d'utilisation
+              ? Guide d&apos;utilisation
             </button>
             <button
               onClick={() => setShowNewModal(true)}
