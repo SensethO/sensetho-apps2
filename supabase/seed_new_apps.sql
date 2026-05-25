@@ -30,3 +30,17 @@ SELECT
   true
 FROM public.app_categories WHERE slug = 'rse'
 ON CONFLICT (slug) DO NOTHING;
+
+-- App Parties Prenantes
+INSERT INTO public.apps (name, slug, description, icon, route, category_id, order_index, is_active)
+SELECT
+  'Parties Prenantes & Matérialité',
+  'parties-prenantes',
+  'Cartographiez vos parties prenantes, créez des enquêtes de matérialité ESRS et calculez votre matrice de double matérialité CSRD.',
+  'users',
+  '/rse/parties-prenantes',
+  id,
+  45,
+  true
+FROM public.app_categories WHERE slug = 'rse'
+ON CONFLICT (slug) DO NOTHING;
