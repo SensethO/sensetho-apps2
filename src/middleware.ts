@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 const PUBLIC_ROUTES = [
   '/',
+  '/catalogue',
   '/auth/login',
   '/auth/register',
   '/auth/forgot-password',
