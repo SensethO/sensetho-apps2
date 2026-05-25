@@ -738,45 +738,64 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
       {/* ── ACCUEIL ────────────────────────────────────────────────────────────── */}
       {view === 'accueil' && (
         <div className="space-y-6">
-          {/* Score global + raccourcis */}
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-2 rounded-2xl p-6 bg-gradient-to-br from-green-600 to-teal-700 text-white">
-              <div className="text-sm opacity-80 mb-1">Score global ISO 26000 × ODD</div>
-              <div className="text-5xl font-bold mb-2">{diagId ? `${globalScore}%` : '—'}</div>
-              <div className="text-sm opacity-70">
-                {diagId
-                  ? `${evaluatedDomains} / ${ALL_DOMAINS_FLAT.length} domaines évalués`
-                  : 'Sélectionnez une organisation pour accéder au diagnostic'}
-              </div>
+
+          {/* Hero */}
+          <div className="relative overflow-hidden rounded-2xl p-8 text-white"
+            style={{ background: 'linear-gradient(135deg, #059669 0%, #0d9488 50%, #0f766e 100%)' }}>
+            <div className="relative z-10">
+              <div className="text-5xl mb-4">🌍</div>
+              <h1 className="text-3xl font-bold mb-3">ISO 26000 &amp; ODD</h1>
+              <p className="text-lg text-white/90 max-w-2xl leading-relaxed">
+                Explorez les correspondances entre la norme ISO 26000 et les 17 Objectifs de Développement Durable de l&apos;ONU.
+                Évaluez vos 37 domaines d&apos;action et mesurez votre contribution aux ODD.
+              </p>
               {diagId && (
-                <div className="mt-3 h-2 bg-white/20 rounded-full overflow-hidden">
-                  <div className="h-full bg-white rounded-full transition-all duration-500" style={{ width: `${globalScore}%` }} />
+                <div className="mt-4 inline-flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'white' }}>
+                  <div className="w-24 h-1.5 rounded-full bg-white/30 overflow-hidden">
+                    <div className="h-full rounded-full bg-white transition-all" style={{ width: `${globalScore}%` }} />
+                  </div>
+                  <span>{evaluatedDomains}/{ALL_DOMAINS_FLAT.length} domaines évalués · {globalScore}%</span>
+                </div>
+              )}
+              {org && (
+                <div className="mt-6 flex gap-3 flex-wrap">
+                  <button onClick={() => setView('diagnostic')} className="px-5 py-2.5 bg-white/20 text-white font-semibold rounded-lg hover:bg-white/30 transition-colors">
+                    📝 {diagId ? 'Continuer le diagnostic' : 'Commencer le diagnostic'}
+                  </button>
+                  <button onClick={() => setView('odd')} className="px-5 py-2.5 bg-white font-semibold rounded-lg hover:bg-green-50 transition-colors" style={{ color: '#059669' }}>
+                    🌍 Explorer les ODD
+                  </button>
                 </div>
               )}
             </div>
-            <div className="flex flex-col gap-3">
-              <button onClick={() => setView('diagnostic')}
-                className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 text-left hover:shadow-md transition-all hover:border-green-300 dark:hover:border-green-600">
-                <div className="text-xl mb-1">📝</div>
-                <div className="font-semibold text-sm text-gray-900 dark:text-white">Diagnostic ISO</div>
-                <div className="text-xs text-gray-500 mt-0.5">Évaluer les 37 domaines</div>
-              </button>
-              <button onClick={() => setView('odd')}
-                className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 text-left hover:shadow-md transition-all hover:border-green-300 dark:hover:border-green-600">
-                <div className="text-xl mb-1">🌍</div>
-                <div className="font-semibold text-sm text-gray-900 dark:text-white">Vue ODD</div>
-                <div className="text-xs text-gray-500 mt-0.5">Explorer par objectif ONU</div>
-              </button>
-            </div>
+            <div className="absolute -right-16 -top-16 w-64 h-64 bg-white/5 rounded-full" />
+            <div className="absolute -right-4 -bottom-12 w-40 h-40 bg-white/5 rounded-full" />
+          </div>
+
+          {/* Chiffres clés */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { label: 'Questions centrales', value: '7',  icon: '📚', color: 'text-teal-600 dark:text-teal-400' },
+              { label: "Domaines d'action",   value: '37', icon: '🎯', color: 'text-green-600 dark:text-green-400' },
+              { label: 'ODD couverts',         value: '17', icon: '🌍', color: 'text-emerald-600 dark:text-emerald-400' },
+              { label: 'Niveaux de maturité',  value: '5',  icon: '⭐', color: 'text-amber-600 dark:text-amber-400' },
+            ].map(s => (
+              <div key={s.label} className="rounded-xl border p-4 text-center"
+                style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+                <div className="text-2xl mb-1">{s.icon}</div>
+                <div className={`text-3xl font-bold ${s.color}`}>{s.value}</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</div>
+              </div>
+            ))}
           </div>
 
           {/* 7 QC cards */}
           <div>
-            <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--text)' }}>Vue d&apos;ensemble — 7 questions centrales ISO 26000</h2>
+            <h2 className="text-xl font-bold mb-4" style={{ color: 'var(--text)' }}>Les 7 questions centrales ISO 26000</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {QC_LIST.map((qc, qcIdx) => {
                 const evaluatedInQc = qc.domaines.filter(d => (diagScores[d.id] ?? 0) > 0).length
-                const pct = Math.round((evaluatedInQc / qc.domaines.length) * 100)
                 const avgScore = qcAvgScores[qcIdx]
                 const pilierStyle = PILIER_STYLES[qc.pilier]
                 const oddSet = new Set(qc.domaines.flatMap(d => d.ods))
@@ -784,25 +803,32 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
                   <button
                     key={qc.id}
                     onClick={() => { setDiagQcIndex(qcIdx); setView('diagnostic') }}
-                    className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-left hover:shadow-md transition-all hover:border-green-300 dark:hover:border-green-600"
+                    className="rounded-xl border p-4 text-left hover:shadow-md transition-all"
+                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style={{ backgroundColor: `${qc.couleur}22` }}>{qc.icone}</div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm text-gray-900 dark:text-white leading-tight">{qc.nom}</div>
+                        <div className="text-xs font-medium leading-tight truncate" style={{ color: 'var(--text)' }}>{qc.nom}</div>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${pilierStyle.bg} ${pilierStyle.text}`}>{pilierStyle.label}</span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between text-xs mb-2">
-                      <span className="text-gray-500">{evaluatedInQc}/{qc.domaines.length} domaines · {oddSet.size} ODD</span>
-                      <span className="font-bold" style={{ color: pct > 0 ? qc.couleur : '#9ca3af' }}>{pct}%</span>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                      {qc.domaines.length} domaines · {oddSet.size} ODD
                     </div>
-                    <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: qc.couleur }} />
-                    </div>
-                    {diagId && (
-                      <div className="mt-2 text-xs text-gray-400">Score moyen : <span className="font-semibold">{avgScore.toFixed(1)}/5</span></div>
+                    {evaluatedInQc > 0 && (
+                      <div className="mb-2">
+                        <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
+                          <span>{evaluatedInQc}/{qc.domaines.length} évalués</span>
+                          <span>{avgScore.toFixed(1)}/5</span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
+                          <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${Math.round((evaluatedInQc / qc.domaines.length) * 100)}%`, backgroundColor: qc.couleur }} />
+                        </div>
+                      </div>
                     )}
+                    <p className="text-xs leading-relaxed line-clamp-2" style={{ color: 'var(--text-muted)' }}>{qc.description}</p>
                   </button>
                 )
               })}
@@ -810,21 +836,21 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
           </div>
 
           {/* Apps liées */}
-          <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl p-5 border border-indigo-100 dark:border-indigo-800">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Applications RSE liées</h3>
+          <div className="rounded-2xl p-5 border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Applications RSE liées</h3>
             <div className="grid sm:grid-cols-2 gap-3">
-              <Link href="/rse/diagnostic-initial" className="flex items-start gap-3 p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-400 hover:shadow-sm transition-all">
+              <Link href="/rse/diagnostic-initial" className="flex items-start gap-3 p-3 rounded-xl border transition-all hover:opacity-80" style={{ borderColor: 'var(--border)' }}>
                 <span className="text-xl">📋</span>
                 <div>
-                  <div className="font-semibold text-sm text-gray-900 dark:text-white">Diagnostic initial guidé RSE</div>
-                  <div className="text-xs text-gray-500 mt-0.5">Évaluez rapidement vos 13 domaines prioritaires ISO 26000</div>
+                  <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>Diagnostic initial guidé RSE</div>
+                  <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Évaluez rapidement vos 13 domaines prioritaires ISO 26000</div>
                 </div>
               </Link>
-              <Link href="/rse/iso26000" className="flex items-start gap-3 p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-400 hover:shadow-sm transition-all">
+              <Link href="/rse/iso26000" className="flex items-start gap-3 p-3 rounded-xl border transition-all hover:opacity-80" style={{ borderColor: 'var(--border)' }}>
                 <span className="text-xl">🔍</span>
                 <div>
-                  <div className="font-semibold text-sm text-gray-900 dark:text-white">Diagnostic RSE ISO 26000</div>
-                  <div className="text-xs text-gray-500 mt-0.5">Diagnostic complet sur les 37 domaines d&apos;action</div>
+                  <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>Diagnostic RSE ISO 26000</div>
+                  <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Diagnostic complet sur les 37 domaines d&apos;action</div>
                 </div>
               </Link>
             </div>

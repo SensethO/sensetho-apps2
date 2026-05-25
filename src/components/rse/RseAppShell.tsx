@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
 import Sidebar from '@/components/layout/Sidebar'
@@ -94,6 +94,9 @@ function FirstYearPrompt({ orgName, onConfirm }: { orgName: string; onConfirm: (
  * Fournit : navigation principale + sidebar Organisations + header avec sélecteur d'années.
  * Le contenu reçoit l'organisation sélectionnée et l'année active via le render prop.
  */
+/** Clé localStorage — même organisation conservée en naviguant entre apps RSE */
+const LAST_RSE_ORG_KEY = 'rse_last_org_id'
+
 export default function RseAppShell({ appSlug, title, children }: RseAppShellProps) {
   const { profile, isAdmin, signOut } = useAuth()
   const { categories } = useApps(isAdmin)
@@ -104,6 +107,27 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedOrg, setSelectedOrg] = useState<Organisation | null>(null)
   const [headerActions, setHeaderActions] = useState<React.ReactNode>(null)
+
+  // ── Persistance de l'organisation entre les apps RSE ──────────────────────
+  // Règle universelle RSE : si l'utilisateur avait sélectionné une organisation,
+  // elle doit rester sélectionnée lorsqu'il change d'application RSE.
+
+  /** Sauvegarde l'id de l'org sélectionnée */
+  useEffect(() => {
+    try { if (selectedOrg) localStorage.setItem(LAST_RSE_ORG_KEY, selectedOrg.id) } catch {}
+  }, [selectedOrg])
+
+  /** Auto-sélectionne l'org mémorisée dès que la liste est disponible */
+  useEffect(() => {
+    if (selectedOrg || loading || organisations.length === 0) return
+    try {
+      const savedId = localStorage.getItem(LAST_RSE_ORG_KEY)
+      if (savedId) {
+        const found = organisations.find(o => o.id === savedId)
+        if (found) setSelectedOrg(found)
+      }
+    } catch {}
+  }, [organisations, loading, selectedOrg])
 
   const { years, selectedYear, setSelectedYear, addYear, addNextYear, changeStartYear, loading: yearsLoading } = useRseYears({
     organisationId: selectedOrg?.id ?? null,
