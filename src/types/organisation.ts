@@ -109,6 +109,7 @@ export interface Organisation {
   // ── Raw ───────────────────────────────────────────────────────────────────
   raw_data: Record<string, unknown> | null
   // ── Meta ──────────────────────────────────────────────────────────────────
+  is_favorite: boolean
   user_id: string
   created_at: string
   updated_at: string

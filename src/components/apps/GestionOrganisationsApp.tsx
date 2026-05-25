@@ -302,7 +302,7 @@ function OrgDetailModal({ org, result, isInBase, onAdd, onRemove, onClose }: {
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function GestionOrganisationsApp() {
-  const { organisations, loading, save, saveManual, remove, reload } = useOrganisations()
+  const { organisations, loading, save, saveManual, remove, reload, toggleFavorite } = useOrganisations()
 
   const [mode, setMode]                   = useState<'list' | 'search'>('list')
   const [query, setQuery]                 = useState('')
@@ -386,9 +386,15 @@ export default function GestionOrganisationsApp() {
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Organisations</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            {loading
-              ? 'Chargement…'
-              : `${organisations.length} organisation${organisations.length > 1 ? 's' : ''} enregistrée${organisations.length > 1 ? 's' : ''}`}
+            {loading ? 'Chargement…' : (
+            <>
+              {organisations.length} organisation{organisations.length > 1 ? 's' : ''}
+              {' · '}
+              <span className="text-amber-500">
+                ⭐ {organisations.filter(o => o.is_favorite).length} dans le menu
+              </span>
+            </>
+          )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -518,35 +524,50 @@ export default function GestionOrganisationsApp() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filtered.map(org => (
-                <button
+                <div
                   key={org.id}
-                  type="button"
-                  onClick={() => setSelected({ org })}
-                  className="flex items-start gap-3 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-emerald-400 dark:hover:border-emerald-600 transition-colors text-left"
+                  className="relative flex items-start gap-3 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-emerald-400 dark:hover:border-emerald-600 transition-colors"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-bold text-sm flex-shrink-0">
-                    {(org.denomination?.[0] ?? '?').toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{org.denomination}</p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      {org.siren && <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{org.siren}</span>}
-                      {org.ville && <span className="text-xs text-gray-400 dark:text-gray-500">· {org.ville}</span>}
-                      {org.libelle_departement && <span className="text-xs text-gray-400 dark:text-gray-500">({org.libelle_departement})</span>}
+                  {/* Bouton étoile favoris */}
+                  <button
+                    type="button"
+                    onClick={() => toggleFavorite(org.id)}
+                    title={org.is_favorite ? 'Retirer des favoris (menu)' : 'Ajouter aux favoris (menu)'}
+                    className="absolute top-3 right-3 text-lg leading-none transition-transform hover:scale-110"
+                  >
+                    {org.is_favorite ? '⭐' : '☆'}
+                  </button>
+
+                  {/* Corps cliquable */}
+                  <button
+                    type="button"
+                    onClick={() => setSelected({ org })}
+                    className="flex items-start gap-3 flex-1 min-w-0 text-left pr-6"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-bold text-sm flex-shrink-0">
+                      {(org.denomination?.[0] ?? '?').toUpperCase()}
                     </div>
-                    {org.libelle_activite && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{org.libelle_activite}</p>
-                    )}
-                    {org.dirigeants?.[0] && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                        {org.dirigeants[0].prenoms
-                          ? `${org.dirigeants[0].prenoms} ${org.dirigeants[0].nom ?? ''}`.trim()
-                          : org.dirigeants[0].nom ?? ''}
-                        {org.dirigeants[0].qualite ? ` — ${org.dirigeants[0].qualite}` : ''}
-                      </p>
-                    )}
-                  </div>
-                </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{org.denomination}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {org.siren && <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{org.siren}</span>}
+                        {org.ville && <span className="text-xs text-gray-400 dark:text-gray-500">· {org.ville}</span>}
+                        {org.libelle_departement && <span className="text-xs text-gray-400 dark:text-gray-500">({org.libelle_departement})</span>}
+                      </div>
+                      {org.libelle_activite && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{org.libelle_activite}</p>
+                      )}
+                      {org.dirigeants?.[0] && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                          {org.dirigeants[0].prenoms
+                            ? `${org.dirigeants[0].prenoms} ${org.dirigeants[0].nom ?? ''}`.trim()
+                            : org.dirigeants[0].nom ?? ''}
+                          {org.dirigeants[0].qualite ? ` — ${org.dirigeants[0].qualite}` : ''}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                </div>
               ))}
             </div>
           )}

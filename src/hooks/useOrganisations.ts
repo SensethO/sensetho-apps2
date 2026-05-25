@@ -113,11 +113,29 @@ export function useOrganisations() {
     return data as Organisation
   }
 
+  async function toggleFavorite(id: string) {
+    const supabase = createClient()
+    const org = organisations.find(o => o.id === id)
+    if (!org) return
+    const next = !org.is_favorite
+    // Optimistic update
+    setOrganisations(prev => prev.map(o => o.id === id ? { ...o, is_favorite: next } : o))
+    const { error } = await supabase
+      .from('organisations')
+      .update({ is_favorite: next })
+      .eq('id', id)
+    if (error) {
+      // Rollback
+      setOrganisations(prev => prev.map(o => o.id === id ? { ...o, is_favorite: !next } : o))
+      console.error('[useOrganisations] toggleFavorite error', error)
+    }
+  }
+
   async function remove(id: string) {
     const supabase = createClient()
     await supabase.from('organisations').delete().eq('id', id)
     setOrganisations(prev => prev.filter(o => o.id !== id))
   }
 
-  return { organisations, loading, reload: load, save, saveManual, remove }
+  return { organisations, loading, reload: load, save, saveManual, remove, toggleFavorite }
 }

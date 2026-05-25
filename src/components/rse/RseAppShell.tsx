@@ -104,6 +104,7 @@ export default function RseAppShell({ appSlug, title, requireYear = true, childr
   const { categories } = useApps(isAdmin)
   const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
   const { organisations, loading, save, saveManual, remove } = useOrganisations()
+  const favoriteOrgs = organisations.filter(o => o.is_favorite)
 
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -274,7 +275,7 @@ export default function RseAppShell({ appSlug, title, requireYear = true, childr
         {/* Contenu RSE : OrganisationsSidebar + colonne droite */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <OrganisationsSidebar
-            organisations={organisations}
+            organisations={favoriteOrgs}
             selected={selectedOrg}
             onSelect={setSelectedOrg}
             onSave={save}
