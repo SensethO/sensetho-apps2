@@ -383,24 +383,34 @@ function DatapointCard({
         </div>
       )}
 
-      {/* Notes */}
-      <div className="mt-2">
+      {/* Notes et documents */}
+      <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
         <button
           onClick={() => setNotesOpen(v => !v)}
-          className="text-xs hover:opacity-70 transition-opacity"
+          className="flex items-center gap-1.5 text-xs font-medium hover:opacity-70 transition-opacity"
           style={{ color: 'var(--text-muted)' }}
         >
-          {notesOpen ? '▲ Masquer les notes' : '▼ Notes internes'}
+          <span>📄</span>
+          <span>Notes et documents</span>
+          {response?.notes && !notesOpen && (
+            <span className="ml-1 px-1.5 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8' }}>✎</span>
+          )}
+          <span className="ml-0.5">{notesOpen ? '▲' : '▼'}</span>
         </button>
         {notesOpen && (
-          <textarea
-            defaultValue={response?.notes ?? ''}
-            onChange={e => handleNotesChange(e.target.value)}
-            rows={2}
-            placeholder="Notes internes, sources, commentaires…"
-            className="mt-1 w-full px-3 py-2 text-xs border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
-            style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
-          />
+          <div className="mt-2 rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
+            <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>
+              Notes internes, sources &amp; commentaires
+            </div>
+            <textarea
+              defaultValue={response?.notes ?? ''}
+              onChange={e => handleNotesChange(e.target.value)}
+              rows={3}
+              placeholder="Rédigez vos notes, sources et commentaires sur ce datapoint…"
+              className="w-full px-3 py-2 text-xs border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -454,14 +464,262 @@ function SectionBlock({
   )
 }
 
+// ─── Radar Chart ─────────────────────────────────────────────────────────────
+
+function RadarChart({ responses }: { responses: Map<string, VsmeResponse> }) {
+  const axes = BASE_SECTIONS.map(s => {
+    const total = s.datapoints.length
+    const done = s.datapoints.filter(dp => responses.get(dp.code)?.status === 'renseigne').length
+    return {
+      id: s.id,
+      icon: s.icon,
+      label: s.title.replace(/^B[\d-\w]+ — /, ''),
+      pct: total > 0 ? done / total : 0,
+    }
+  })
+
+  const N = axes.length
+  const cx = 200, cy = 195, r = 130
+
+  function polarToXY(i: number, radius: number) {
+    const angle = (i / N) * 2 * Math.PI - Math.PI / 2
+    return {
+      x: +(cx + radius * Math.cos(angle)).toFixed(1),
+      y: +(cy + radius * Math.sin(angle)).toFixed(1),
+    }
+  }
+
+  const levels = [0.25, 0.5, 0.75, 1.0]
+
+  const dataPolygon = axes.map((a, i) => {
+    const { x, y } = polarToXY(i, r * Math.max(a.pct, 0.03))
+    return `${x},${y}`
+  }).join(' ')
+
+  return (
+    <div>
+      <svg viewBox="0 0 400 390" className="w-full" style={{ maxHeight: 320 }}>
+        {/* Toile */}
+        {levels.map(level => {
+          const pts = axes.map((_, i) => {
+            const { x, y } = polarToXY(i, r * level)
+            return `${x},${y}`
+          }).join(' ')
+          return (
+            <polygon
+              key={level}
+              points={pts}
+              fill="none"
+              stroke="var(--border)"
+              strokeWidth={level === 1 ? '1.5' : '0.8'}
+            />
+          )
+        })}
+
+        {/* Axes */}
+        {axes.map((_, i) => {
+          const { x, y } = polarToXY(i, r)
+          return (
+            <line key={i} x1={cx} y1={cy} x2={x} y2={y}
+              stroke="var(--border)" strokeWidth="1" strokeDasharray="3,3" />
+          )
+        })}
+
+        {/* Zone de données */}
+        <polygon
+          points={dataPolygon}
+          fill="#16a34a22"
+          stroke="#16a34a"
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+        />
+
+        {/* Points de données */}
+        {axes.map((a, i) => {
+          const { x, y } = polarToXY(i, r * Math.max(a.pct, 0.03))
+          return (
+            <circle key={i} cx={x} cy={y} r="4.5"
+              fill="#16a34a" stroke="white" strokeWidth="1.5" />
+          )
+        })}
+
+        {/* Labels % sur le premier axe */}
+        {levels.map(level => {
+          const { x, y } = polarToXY(0, r * level)
+          return (
+            <text key={level} x={x} y={y - 5} textAnchor="middle"
+              fontSize="9" fill="var(--text-muted)" fontWeight="500">
+              {Math.round(level * 100)}%
+            </text>
+          )
+        })}
+
+        {/* Labels axes */}
+        {axes.map((a, i) => {
+          const { x, y } = polarToXY(i, r + 28)
+          const anchor = x < cx - 8 ? 'end' : x > cx + 8 ? 'start' : 'middle'
+          return (
+            <text key={i} x={x} y={y} textAnchor={anchor}
+              dominantBaseline="middle" fontSize="11"
+              fill="var(--text-muted)" fontWeight="600">
+              {a.icon} {a.id}
+            </text>
+          )
+        })}
+      </svg>
+
+      {/* Légende */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+        {axes.map(a => (
+          <div key={a.id} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+            <span>{a.icon}</span>
+            <span className="font-mono font-bold text-xs" style={{ color: 'var(--accent, #6366f1)' }}>{a.id}</span>
+            <span className="truncate flex-1">{a.label}</span>
+            <span className="font-semibold shrink-0" style={{ color: '#16a34a' }}>
+              {Math.round(a.pct * 100)}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Tutoriel ─────────────────────────────────────────────────────────────────
+
+const TUTORIAL_KEY = 'vsme_tutorial_seen'
+
+const TUTORIAL_STEPS = [
+  {
+    icon: '🌱',
+    title: 'Bienvenue sur VSME EFRAG',
+    content: "Le VSME (Voluntary Sustainability Reporting Standard) est un standard de reporting de durabilité développé par l'EFRAG pour les PME non cotées. Il vous permet de structurer et valoriser votre démarche RSE de façon alignée avec les exigences européennes CSRD.",
+  },
+  {
+    icon: '🌿',
+    title: 'Module de Base — 40 datapoints',
+    content: "Le module de base est le point de départ recommandé. Il couvre les 8 sections essentielles : informations générales, énergie & GES, eau, biodiversité & sol, déchets & économie circulaire, main-d'œuvre, communautés et gouvernance.",
+  },
+  {
+    icon: '🏆',
+    title: 'Module Complet — 23 datapoints',
+    content: "Le module complet est optionnel. Il approfondit l'analyse avec : l'analyse de matérialité, la stratégie ESG, l'environnement approfondi, le volet social approfondi et la gouvernance avancée. Idéal pour les PME souhaitant aller au-delà du socle.",
+  },
+  {
+    icon: '🏷️',
+    title: 'Les 5 statuts de saisie',
+    content: "• Non évalué — État initial, pas encore traité.\n• Non applicable — Ce datapoint ne concerne pas votre activité.\n• Non renseigné — Applicable mais donnée non disponible.\n• En cours — Collecte en cours, valeur partielle saisie.\n• Renseigné — Donnée complète et validée ✅",
+  },
+  {
+    icon: '📈',
+    title: 'Tableau de bord & Radar',
+    content: "Le tableau de bord vous donne une vue d'ensemble : un radar de maturité par section, des barres de progression et la répartition des statuts. Revenez-y régulièrement pour suivre votre avancée et identifier les zones à compléter en priorité.",
+  },
+  {
+    icon: '📄',
+    title: 'Notes et documents',
+    content: "Chaque datapoint dispose d'un module \"Notes et documents\" (📄) dans lequel vous pouvez consigner vos sources, commentaires internes et observations. Ces notes sont sauvegardées automatiquement et restent visibles à votre prochaine visite.",
+  },
+]
+
+function TutorialModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState(0)
+  const total = TUTORIAL_STEPS.length
+  const current = TUTORIAL_STEPS[step]
+
+  function close() {
+    try { localStorage.setItem(TUTORIAL_KEY, '1') } catch {}
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+      <div
+        className="relative rounded-2xl border shadow-2xl w-full max-w-md"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
+      >
+        {/* Close */}
+        <button
+          onClick={close}
+          className="absolute right-4 top-4 text-xl hover:opacity-60 transition-opacity"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          ×
+        </button>
+
+        {/* Contenu */}
+        <div className="p-8 text-center">
+          <div className="text-5xl mb-4">{current.icon}</div>
+          <div className="text-sm font-bold mb-1" style={{ color: 'var(--accent, #6366f1)' }}>
+            Étape {step + 1} / {total}
+          </div>
+          <h2 className="text-lg font-bold mb-3" style={{ color: 'var(--text)' }}>
+            {current.title}
+          </h2>
+          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--text-muted)' }}>
+            {current.content}
+          </p>
+        </div>
+
+        {/* Pastilles progression */}
+        <div className="flex justify-center gap-1.5 pb-2">
+          {TUTORIAL_STEPS.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setStep(i)}
+              className="rounded-full transition-all"
+              style={{
+                width: i === step ? 20 : 8,
+                height: 8,
+                backgroundColor: i === step ? 'var(--accent, #6366f1)' : 'var(--border)',
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Navigation */}
+        <div className="flex items-center justify-between px-6 pb-6 pt-2 gap-3">
+          <button
+            onClick={() => setStep(v => Math.max(0, v - 1))}
+            disabled={step === 0}
+            className="px-4 py-2 text-sm font-medium border rounded-lg disabled:opacity-30 transition-opacity hover:opacity-70"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', backgroundColor: 'var(--bg)' }}
+          >
+            ← Précédent
+          </button>
+          {step < total - 1 ? (
+            <button
+              onClick={() => setStep(v => v + 1)}
+              className="flex-1 px-4 py-2 text-sm font-semibold text-white rounded-lg transition-opacity hover:opacity-90"
+              style={{ backgroundColor: 'var(--accent, #6366f1)' }}
+            >
+              Suivant →
+            </button>
+          ) : (
+            <button
+              onClick={close}
+              className="flex-1 px-4 py-2 text-sm font-semibold text-white rounded-lg transition-opacity hover:opacity-90"
+              style={{ backgroundColor: '#16a34a' }}
+            >
+              🚀 {"C'est parti !"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Vue Présentation ─────────────────────────────────────────────────────────
 
 function AccueilView({
   hasOrg,
   onNavigate,
+  onOpenTutorial,
 }: {
   hasOrg: boolean
   onNavigate: (v: View) => void
+  onOpenTutorial: () => void
 }) {
   const stats = [
     { label: 'Datapoints Module de Base', value: '40', icon: '📋', color: '#16a34a' },
@@ -492,15 +750,22 @@ function AccueilView({
     <div className="space-y-8">
       {/* Hero */}
       <div
-        className="rounded-2xl p-8 text-white"
+        className="rounded-2xl p-8 text-white relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #16a34a 0%, #2563eb 50%, #7c3aed 100%)' }}
       >
         <div className="text-5xl mb-3">🌱</div>
         <h1 className="text-2xl font-bold mb-2">VSME EFRAG — Standard PME</h1>
-        <p className="text-sm opacity-90 max-w-2xl">
+        <p className="text-sm opacity-90 max-w-2xl mb-4">
           Voluntary Sustainability Reporting Standard — module de base et module complet pour PME non cotées.
           Aligné CSRD/ESRS, GRI 2021 et ISO 26000.
         </p>
+        <button
+          onClick={onOpenTutorial}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80"
+          style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: 'white', border: '1px solid rgba(255,255,255,0.35)' }}
+        >
+          <span>?</span> Guide d&apos;utilisation
+        </button>
       </div>
 
       {/* Stats */}
@@ -609,6 +874,12 @@ function DashboardView({ responses }: { responses: Map<string, VsmeResponse> }) 
 
   return (
     <div className="space-y-6">
+      {/* Radar */}
+      <div className="rounded-xl border p-5" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text)' }}>Radar de maturité — Module de Base</h3>
+        <RadarChart responses={responses} />
+      </div>
+
       {/* Scores */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
@@ -760,7 +1031,15 @@ export default function VsmeEfragApp({ ctx }: { ctx: RseContext }) {
   const [view, setView] = useState<View>('accueil')
   const [responses, setResponses] = useState<Map<string, VsmeResponse>>(new Map())
   const [loading, setLoading] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
   const supabase = createClient()
+
+  // Auto-ouvrir le tutoriel à la première visite
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(TUTORIAL_KEY)) setShowTutorial(true)
+    } catch {}
+  }, [])
 
   const disabledTabs = !ctx.org
     ? TABS.filter(t => t.id !== 'accueil').map(t => t.id)
@@ -824,6 +1103,8 @@ export default function VsmeEfragApp({ ctx }: { ctx: RseContext }) {
 
   return (
     <div>
+      {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
+
       <ViewTabs
         tabs={TABS}
         active={view}
@@ -835,6 +1116,7 @@ export default function VsmeEfragApp({ ctx }: { ctx: RseContext }) {
         <AccueilView
           hasOrg={!!ctx.org}
           onNavigate={setView}
+          onOpenTutorial={() => setShowTutorial(true)}
         />
       )}
 
