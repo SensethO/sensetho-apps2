@@ -993,7 +993,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     const evalCount = DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).length
     const completionPct = Math.round((evalCount / DOMAINS.length) * 100)
     return (
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6">
         <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Hero */}
@@ -1349,7 +1349,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     const scorePolygon = points.map(p => `${p.x},${p.y}`).join(' ')
 
     return (
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6">
         <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* KPIs */}

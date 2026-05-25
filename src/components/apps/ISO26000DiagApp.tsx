@@ -566,7 +566,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   // ── VUE INTRO ──────────────────────────────────────────────────────────────
   if (view === 'intro') {
     return (
-      <div className="space-y-8 max-w-4xl mx-auto">
+      <div className="space-y-8">
         <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Hero */}
@@ -705,7 +705,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     const oddCovered = Array.from(new Set(ALL_DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).flatMap(d => d.ods)))
 
     return (
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6">
         <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Score global */}
@@ -897,7 +897,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   if (view === 'odd') {
     const oddDomains = selectedOdd ? (ODD_TO_DOMAINS[selectedOdd] ?? []) : []
     return (
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6">
         <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Grille 17 ODD */}
@@ -1002,7 +1002,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
       acc + d.actions.filter((_, i) => (actionProgress[actionKey(d.id, i)] ?? 0) > 0).length, 0)
 
     return (
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6">
         <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Header */}
@@ -1129,7 +1129,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     }
 
     return (
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6">
         <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Barre de recherche */}
