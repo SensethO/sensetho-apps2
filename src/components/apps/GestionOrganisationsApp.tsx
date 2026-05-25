@@ -4,35 +4,48 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useOrganisations } from '@/hooks/useOrganisations'
 import type { Organisation, OrganisationSearchResult } from '@/types/organisation'
 
-// ─── Sous-composants ──────────────────────────────────────────────────────────
+// ─── Helpers UI ───────────────────────────────────────────────────────────────
 
 function Field({ label, value, mono, className }: {
   label: string
-  value?: string | null
+  value?: string | number | null
   mono?: boolean
   className?: string
 }) {
   return (
     <div className={className}>
       <dt className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">{label}</dt>
-      <dd className={`text-sm text-gray-900 dark:text-white ${mono ? 'font-mono' : ''}`}>{value || '—'}</dd>
+      <dd className={`text-sm text-gray-900 dark:text-white ${mono ? 'font-mono' : ''}`}>
+        {value !== null && value !== undefined && value !== '' ? String(value) : '—'}
+      </dd>
     </div>
   )
 }
 
-function LabelBadge({ label, color }: { label: string; color: 'emerald' | 'blue' | 'purple' | 'amber' }) {
+function LabelBadge({ label, color }: {
+  label: string
+  color: 'emerald' | 'blue' | 'purple' | 'amber' | 'rose' | 'teal' | 'indigo' | 'lime'
+}) {
   const colors = {
     emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400',
-    blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
-    purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
-    amber: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
+    blue:    'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+    purple:  'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+    amber:   'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
+    rose:    'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400',
+    teal:    'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400',
+    indigo:  'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400',
+    lime:    'bg-lime-100 dark:bg-lime-900/30 text-lime-700 dark:text-lime-400',
   }
-  return <span className={`px-3 py-1 rounded-full text-sm font-medium ${colors[color]}`}>{label}</span>
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${colors[color]}`}>
+      {label}
+    </span>
+  )
 }
 
 // ─── Modale de détail ─────────────────────────────────────────────────────────
 
-type DetailTab = 'identite' | 'activite' | 'dirigeants' | 'labels'
+type DetailTab = 'identite' | 'activite' | 'siege' | 'dirigeants' | 'labels'
 
 function OrgDetailModal({ org, result, isInBase, onAdd, onRemove, onClose }: {
   org?: Organisation
@@ -42,33 +55,52 @@ function OrgDetailModal({ org, result, isInBase, onAdd, onRemove, onClose }: {
   onRemove?: () => Promise<void>
   onClose: () => void
 }) {
-  const [tab, setTab] = useState<DetailTab>('identite')
+  const [tab, setTab]   = useState<DetailTab>('identite')
   const [busy, setBusy] = useState(false)
 
+  // Fusion org (DB) + result (API) — DB prioritaire
+  const get = <K extends keyof Organisation & keyof OrganisationSearchResult>(key: K) =>
+    (org?.[key] ?? (result as unknown as Organisation)?.[key]) as Organisation[K] | undefined
+
   const denomination = org?.denomination ?? result?.nom_complet ?? '—'
-  const siren        = org?.siren ?? result?.siren
-  const siret        = org?.siret_siege ?? result?.siret_siege
-  const etat         = org?.etat_administratif ?? result?.etat_administratif
-  const forme        = org?.forme_juridique ?? result?.forme_juridique
-  const categorie    = org?.categorie_entreprise ?? result?.categorie_entreprise
-  const rna          = org?.identifiant_association ?? result?.identifiant_association
-  const activite     = org?.libelle_activite ?? result?.libelle_activite
-  const effectif     = org?.effectif_tranche ?? result?.effectif_tranche
-  const adresse      = org?.adresse ?? result?.adresse
-  const codePostal   = org?.code_postal ?? result?.code_postal
-  const ville        = org?.ville ?? result?.ville
-  const region       = org?.region ?? result?.region
+  const etat         = get('etat_administratif')
+  const ville        = get('ville')
+  const siren        = get('siren')
+
   const dirigeants   = org?.dirigeants ?? result?.dirigeants ?? []
-  const estEss       = org?.est_ess ?? result?.est_ess
-  const estAsso      = org?.est_association ?? result?.est_association
-  const estMission   = org?.est_societe_mission ?? result?.est_societe_mission
-  const estPublic    = org?.est_service_public ?? result?.est_service_public
+  const liste_idcc   = org?.liste_idcc ?? result?.liste_idcc ?? []
+
+  // Labels actifs
+  type LabelDef = { label: string; color: 'emerald' | 'blue' | 'purple' | 'amber' | 'rose' | 'teal' | 'indigo' | 'lime'; key: string }
+  const LABELS: LabelDef[] = [
+    { key: 'est_ess',                     label: 'ESS',                       color: 'emerald' },
+    { key: 'est_association',             label: 'Association',               color: 'blue'    },
+    { key: 'est_societe_mission',         label: 'Soc. à mission',            color: 'purple'  },
+    { key: 'est_service_public',          label: 'Service public',            color: 'amber'   },
+    { key: 'est_entrepreneur_individuel', label: 'Entrepreneur individuel',   color: 'rose'    },
+    { key: 'est_entrepreneur_spectacle',  label: 'Spectacle vivant',          color: 'indigo'  },
+    { key: 'est_finess',                  label: 'Établissement sanitaire',   color: 'teal'    },
+    { key: 'est_uai',                     label: 'Établissement scolaire',    color: 'teal'    },
+    { key: 'est_rge',                     label: 'RGE',                       color: 'lime'    },
+    { key: 'est_organisme_formation',     label: 'Organisme de formation',    color: 'amber'   },
+    { key: 'est_qualiopi',                label: 'Qualiopi',                  color: 'emerald' },
+    { key: 'est_bio',                     label: 'Agriculture bio',           color: 'lime'    },
+    { key: 'est_patrimoine_vivant',       label: 'Patrimoine vivant',         color: 'indigo'  },
+    { key: 'est_labor_agrement',          label: 'Agrément SAP',              color: 'rose'    },
+    { key: 'convention_collective_renseignee', label: 'Convention collective', color: 'blue' },
+  ]
+
+  const activeLabels = LABELS.filter(l => {
+    const val = org?.[l.key as keyof Organisation] ?? result?.[l.key as keyof OrganisationSearchResult]
+    return val === true
+  })
 
   const TABS: { key: DetailTab; label: string }[] = [
-    { key: 'identite',   label: 'Identité' },
-    { key: 'activite',   label: 'Activité & Siège' },
+    { key: 'identite',  label: 'Identité'       },
+    { key: 'activite',  label: 'Activité'        },
+    { key: 'siege',     label: 'Siège'           },
     { key: 'dirigeants', label: `Dirigeants (${dirigeants.length})` },
-    { key: 'labels',     label: 'Labels' },
+    { key: 'labels',    label: `Labels (${activeLabels.length})`   },
   ]
 
   async function handleAction(fn: () => Promise<void>) {
@@ -90,6 +122,7 @@ function OrgDetailModal({ org, result, isInBase, onAdd, onRemove, onClose }: {
               {ville && <span className="text-xs text-gray-500 dark:text-gray-400">· {ville}</span>}
               {etat === 'A' && <span className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">Actif</span>}
               {etat === 'C' && <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-full">Cessé</span>}
+              {etat === 'F' && <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full">Fermé</span>}
             </div>
           </div>
           <div className="flex items-center gap-2 ml-4 flex-shrink-0">
@@ -139,25 +172,77 @@ function OrgDetailModal({ org, result, isInBase, onAdd, onRemove, onClose }: {
 
         {/* Contenu */}
         <div className="flex-1 overflow-y-auto p-6">
+
           {tab === 'identite' && (
-            <dl className="grid grid-cols-2 gap-4">
-              <Field label="SIREN" value={siren} mono />
-              <Field label="SIRET siège" value={siret} mono />
-              <Field label="Forme juridique" value={forme} />
-              <Field label="Catégorie" value={categorie} />
-              <Field label="RNA" value={rna} mono />
-              <Field label="Statut" value={etat === 'A' ? 'Actif' : etat === 'C' ? 'Cessé' : etat ?? undefined} />
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <Field label="SIREN"              value={get('siren')}            mono />
+              <Field label="SIRET siège"        value={get('siret_siege')}      mono />
+              <Field label="RNA"                value={get('identifiant_association')} mono />
+              <Field label="Nature juridique"   value={get('nature_juridique')} mono />
+              <Field label="Forme juridique"    value={get('forme_juridique')}  className="col-span-2" />
+              <Field label="Statut"             value={etat === 'A' ? 'Actif' : etat === 'C' ? 'Cessé' : etat === 'F' ? 'Fermé' : etat ?? undefined} />
+              <Field label="Date de création"   value={get('date_creation')} />
+              <Field label="Catégorie"          value={get('categorie_entreprise')} />
+              <Field label="Dernière MàJ"       value={get('date_mise_a_jour')} />
+              {(org?.liste_enseignes?.length ?? result?.liste_enseignes?.length ?? 0) > 0 && (
+                <div className="col-span-2">
+                  <dt className="text-xs text-gray-400 dark:text-gray-500 mb-1">Enseignes</dt>
+                  <dd className="flex flex-wrap gap-1">
+                    {(org?.liste_enseignes ?? result?.liste_enseignes ?? []).map((e, i) => (
+                      <span key={i} className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded">{e}</span>
+                    ))}
+                  </dd>
+                </div>
+              )}
             </dl>
           )}
 
           {tab === 'activite' && (
-            <dl className="grid grid-cols-2 gap-4">
-              <Field label="Activité principale" value={activite} className="col-span-2" />
-              <Field label="Effectif" value={effectif} />
-              <Field label="Adresse" value={adresse} className="col-span-2" />
-              <Field label="Code postal" value={codePostal} />
-              <Field label="Ville" value={ville} />
-              <Field label="Région" value={region} />
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <Field label="Code NAF"          value={get('activite_principale')} mono />
+              <Field label="Section"           value={get('section_activite_principale')} />
+              <Field label="Activité"          value={get('libelle_activite')} className="col-span-2" />
+              <Field label="Début d&apos;activité"  value={get('date_debut_activite')} />
+              <Field label="Effectif"          value={get('effectif_tranche')} />
+              <Field label="Année effectif"    value={get('annee_effectif')} />
+              <Field label="Établissements"    value={get('nombre_etablissements')} />
+              <Field label="Étab. ouverts"     value={get('nombre_etablissements_ouverts')} />
+              {liste_idcc.length > 0 && (
+                <div className="col-span-2">
+                  <dt className="text-xs text-gray-400 dark:text-gray-500 mb-1">Conventions collectives (IDCC)</dt>
+                  <dd className="flex flex-wrap gap-1">
+                    {liste_idcc.map((idcc, i) => (
+                      <span key={i} className="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded font-mono">{idcc}</span>
+                    ))}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          )}
+
+          {tab === 'siege' && (
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <Field label="Adresse"           value={get('adresse')}            className="col-span-2" />
+              <Field label="Code postal"       value={get('code_postal')} />
+              <Field label="Commune (INSEE)"   value={get('commune')}            mono />
+              <Field label="Ville"             value={get('ville')} />
+              <Field label="Département"       value={get('libelle_departement')} />
+              <Field label="Code département"  value={get('departement')}        mono />
+              <Field label="Région"            value={get('region')} />
+              <Field label="Latitude"          value={get('latitude')} />
+              <Field label="Longitude"         value={get('longitude')} />
+              {get('latitude') && get('longitude') && (
+                <div className="col-span-2 mt-2">
+                  <a
+                    href={`https://maps.google.com/?q=${get('latitude')},${get('longitude')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
+                  >
+                    📍 Voir sur Google Maps
+                  </a>
+                </div>
+              )}
             </dl>
           )}
 
@@ -170,16 +255,24 @@ function OrgDetailModal({ org, result, isInBase, onAdd, onRemove, onClose }: {
                   ? (d.denomination ?? '—')
                   : `${d.prenoms ?? ''} ${d.nom ?? ''}`.trim()
                 return (
-                  <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
-                    <div className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 text-sm font-bold flex-shrink-0">
+                  <div key={i} className="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 text-sm font-bold flex-shrink-0">
                       {(nom[0] ?? '?').toUpperCase()}
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 dark:text-white">{nom}</p>
                       {d.qualite && <p className="text-xs text-gray-500 dark:text-gray-400">{d.qualite}</p>}
-                      {d.date_naissance_partielle && (
-                        <p className="text-xs text-gray-400 dark:text-gray-500">Né(e) {d.date_naissance_partielle}</p>
-                      )}
+                      <div className="flex flex-wrap gap-3 mt-1">
+                        {d.date_naissance_partielle && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">Né(e) {d.date_naissance_partielle}</span>
+                        )}
+                        {d.nationalite && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">🌍 {d.nationalite}</span>
+                        )}
+                        {d.siren && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">SIREN {d.siren}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
@@ -188,13 +281,15 @@ function OrgDetailModal({ org, result, isInBase, onAdd, onRemove, onClose }: {
           )}
 
           {tab === 'labels' && (
-            <div className="flex flex-wrap gap-2">
-              {estEss     && <LabelBadge label="ESS"               color="emerald" />}
-              {estAsso    && <LabelBadge label="Association"        color="blue"    />}
-              {estMission && <LabelBadge label="Société à mission"  color="purple"  />}
-              {estPublic  && <LabelBadge label="Service public"     color="amber"   />}
-              {!estEss && !estAsso && !estMission && !estPublic && (
-                <p className="text-sm text-gray-400 dark:text-gray-500">Aucun label spécifique</p>
+            <div>
+              {activeLabels.length === 0 ? (
+                <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-6">Aucun label spécifique</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {activeLabels.map(l => (
+                    <LabelBadge key={l.key} label={l.label} color={l.color} />
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -258,7 +353,11 @@ export default function GestionOrganisationsApp() {
           o.denomination?.toLowerCase().includes(q) ||
           o.siren?.includes(q) ||
           o.ville?.toLowerCase().includes(q) ||
+          o.departement?.includes(q) ||
+          o.libelle_departement?.toLowerCase().includes(q) ||
           o.nom_commercial?.toLowerCase().includes(q) ||
+          o.libelle_activite?.toLowerCase().includes(q) ||
+          o.commune?.includes(q) ||
           o.dirigeants?.some(d =>
             `${d.prenoms ?? ''} ${d.nom ?? ''}`.toLowerCase().includes(q)
           )
@@ -276,17 +375,8 @@ export default function GestionOrganisationsApp() {
     setManualSiren('')
   }
 
-  function switchToSearch() {
-    setMode('search')
-    setQuery('')
-    setSearchResults([])
-  }
-
-  function switchToList() {
-    setMode('list')
-    setQuery('')
-    setSearchResults([])
-  }
+  function switchToSearch() { setMode('search'); setQuery(''); setSearchResults([]) }
+  function switchToList()   { setMode('list');   setQuery(''); setSearchResults([]) }
 
   return (
     <div className="min-h-full max-w-5xl mx-auto px-4 py-6 space-y-6">
@@ -352,7 +442,7 @@ export default function GestionOrganisationsApp() {
               )}
               {searchResults.map(r => {
                 const existing = getSirenInBase(r.siren)
-                const inBase = !!existing
+                const inBase   = !!existing
                 return (
                   <button
                     key={r.siren ?? r.nom_complet}
@@ -366,10 +456,15 @@ export default function GestionOrganisationsApp() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{r.nom_complet}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {r.siren   && <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{r.siren}</span>}
-                        {r.ville   && <span className="text-xs text-gray-400 dark:text-gray-500">· {r.ville}</span>}
-                        {r.forme_juridique && <span className="text-xs text-gray-400 dark:text-gray-500">· {r.forme_juridique}</span>}
+                        {r.siren             && <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{r.siren}</span>}
+                        {r.ville             && <span className="text-xs text-gray-400 dark:text-gray-500">· {r.ville}</span>}
+                        {r.libelle_departement && <span className="text-xs text-gray-400 dark:text-gray-500">({r.libelle_departement})</span>}
+                        {r.forme_juridique   && <span className="text-xs text-gray-400 dark:text-gray-500">· {r.forme_juridique}</span>}
+                        {r.etat_administratif === 'C' && <span className="text-xs text-red-400">· Cessé</span>}
                       </div>
+                      {r.libelle_activite && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{r.libelle_activite}</p>
+                      )}
                     </div>
                     <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 ${
                       inBase
@@ -399,7 +494,7 @@ export default function GestionOrganisationsApp() {
             type="text"
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            placeholder="Filtrer par nom, SIREN, ville, dirigeant…"
+            placeholder="Filtrer par nom, SIREN, ville, activité, dirigeant…"
             className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
           />
 
@@ -437,6 +532,7 @@ export default function GestionOrganisationsApp() {
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {org.siren && <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{org.siren}</span>}
                       {org.ville && <span className="text-xs text-gray-400 dark:text-gray-500">· {org.ville}</span>}
+                      {org.libelle_departement && <span className="text-xs text-gray-400 dark:text-gray-500">({org.libelle_departement})</span>}
                     </div>
                     {org.libelle_activite && (
                       <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{org.libelle_activite}</p>
@@ -446,6 +542,7 @@ export default function GestionOrganisationsApp() {
                         {org.dirigeants[0].prenoms
                           ? `${org.dirigeants[0].prenoms} ${org.dirigeants[0].nom ?? ''}`.trim()
                           : org.dirigeants[0].nom ?? ''}
+                        {org.dirigeants[0].qualite ? ` — ${org.dirigeants[0].qualite}` : ''}
                       </p>
                     )}
                   </div>
@@ -471,7 +568,7 @@ export default function GestionOrganisationsApp() {
                   type="text"
                   value={manualName}
                   onChange={e => setManualName(e.target.value)}
-                  placeholder="Nom de l&apos;organisation"
+                  placeholder="Nom de l'organisation"
                   className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
                 />
               </div>
