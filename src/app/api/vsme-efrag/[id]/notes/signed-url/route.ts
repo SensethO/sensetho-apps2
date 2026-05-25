@@ -4,7 +4,7 @@ import { spGraphForApp } from '@/lib/sharepointMulti'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest, { params: _params }: { params: { id: string } }) {
+export async function GET(req: NextRequest) {
   try {
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
