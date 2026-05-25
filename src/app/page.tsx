@@ -1,315 +1,586 @@
-import Image from 'next/image'
 import Link from 'next/link'
+import Image from 'next/image'
 import { LandingNav } from '@/components/layout/LandingNav'
 
-const FEATURED_APPS = [
-  {
-    slug: 'diagnostic-iso26000',
-    name: 'Diagnostic ISO 26000',
-    description: 'Évaluez votre maturité RSE selon les 7 domaines de la norme ISO 26000 avec un diagnostic guidé en 4 phases.',
-    icon: '🌿',
-    category: 'RSE',
-    href: '/rse/diagnostic-iso26000',
-  },
-  {
-    slug: 'diagnostic-csrd',
-    name: 'Diagnostic CSRD/ESRS',
-    description: 'Préparez votre reporting de durabilité CSRD avec une analyse complète des normes ESRS applicables.',
-    icon: '📋',
-    category: 'RSE',
-    href: '/rse/diagnostic-csrd',
-  },
-  {
-    slug: 'diagnostic-vsme',
-    name: 'Diagnostic VSME EFRAG',
-    description: 'Diagnostic simplifié pour PME selon le standard VSME de l\'EFRAG, adapté aux petites structures.',
-    icon: '🏢',
-    category: 'RSE',
-    href: '/rse/diagnostic-vsme',
-  },
-  {
-    slug: 'parties-prenantes',
-    name: 'Parties Prenantes & Matérialité',
-    description: 'Identifiez vos parties prenantes, conduisez des consultations et analysez votre matérialité à double entrée.',
-    icon: '🤝',
-    category: 'RSE',
-    href: '/rse/parties-prenantes',
-  },
-  {
-    slug: 'bilan-carbone',
-    name: 'Bilan Carbone',
-    description: 'Mesurez et suivez vos émissions de gaz à effet de serre selon la méthode Bilan Carbone® de l\'ADEME.',
-    icon: '♻️',
-    category: 'RSE',
-    href: '/rse/bilan-carbone',
-  },
-  {
-    slug: 'plan-action-rse',
-    name: 'Plan d\'Action RSE',
-    description: 'Construisez et pilotez votre plan d\'action RSE avec des objectifs mesurables et un suivi des indicateurs.',
-    icon: '🎯',
-    category: 'RSE',
-    href: '/rse/plan-action',
-  },
-  {
-    slug: 'gestion-organisations',
-    name: 'Gestion des organisations',
-    description: 'Gérez vos organisations clientes ou partenaires avec toutes les données légales issues des registres officiels.',
-    icon: '🏛️',
-    category: 'Business',
-    href: '/business/gestion-organisations',
-  },
-]
+export const dynamic = 'force-dynamic'
 
-const FEATURES = [
+const PUBLIC_APPS = [
+  // ── RSE ──────────────────────────────────────────────────────
   {
-    icon: '🔒',
-    title: 'Données souveraines',
-    description: 'Hébergées en Europe, sur des serveurs à énergie renouvelable. Vos données RSE ne quittent pas l\'UE.',
+    id: 'iso26000-guided',
+    name: 'Diagnostic RSE initial guidé ISO 26000',
+    description: 'Parcourez les 13 domaines RSE prioritaires de l\'ISO 26000 en 30 à 50 minutes grâce à un questionnaire guidé étape par étape. Résultats instantanés, recommandations personnalisées par domaine, export PDF et Excel complet avec cartographie ODD.',
+    icon: '🧭',
+    folder: 'RSE',
   },
   {
+    id: 'csrd-diagnostic',
+    name: 'Diagnostic CSRD / ESRS',
+    description: 'Préparez votre conformité à la directive CSRD en évaluant les Disclosure Requirements des standards ESRS. Suivez votre taux de couverture par standard, identifiez les lacunes prioritaires et générez un rapport de conformité exportable.',
     icon: '📊',
-    title: 'Standards de référence',
-    description: 'ISO 26000, CSRD/ESRS, VSME EFRAG, GRI… Les normes internationales intégrées nativement.',
+    folder: 'RSE',
   },
   {
+    id: 'vsme-diagnostic',
+    name: 'Diagnostic VSME EFRAG',
+    description: 'Diagnostic de durabilité simplifié pour les PME selon le standard VSME de l\'EFRAG. Évaluez vos pratiques ESG selon un référentiel adapté aux petites structures, avec export de rapport et recommandations priorisées.',
+    icon: '🌱',
+    folder: 'RSE',
+  },
+  {
+    id: 'parties-prenantes',
+    name: 'Parties Prenantes & Matérialité',
+    description: 'Identifiez et analysez vos parties prenantes, conduisez des consultations structurées et réalisez votre analyse de matérialité à double entrée. Gérez plusieurs sessions par organisation, exportez les résultats en PDF et Excel.',
     icon: '🤝',
-    title: 'Multi-organisations',
-    description: 'Gérez plusieurs structures depuis un seul compte. Idéal pour les cabinets de conseil et groupes.',
+    folder: 'RSE',
   },
   {
-    icon: '📤',
-    title: 'Export & Partage',
-    description: 'Exportez vos diagnostics en PDF et Excel. Partagez vers SharePoint en un clic.',
+    id: 'odd-iso26000',
+    name: 'ISO 26000 & ODD',
+    description: 'Explorez visuellement les correspondances entre les 37 domaines d\'action ISO 26000 et les 17 Objectifs de Développement Durable des Nations Unies. Identifiez quels ODD sont couverts par votre démarche RSE. Export Excel des matrices.',
+    icon: '🌍',
+    folder: 'RSE',
+  },
+  {
+    id: 'rapport-integre',
+    name: 'Rapport intégré',
+    description: 'Construisez votre rapport intégré en croisant les résultats de vos diagnostics ISO 26000, CSRD/ESRS et GRI. Structurez votre communication extra-financière selon le cadre <IR> de l\'IIRC et exportez un rapport cohérent et prêt à diffuser.',
+    icon: '📄',
+    folder: 'RSE',
+  },
+  // ── Business ──────────────────────────────────────────────────
+  {
+    id: 'gestion-organisations',
+    name: 'Gestion des organisations',
+    description: 'Gérez vos organisations clientes ou partenaires avec toutes les données légales issues des registres officiels français (SIRENE, INPI). Recherche en temps réel, fiche complète (siège, dirigeants, labels), favoris et export.',
+    icon: '🏛️',
+    folder: 'Business',
   },
 ]
 
-export default function HomePage() {
+export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white">
+    <div className="min-h-screen bg-white dark:bg-gray-950">
+
+      {/* ── Navigation ─────────────────────────────────────────────────── */}
       <LandingNav />
 
-      {/* ── Hero ── */}
-      <section
-        className="relative overflow-hidden"
-        style={{ backgroundColor: '#0e3d4d' }}
-      >
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-20 md:py-28 text-center">
-          <div className="flex justify-center mb-8">
+      <main id="main-content">
+
+      {/* ── Hero ───────────────────────────────────────────────────────── */}
+      <section className="bg-white dark:bg-gray-950 px-4 pt-16 pb-0">
+        <div className="mx-auto max-w-4xl text-center">
+          {/* Logo centré */}
+          <div className="mx-auto mb-10 w-56 sm:w-72">
             <Image
               src="/logo2.png"
               alt="Sens'ethO Apps"
-              width={220}
-              height={80}
-              className="object-contain"
+              width={0}
+              height={0}
+              sizes="300px"
+              className="w-full h-auto rounded-xl"
               priority
             />
           </div>
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white leading-tight mb-4">
-            Pilotez votre démarche RSE
-            <br />
-            <span className="text-teal-300">avec des outils de référence</span>
+
+          <div
+            className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium mb-6"
+            style={{ backgroundColor: 'rgba(14,61,77,0.08)', color: '#0e3d4d' }}
+          >
+            <span>🎯</span>
+            <span>La plateforme RSE des professionnels et cabinets de conseil</span>
+          </div>
+
+          <h1 className="text-4xl sm:text-5xl font-extrabold leading-tight tracking-tight" style={{ color: '#0e3d4d' }}>
+            La plateforme RSE<br />
+            <span className="text-gray-400 dark:text-gray-400 font-light">des experts et organisations responsables</span>
           </h1>
-          <p className="mt-4 text-lg text-white/80 max-w-2xl mx-auto">
-            La plateforme des professionnels RSE : diagnostics ISO 26000, CSRD, VSME, parties prenantes, bilan carbone et bien plus.
+
+          <p className="mt-6 text-lg text-gray-500 dark:text-gray-400 max-w-2xl mx-auto leading-relaxed">
+            ISO 26000, CSRD/ESRS, VSME, Parties Prenantes — nos outils couvrent l&apos;ensemble des référentiels RSE internationaux, sans complexité ni frais d&apos;infrastructure.
           </p>
-          <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
+
+          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
               href="/catalogue"
-              className="inline-block px-8 py-3 rounded-xl bg-teal-400 text-gray-900 font-bold text-base hover:bg-teal-300 transition-colors shadow-lg"
+              className="w-full sm:w-auto rounded-xl px-8 py-4 text-base font-bold text-white shadow-lg hover:opacity-90 transition-all"
+              style={{ backgroundColor: '#0e3d4d' }}
             >
-              Découvrir le catalogue →
+              Commencer gratuitement →
             </Link>
             <Link
               href="/auth/login"
-              className="inline-block px-8 py-3 rounded-xl border-2 border-white/40 text-white font-semibold text-base hover:bg-white/10 transition-colors"
+              className="w-full sm:w-auto rounded-xl border px-8 py-4 text-base font-medium transition-all hover:bg-gray-50 dark:hover:bg-gray-800"
+              style={{ borderColor: '#0e3d4d', color: '#0e3d4d' }}
             >
-              Se connecter
+              J&apos;ai déjà un compte
             </Link>
           </div>
-        </div>
 
-        {/* Vague SVG */}
-        <div className="w-full overflow-hidden leading-none" style={{ marginBottom: '-2px' }}>
-          <svg viewBox="0 0 1440 80" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" className="w-full h-16 md:h-20">
-            <path d="M0,40 C360,80 1080,0 1440,40 L1440,80 L0,80 Z" fill="#ffffff" className="dark:fill-gray-950" />
-          </svg>
+          <p className="mt-5 text-sm text-gray-400">
+            Accès sur invitation — géré par votre administrateur
+          </p>
         </div>
       </section>
 
-      {/* ── Features ── */}
-      <section className="py-16 bg-white dark:bg-gray-950">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl sm:text-3xl font-bold text-center mb-12" style={{ color: '#0e3d4d' }}>
-            Une plateforme pensée pour les experts RSE
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {FEATURES.map(f => (
-              <div
-                key={f.title}
-                className="rounded-2xl p-6 border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-col gap-3"
-              >
-                <span className="text-3xl">{f.icon}</span>
-                <h3 className="font-bold text-base" style={{ color: '#0e3d4d' }}>{f.title}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{f.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Vague entre sections */}
-      <div className="w-full overflow-hidden leading-none bg-white dark:bg-gray-950" style={{ marginBottom: '-2px' }}>
-        <svg viewBox="0 0 1440 60" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" className="w-full h-12">
-          <path d="M0,30 C480,60 960,0 1440,30 L1440,60 L0,60 Z" fill="#030a14" />
+      {/* ── Vague blanc → #0e3d4d ── */}
+      <div className="w-full bg-white dark:bg-gray-950 leading-none mt-16">
+        <svg
+          viewBox="0 0 1440 120"
+          xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="none"
+          className="w-full block"
+          style={{ display: 'block', marginBottom: '-2px' }}
+        >
+          <path
+            d="M0,40 C180,90 360,10 540,55 C720,100 900,15 1080,60 C1260,105 1360,65 1440,50 L1440,120 L0,120 Z"
+            fill="#0e3d4d"
+          />
         </svg>
       </div>
 
-      {/* ── Applications ── */}
-      <section className="py-16" style={{ backgroundColor: '#030a14' }}>
+      {/* ── Features ─────────────────────────────────────────────────── */}
+      <section className="py-16" style={{ backgroundColor: '#0e3d4d' }}>
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl sm:text-3xl font-bold text-center text-white mb-4">
-            Nos applications
-          </h2>
-          <p className="text-center text-white/60 mb-12 max-w-xl mx-auto text-sm">
-            Des outils spécialisés couvrant tous les référentiels RSE internationaux, accessibles par abonnement.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {FEATURED_APPS.map(app => (
+          <div className="text-center mb-12">
+            <h2 className="text-2xl sm:text-3xl font-bold text-white">
+              Pourquoi Sens&apos;ethO Apps ?
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              {
+                icon: '🔒',
+                title: 'Données souveraines',
+                desc: 'Hébergées en Europe sur des serveurs à énergie renouvelable. Vos données RSE ne quittent pas l\'UE.',
+              },
+              {
+                icon: '📋',
+                title: 'Standards de référence',
+                desc: 'ISO 26000, CSRD/ESRS, VSME EFRAG, GRI… Les normes internationales intégrées nativement dans chaque outil.',
+              },
+              {
+                icon: '🏢',
+                title: 'Multi-organisations',
+                desc: 'Gérez plusieurs structures depuis un seul compte. Idéal pour les cabinets de conseil RSE et les groupes.',
+              },
+              {
+                icon: '📤',
+                title: 'Export & Partage',
+                desc: 'Exportez vos diagnostics en PDF et Excel. Partagez vers SharePoint en un clic depuis chaque application.',
+              },
+            ].map((feat, i) => (
               <div
-                key={app.slug}
-                className="rounded-2xl p-6 border border-white/10 bg-white/5 hover:bg-white/10 transition-colors flex flex-col gap-3"
+                key={i}
+                className="rounded-2xl p-6 border border-white/10"
+                style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
               >
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{app.icon}</span>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-900/50 text-teal-300">
-                    {app.category}
-                  </span>
-                </div>
-                <h3 className="font-bold text-white text-base">{app.name}</h3>
-                <p className="text-sm text-white/60 flex-1">{app.description}</p>
-                <Link
-                  href="/auth/login"
-                  className="mt-2 inline-block text-center px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold transition-colors"
-                >
-                  Accéder →
-                </Link>
+                <div className="text-3xl mb-3">{feat.icon}</div>
+                <h3 className="font-bold text-white mb-2">{feat.title}</h3>
+                <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>
+                  {feat.desc}
+                </p>
               </div>
             ))}
           </div>
-          <div className="mt-10 text-center">
+        </div>
+      </section>
+
+      {/* ── Vague #0e3d4d → #030a14 ── */}
+      <div className="leading-none" style={{ backgroundColor: '#0e3d4d' }}>
+        <svg
+          viewBox="0 0 1440 100"
+          xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="none"
+          className="w-full block"
+          style={{ display: 'block', marginBottom: '-2px' }}
+        >
+          <path
+            d="M0,40 C200,80 400,10 600,50 C800,90 1000,20 1200,55 C1320,75 1390,45 1440,38 L1440,100 L0,100 Z"
+            fill="#030a14"
+          />
+        </svg>
+      </div>
+
+      {/* ── Applications ─────────────────────────────────────────────── */}
+      <section className="py-20" style={{ backgroundColor: '#030a14' }}>
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-14">
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+              Vos outils RSE en un seul endroit
+            </h2>
+            <p className="mt-4 text-base max-w-2xl mx-auto" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              RSE, Business, Métier — chaque application est disponible depuis votre tableau de bord, par abonnement et avec gestion des droits par organisation.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {PUBLIC_APPS.map((app) => (
+              <div
+                key={app.id}
+                className="rounded-2xl p-5 border transition-all hover:border-white/20"
+                style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)' }}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 text-2xl">{app.icon}</div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <h3 className="font-semibold text-white text-sm">{app.name}</h3>
+                      <span
+                        className="rounded-full px-2 py-0.5 text-xs font-medium"
+                        style={{
+                          backgroundColor: app.folder === 'RSE'
+                            ? 'rgba(52,211,153,0.15)'
+                            : 'rgba(167,139,250,0.15)',
+                          color: app.folder === 'RSE'
+                            ? '#34d399'
+                            : '#a78bfa',
+                        }}
+                      >
+                        {app.folder}
+                      </span>
+                    </div>
+                    <p className="text-xs leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                      {app.description}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-12 text-center">
             <Link
               href="/catalogue"
-              className="inline-block px-8 py-3 rounded-xl border border-white/20 text-white font-semibold text-sm hover:bg-white/10 transition-colors"
+              className="inline-flex items-center gap-2 rounded-xl px-8 py-4 text-base font-bold text-white shadow-lg hover:opacity-90 transition-all"
+              style={{ backgroundColor: '#0e3d4d' }}
             >
-              Voir tout le catalogue
+              Accéder à toutes les applications →
             </Link>
           </div>
         </div>
       </section>
 
-      {/* Vague */}
-      <div className="w-full overflow-hidden leading-none" style={{ backgroundColor: '#030a14', marginBottom: '-2px' }}>
-        <svg viewBox="0 0 1440 60" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" className="w-full h-12">
-          <path d="M0,30 C480,0 960,60 1440,30 L1440,60 L0,60 Z" fill="#0e3d4d" />
+      {/* ── Vague #030a14 → blanc ── */}
+      <div className="leading-none" style={{ backgroundColor: '#030a14' }}>
+        <svg
+          viewBox="0 0 1440 100"
+          xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="none"
+          className="w-full block"
+          style={{ display: 'block', marginBottom: '-2px' }}
+        >
+          <path
+            d="M0,55 C180,20 360,85 540,45 C720,10 900,80 1080,42 C1260,8 1360,55 1440,62 L1440,100 L0,100 Z"
+            className="fill-white dark:fill-[#030712]"
+          />
         </svg>
       </div>
 
-      {/* ── RSE Highlight ── */}
-      <section className="py-16" style={{ backgroundColor: '#0e3d4d' }}>
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-6">
-            La RSE, c&apos;est votre métier. On vous donne les outils.
-          </h2>
-          <p className="text-white/80 text-base max-w-3xl mx-auto mb-10">
-            Sens&apos;ethO Apps centralise vos diagnostics, analyses et plans d&apos;action RSE dans une plateforme unique,
-            sécurisée et conforme aux dernières normes européennes. Plus de feuilles Excel dispersées,
-            plus de rapports incomplets : tout est structuré, exportable et prêt à partager.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-left">
-            {[
-              { num: '7', label: 'Domaines ISO 26000', sub: 'Couverture complète de la norme' },
-              { num: '12', label: 'Standards couverts', sub: 'ISO, CSRD, VSME, GRI, EFRAG…' },
-              { num: '100%', label: 'Données en Europe', sub: 'Hébergement souverain UE' },
-            ].map(s => (
-              <div key={s.num} className="rounded-2xl bg-white/10 p-6">
-                <div className="text-4xl font-extrabold text-teal-300 mb-1">{s.num}</div>
-                <div className="font-bold text-white text-sm">{s.label}</div>
-                <div className="text-white/60 text-xs mt-1">{s.sub}</div>
+      {/* ── RSE Highlight ─────────────────────────────────────────────── */}
+      <section className="py-20 bg-white dark:bg-gray-950">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <div
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium mb-6"
+                style={{ backgroundColor: 'rgba(14,61,77,0.08)', color: '#0e3d4d' }}
+              >
+                <span>🌿</span>
+                <span>Suite RSE complète</span>
               </div>
-            ))}
+              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-6" style={{ color: '#0e3d4d' }}>
+                Pilotez votre démarche RSE avec la norme ISO 26000
+              </h2>
+              <p className="text-lg text-gray-500 dark:text-gray-400 leading-relaxed mb-8">
+                Évaluez votre maturité sur les 13 domaines RSE prioritaires, suivez votre couverture des 17 Objectifs de Développement Durable, et générez un plan d&apos;actions concret pour votre organisation.
+              </p>
+              <div className="space-y-3">
+                {[
+                  'Diagnostic guidé en 30–50 minutes',
+                  'Cartographie des 17 ODD des Nations Unies',
+                  'Recommandations personnalisées par domaine',
+                  'Rapport exportable PDF et Excel',
+                ].map((item) => (
+                  <div key={item} className="flex items-center gap-3 text-gray-700 dark:text-gray-300">
+                    <div
+                      className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: 'rgba(14,61,77,0.1)' }}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="#0e3d4d" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <span className="text-sm font-medium">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { icon: '🧭', label: 'Diagnostic guidé ISO 26000', desc: '13 domaines prioritaires' },
+                { icon: '📊', label: 'Diagnostic CSRD/ESRS', desc: 'Disclosure Requirements ESRS' },
+                { icon: '🌍', label: 'Mapping ODD', desc: '17 objectifs de l\'ONU' },
+                { icon: '🤝', label: 'Parties Prenantes', desc: 'Matérialité à double entrée' },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl p-5 border"
+                  style={{ borderColor: 'rgba(14,61,77,0.15)', backgroundColor: 'rgba(14,61,77,0.03)' }}
+                >
+                  <div className="text-2xl mb-2">{item.icon}</div>
+                  <div className="font-semibold text-sm mb-1" style={{ color: '#0e3d4d' }}>{item.label}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{item.desc}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Vague */}
-      <div className="w-full overflow-hidden leading-none" style={{ backgroundColor: '#0e3d4d', marginBottom: '-2px' }}>
-        <svg viewBox="0 0 1440 60" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" className="w-full h-12">
-          <path d="M0,30 C360,60 1080,0 1440,30 L1440,60 L0,60 Z" fill="#f0fdf4" className="dark:fill-gray-900" />
-        </svg>
-      </div>
-
-      {/* ── Hébergement responsable ── */}
-      <section className="py-14 bg-green-50 dark:bg-gray-900">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 text-center">
-          <span className="text-4xl mb-4 block">🌱</span>
-          <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-white">Hébergement responsable</h2>
-          <p className="text-gray-600 dark:text-gray-400 text-sm max-w-2xl mx-auto">
-            Notre infrastructure est hébergée sur des serveurs alimentés par des énergies renouvelables,
-            localisés dans l&apos;Union Européenne. Vos données RSE sont traitées de façon cohérente avec vos engagements.
-          </p>
+      {/* ── CSRD Highlight ───────────────────────────────────────────── */}
+      <section className="py-20 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <div
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium mb-6"
+                style={{ backgroundColor: 'rgba(14,61,77,0.08)', color: '#0e3d4d' }}
+              >
+                <span>📋</span>
+                <span>Directive CSRD & Standards ESRS</span>
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-6" style={{ color: '#0e3d4d' }}>
+                Préparez votre reporting de durabilité CSRD/ESRS
+              </h2>
+              <p className="text-lg text-gray-500 dark:text-gray-400 leading-relaxed mb-8">
+                Évaluez votre conformité aux Disclosure Requirements des standards ESRS, suivez votre taux de couverture par standard et générez un rapport de conformité prêt à partager.
+              </p>
+              <div className="space-y-3">
+                {[
+                  'Couverture des standards ESRS E, S et G',
+                  'Évaluation par Disclosure Requirement',
+                  'Taux de couverture par standard en temps réel',
+                  'Rapport de conformité exportable en PDF',
+                ].map((item) => (
+                  <div key={item} className="flex items-center gap-3 text-gray-700 dark:text-gray-300">
+                    <div
+                      className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: 'rgba(14,61,77,0.1)' }}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="#0e3d4d" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <span className="text-sm font-medium">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { icon: '📊', label: 'Diagnostic CSRD', desc: 'Standards ESRS · E, S, G' },
+                { icon: '🌱', label: 'VSME EFRAG', desc: 'Référentiel PME simplifié' },
+                { icon: '📋', label: 'Disclosure Requirements', desc: 'Évaluation par exigence' },
+                { icon: '📄', label: 'Rapport PDF', desc: 'Export prêt à diffuser' },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl p-5 border"
+                  style={{ borderColor: 'rgba(14,61,77,0.15)', backgroundColor: 'rgba(14,61,77,0.03)' }}
+                >
+                  <div className="text-2xl mb-2">{item.icon}</div>
+                  <div className="font-semibold text-sm mb-1" style={{ color: '#0e3d4d' }}>{item.label}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{item.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Vague */}
-      <div className="w-full overflow-hidden leading-none bg-green-50 dark:bg-gray-900" style={{ marginBottom: '-2px' }}>
-        <svg viewBox="0 0 1440 60" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" className="w-full h-12">
-          <path d="M0,30 C480,60 960,0 1440,30 L1440,60 L0,60 Z" fill="#030a14" />
+      {/* ── Hébergement responsable ───────────────────────────────────── */}
+      <section className="py-16 bg-white dark:bg-gray-950 border-t border-gray-100 dark:border-gray-800">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div
+                className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                style={{ backgroundColor: 'rgba(14,61,77,0.08)' }}
+              >
+                🌱
+              </div>
+              <div>
+                <h3 className="font-bold text-lg" style={{ color: '#0e3d4d' }}>Hébergement responsable</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
+                  Nos données sont hébergées en Europe chez Vercel et Supabase. Datacenters certifiés ISO 14001 et engagés sur la neutralité carbone.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {['🇪🇺 Données en Europe', 'ISO 14001', 'Carbon Neutral', 'RGPD'].map(badge => (
+                    <span
+                      key={badge}
+                      className="text-xs font-medium px-2.5 py-1 rounded-full border"
+                      style={{ borderColor: 'rgba(14,61,77,0.2)', color: '#0e3d4d', backgroundColor: 'rgba(14,61,77,0.05)' }}
+                    >
+                      {badge}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <a
+              href="https://www.sensetho.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-shrink-0 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all hover:opacity-80 border"
+              style={{ borderColor: 'rgba(14,61,77,0.25)', color: '#0e3d4d', backgroundColor: 'rgba(14,61,77,0.05)' }}
+            >
+              En savoir plus →
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Vague blanc → #0e3d4d ── */}
+      <div className="w-full bg-white dark:bg-gray-950 leading-none">
+        <svg
+          viewBox="0 0 1440 180"
+          xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="none"
+          className="w-full block"
+          style={{ display: 'block', marginBottom: '-2px' }}
+        >
+          <path
+            d="M0,70 C180,130 360,20 540,80 C720,140 900,30 1080,90 C1260,145 1360,100 1440,85 L1440,180 L0,180 Z"
+            fill="#0e3d4d"
+          />
+          <path
+            d="M0,115 C200,80 400,155 600,118 C800,82 1000,155 1200,122 C1320,104 1390,132 1440,120 L1440,180 L0,180 Z"
+            fill="#030a14"
+          />
         </svg>
       </div>
 
-      {/* ── CTA Final + Footer ── */}
-      <section className="py-16" style={{ backgroundColor: '#030a14' }}>
-        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
+      {/* ── CTA + Footer ──────────────────────────────────────────────── */}
+      <section className="pt-16 pb-12 overflow-hidden" style={{ backgroundColor: '#030a14' }}>
+        <div className="mx-auto max-w-3xl px-6 sm:px-8 text-center mb-16">
+          {/* Logo centré */}
+          <div className="mx-auto mb-8 w-40 sm:w-52">
+            <Image
+              src="/logo2.png"
+              alt="Sens'ethO Apps"
+              width={0}
+              height={0}
+              sizes="220px"
+              className="w-full h-auto rounded-xl opacity-90"
+            />
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-4">
             Prêt à structurer votre démarche RSE ?
           </h2>
-          <p className="text-white/60 text-sm mb-8">
-            Accédez au catalogue, choisissez vos applications et démarrez dès aujourd&apos;hui.
+          <p className="text-base mb-10" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            Rejoignez les professionnels RSE et cabinets de conseil qui utilisent nos outils pour piloter leur démarche et produire des rapports conformes aux standards internationaux.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
               href="/catalogue"
-              className="px-8 py-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-white font-bold text-sm transition-colors"
+              className="w-full sm:w-auto rounded-xl px-8 py-4 text-base font-bold text-white shadow-lg hover:opacity-90 transition-all border border-white/20"
+              style={{ backgroundColor: '#0e3d4d' }}
             >
-              Voir le catalogue →
+              Découvrir les applications
             </Link>
-            <Link
-              href="/auth/login"
-              className="px-8 py-3 rounded-xl border border-white/20 text-white font-semibold text-sm hover:bg-white/10 transition-colors"
+            <a
+              href="mailto:sylvain.cassaro@sensetho.com"
+              className="w-full sm:w-auto rounded-xl border px-8 py-4 text-base font-medium transition-all hover:bg-white/5"
+              style={{ borderColor: 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
             >
-              Se connecter
-            </Link>
+              Contacter l&apos;équipe
+            </a>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="mt-16 border-t border-white/10 pt-8 mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Image src="/picto.png" alt="Sens'ethO" width={24} height={24} className="rounded" />
-              <span className="text-white/60 text-xs">Sens&apos;ethO Apps — SCDB PRO SARL</span>
+        <div
+          className="mx-auto w-full max-w-6xl px-6 sm:px-8 lg:px-12 border-t pt-8"
+          style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 mb-8">
+            <div>
+              <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                Plateforme d&apos;outils RSE professionnels. ISO 26000, CSRD, VSME, Parties Prenantes & Matérialité.
+              </p>
+              <p className="mt-3 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                Un service de <span style={{ color: 'rgba(255,255,255,0.6)' }}>SCDB PRO SARL</span>
+              </p>
             </div>
-            <div className="flex gap-6 text-xs text-white/40">
-              <a href="https://www.sensetho.com" target="_blank" rel="noopener noreferrer" className="hover:text-white/70 transition-colors">
-                sensetho.com
-              </a>
-              <Link href="/catalogue" className="hover:text-white/70 transition-colors">Catalogue</Link>
-              <Link href="/auth/login" className="hover:text-white/70 transition-colors">Connexion</Link>
+            <div>
+              <h4
+                className="text-xs font-semibold uppercase tracking-wider mb-4"
+                style={{ color: 'rgba(255,255,255,0.4)' }}
+              >
+                Applications
+              </h4>
+              <ul className="space-y-2 text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                <li>RSE &amp; ISO 26000</li>
+                <li>CSRD / ESRS &amp; VSME</li>
+                <li>Parties Prenantes</li>
+                <li>Business &amp; Organisations</li>
+              </ul>
             </div>
+            <div>
+              <h4
+                className="text-xs font-semibold uppercase tracking-wider mb-4"
+                style={{ color: 'rgba(255,255,255,0.4)' }}
+              >
+                Informations légales
+              </h4>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <Link href="/mentions-legales" className="text-white/45 hover:text-white transition-colors">
+                    Mentions légales
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/cgv" className="text-white/45 hover:text-white transition-colors">
+                    Conditions Générales de Vente
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/cgu" className="text-white/45 hover:text-white transition-colors">
+                    Conditions Générales d&apos;Utilisation
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/politique-de-confidentialite" className="text-white/45 hover:text-white transition-colors">
+                    Politique de confidentialité
+                  </Link>
+                </li>
+                <li>
+                  <a href="https://www.sensetho.com" target="_blank" rel="noopener noreferrer" className="text-white/45 hover:text-white transition-colors">
+                    🌱 Hébergement responsable
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div
+            className="border-t pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs"
+            style={{ borderColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}
+          >
+            <p>© {new Date().getFullYear()} SCDB PRO SARL — Sens&apos;ethO Apps. Tous droits réservés.</p>
+            <a
+              href="mailto:sylvain.cassaro@sensetho.com"
+              className="transition-colors"
+              style={{ color: 'rgba(255,255,255,0.3)' }}
+            >
+              sylvain.cassaro@sensetho.com
+            </a>
           </div>
         </div>
       </section>
+
+      </main>
     </div>
   )
 }
