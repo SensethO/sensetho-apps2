@@ -33,6 +33,8 @@ interface RseAppShellProps {
   appSlug: string
   /** Titre affiché dans le bandeau supérieur */
   title?: string
+  /** Si false, ne bloque pas le rendu quand aucune année n'est configurée (défaut : true) */
+  requireYear?: boolean
   children: (ctx: RseContext) => React.ReactNode
 }
 
@@ -97,7 +99,7 @@ function FirstYearPrompt({ orgName, onConfirm }: { orgName: string; onConfirm: (
 /** Clé localStorage — même organisation conservée en naviguant entre apps RSE */
 const LAST_RSE_ORG_KEY = 'rse_last_org_id'
 
-export default function RseAppShell({ appSlug, title, children }: RseAppShellProps) {
+export default function RseAppShell({ appSlug, title, requireYear = true, children }: RseAppShellProps) {
   const { profile, isAdmin, signOut } = useAuth()
   const { categories } = useApps(isAdmin)
   const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
@@ -294,7 +296,7 @@ export default function RseAppShell({ appSlug, title, children }: RseAppShellPro
             />
             <main className="flex-1 overflow-y-auto p-6">
               {/* Si org sélectionnée mais aucune année configurée → forcer le choix d'une année */}
-              {selectedOrg && !yearsLoading && years.length === 0 ? (
+              {requireYear && selectedOrg && !yearsLoading && years.length === 0 ? (
                 <FirstYearPrompt
                   orgName={selectedOrg.denomination}
                   onConfirm={(y) => addYear(y)}

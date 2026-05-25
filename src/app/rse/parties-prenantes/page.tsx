@@ -7,7 +7,7 @@ import PartiesPrenantesApp from '@/components/apps/PartiesPrenantesApp'
 export default function PartiesPrenantesPage() {
   return (
     <RequireSubscription appSlug="parties-prenantes" appName="Parties Prenantes & Matérialité">
-      <RseAppShell appSlug="parties-prenantes" title="Parties Prenantes & Matérialité">
+      <RseAppShell appSlug="parties-prenantes" title="Parties Prenantes & Matérialité" requireYear={false}>
         {(ctx: RseContext) => <PartiesPrenantesApp ctx={ctx} />}
       </RseAppShell>
     </RequireSubscription>
