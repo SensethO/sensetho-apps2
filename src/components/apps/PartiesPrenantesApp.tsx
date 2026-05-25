@@ -280,13 +280,17 @@ function ESGRadar({ sessions }: { sessions: (SessionListItem & { materiality_sco
 function NewSessionModal({
   onClose,
   onCreated,
+  initialOrganisation = '',
+  initialSecteur = '',
 }: {
   onClose: () => void
   onCreated: (session: PPSession) => void
+  initialOrganisation?: string
+  initialSecteur?: string
 }) {
   const [name, setName] = useState('')
-  const [organisation, setOrganisation] = useState('')
-  const [secteur, setSecteur] = useState('')
+  const [organisation, setOrganisation] = useState(initialOrganisation)
+  const [secteur, setSecteur] = useState(initialSecteur)
   const [exercice, setExercice] = useState(new Date().getFullYear().toString())
   const [mode, setMode] = useState<'csrd' | 'voluntaire' | 'both'>('csrd')
   const [materialityType, setMaterialityType] = useState<'simple' | 'double'>('double')
@@ -1564,7 +1568,12 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
       <div className="max-w-4xl mx-auto px-4 py-6">
         {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
         {showNewModal && (
-          <NewSessionModal onClose={() => setShowNewModal(false)} onCreated={handleCreated} />
+          <NewSessionModal
+            onClose={() => setShowNewModal(false)}
+            onCreated={handleCreated}
+            initialOrganisation={ctx.org?.denomination ?? ''}
+            initialSecteur={ctx.org?.libelle_activite ?? ''}
+          />
         )}
 
         <div className="flex items-center justify-between mb-6">
