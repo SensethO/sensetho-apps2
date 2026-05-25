@@ -24,16 +24,35 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
   const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
   const { favoriteIds, toggleFavorite, isFavorite } = useFavorites(profile?.id ?? null)
 
-  // Rétracté par défaut — false explicite à chaque nouvelle catégorie chargée
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>({})
+  // Persistance localStorage : les menus ouverts restent ouverts d'une page à l'autre
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const stored = localStorage.getItem('sidebar_open_cats')
+      return stored ? (JSON.parse(stored) as Record<string, boolean>) : {}
+    } catch { return {} }
+  })
 
+  // Synchronise localStorage à chaque changement
+  useEffect(() => {
+    try { localStorage.setItem('sidebar_open_cats', JSON.stringify(openCats)) } catch {}
+  }, [openCats])
+
+  // Initialise les nouvelles catégories : auto-ouvre celles qui contiennent la route active
   useEffect(() => {
     setOpenCats(prev => {
       const next = { ...prev }
-      categories.forEach(c => { if (!(c.id in next)) next[c.id] = false })
+      categories.forEach(c => {
+        if (!(c.id in next)) {
+          const hasActive = (c.apps ?? []).some(
+            a => pathname === a.route || pathname.startsWith(a.route + '/')
+          )
+          next[c.id] = hasActive
+        }
+      })
       return next
     })
-  }, [categories])
+  }, [categories, pathname])
 
   function toggleCat(id: string) {
     setOpenCats(prev => ({ ...prev, [id]: !prev[id] }))
