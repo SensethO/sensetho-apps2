@@ -1,10 +1,18 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import ViewTabs from '@/components/rse/ViewTabs'
 import type { RseContext } from '@/components/rse/RseAppShell'
+import type { NoteSection } from './GuidedActionNotePanel'
 import { createClient } from '@/lib/supabase/client'
+
+// ─── Lazy note panel (Tiptap + SharePoint) ────────────────────────────────────
+const VsmeNotePanel = dynamic(
+  () => import('./GuidedActionNotePanel'),
+  { ssr: false, loading: () => null },
+)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -248,10 +256,22 @@ function DatapointCard({
   dp,
   response,
   onUpdate,
+  vsmeId,
+  noteText,
+  onNoteChange,
+  noteSections,
+  onNoteSectionsChange,
+  notesVersion,
 }: {
   dp: Datapoint
   response: VsmeResponse | undefined
   onUpdate: (code: string, patch: Partial<VsmeResponse>) => void
+  vsmeId: string | null
+  noteText: string
+  onNoteChange: (key: string, v: string) => void
+  noteSections: NoteSection[]
+  onNoteSectionsChange: (key: string, s: NoteSection[]) => void
+  notesVersion: number
 }) {
   const status: VsmeStatus = response?.status ?? 'non_evalue'
   const [notesOpen, setNotesOpen] = useState(false)
@@ -275,13 +295,6 @@ function DatapointCard({
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       onUpdate(dp.code, { value_number: val ? parseFloat(val) : null })
-    }, 600)
-  }
-
-  function handleNotesChange(val: string) {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      onUpdate(dp.code, { notes: val || null })
     }, 600)
   }
 
@@ -383,36 +396,43 @@ function DatapointCard({
         </div>
       )}
 
-      {/* Notes et documents */}
-      <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
-        <button
-          onClick={() => setNotesOpen(v => !v)}
-          className="flex items-center gap-1.5 text-xs font-medium hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-muted)' }}
-        >
-          <span>📄</span>
-          <span>Notes et documents</span>
-          {response?.notes && !notesOpen && (
-            <span className="ml-1 px-1.5 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8' }}>✎</span>
-          )}
-          <span className="ml-0.5">{notesOpen ? '▲' : '▼'}</span>
-        </button>
-        {notesOpen && (
-          <div className="mt-2 rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
-            <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              Notes internes, sources &amp; commentaires
+      {/* Notes & documents — GuidedActionNotePanel */}
+      {vsmeId && (
+        <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={() => setNotesOpen(v => !v)}
+            className="flex items-center gap-1.5 text-xs font-medium hover:opacity-70 transition-opacity w-full text-left"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+            <span>Notes &amp; documents</span>
+            {(noteText || noteSections.some(s => s.content || s.attachments.length > 0)) && !notesOpen && (
+              <span className="ml-1 px-1.5 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8' }}>✎</span>
+            )}
+            <svg className={`ml-auto w-3 h-3 transition-transform ${notesOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          {notesOpen && (
+            <div className="mt-2">
+              <VsmeNotePanel
+                apiBase="/api/vsme-efrag"
+                noteTable="vsme_notes"
+                diagnosticId={vsmeId}
+                actionKey={dp.code}
+                readOnly={false}
+                note={noteText}
+                onNoteChange={v => onNoteChange(dp.code, v)}
+                initialSections={noteSections}
+                notesRemoteVersion={notesVersion}
+                onSectionsChange={s => onNoteSectionsChange(dp.code, s)}
+              />
             </div>
-            <textarea
-              defaultValue={response?.notes ?? ''}
-              onChange={e => handleNotesChange(e.target.value)}
-              rows={3}
-              placeholder="Rédigez vos notes, sources et commentaires sur ce datapoint…"
-              className="w-full px-3 py-2 text-xs border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
-              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text)' }}
-            />
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -423,10 +443,22 @@ function SectionBlock({
   section,
   responses,
   onUpdate,
+  vsmeId,
+  noteMap,
+  sectionsMap,
+  notesVersion,
+  onNoteChange,
+  onNoteSectionsChange,
 }: {
   section: VsmeSection
   responses: Map<string, VsmeResponse>
   onUpdate: (code: string, patch: Partial<VsmeResponse>) => void
+  vsmeId: string | null
+  noteMap: Record<string, string>
+  sectionsMap: Record<string, NoteSection[]>
+  notesVersion: number
+  onNoteChange: (key: string, v: string) => void
+  onNoteSectionsChange: (key: string, s: NoteSection[]) => void
 }) {
   const [open, setOpen] = useState(true)
 
@@ -456,6 +488,12 @@ function SectionBlock({
               dp={dp}
               response={responses.get(dp.code)}
               onUpdate={onUpdate}
+              vsmeId={vsmeId}
+              noteText={noteMap[dp.code] ?? ''}
+              onNoteChange={onNoteChange}
+              noteSections={sectionsMap[dp.code] ?? []}
+              onNoteSectionsChange={onNoteSectionsChange}
+              notesVersion={notesVersion}
             />
           ))}
         </div>
@@ -946,10 +984,22 @@ function ModuleView({
   sections,
   responses,
   onUpdate,
+  vsmeId,
+  noteMap,
+  sectionsMap,
+  notesVersion,
+  onNoteChange,
+  onNoteSectionsChange,
 }: {
   sections: VsmeSection[]
   responses: Map<string, VsmeResponse>
   onUpdate: (code: string, patch: Partial<VsmeResponse>) => void
+  vsmeId: string | null
+  noteMap: Record<string, string>
+  sectionsMap: Record<string, NoteSection[]>
+  notesVersion: number
+  onNoteChange: (key: string, v: string) => void
+  onNoteSectionsChange: (key: string, s: NoteSection[]) => void
 }) {
   return (
     <div className="space-y-4">
@@ -959,6 +1009,12 @@ function ModuleView({
           section={section}
           responses={responses}
           onUpdate={onUpdate}
+          vsmeId={vsmeId}
+          noteMap={noteMap}
+          sectionsMap={sectionsMap}
+          notesVersion={notesVersion}
+          onNoteChange={onNoteChange}
+          onNoteSectionsChange={onNoteSectionsChange}
         />
       ))}
     </div>
@@ -1033,6 +1089,53 @@ export default function VsmeEfragApp({ ctx }: { ctx: RseContext }) {
   const [loading, setLoading] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
   const supabase = createClient()
+
+  // ── Notes & Documents ───────────────────────────────────────────────────────
+  const [vsmeId, setVsmeId] = useState<string | null>(null)
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({})
+  const [sectionsMap, setSectionsMap] = useState<Record<string, NoteSection[]>>({})
+  const [notesVersion, setNotesVersion] = useState(0)
+
+  /** Auto-create ou charge le vsme_settings (id = diagnosticId pour les notes) */
+  useEffect(() => {
+    if (!ctx.org) { setVsmeId(null); return }
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('vsme_settings')
+        .upsert({ org_id: ctx.org!.id, year: ctx.year, module_type: 'base' }, { onConflict: 'org_id,year' })
+        .select('id')
+        .single()
+      if (!cancelled && data) setVsmeId(data.id)
+    })()
+    return () => { cancelled = true }
+  }, [ctx.org, ctx.year, supabase])
+
+  /** Charge toutes les notes depuis l'API quand vsmeId change */
+  useEffect(() => {
+    if (!vsmeId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/vsme-efrag/${vsmeId}/notes`)
+        if (!res.ok || cancelled) return
+        const { data } = await res.json() as { data: { notes: Record<string, string>; sections: Record<string, NoteSection[]> } }
+        if (cancelled) return
+        setNoteMap(data.notes ?? {})
+        setSectionsMap(data.sections ?? {})
+        setNotesVersion(v => v + 1)
+      } catch {}
+    })()
+    return () => { cancelled = true }
+  }, [vsmeId])
+
+  const handleNoteChange = useCallback((key: string, v: string) => {
+    setNoteMap(prev => ({ ...prev, [key]: v }))
+  }, [])
+
+  const handleNoteSectionsChange = useCallback((key: string, s: NoteSection[]) => {
+    setSectionsMap(prev => ({ ...prev, [key]: s }))
+  }, [])
 
   // Auto-ouvrir le tutoriel à la première visite
   useEffect(() => {
@@ -1140,6 +1243,12 @@ export default function VsmeEfragApp({ ctx }: { ctx: RseContext }) {
             sections={BASE_SECTIONS}
             responses={responses}
             onUpdate={handleUpdate}
+            vsmeId={vsmeId}
+            noteMap={noteMap}
+            sectionsMap={sectionsMap}
+            notesVersion={notesVersion}
+            onNoteChange={handleNoteChange}
+            onNoteSectionsChange={handleNoteSectionsChange}
           />
         )
       )}
@@ -1154,6 +1263,12 @@ export default function VsmeEfragApp({ ctx }: { ctx: RseContext }) {
             sections={COMPLET_SECTIONS}
             responses={responses}
             onUpdate={handleUpdate}
+            vsmeId={vsmeId}
+            noteMap={noteMap}
+            sectionsMap={sectionsMap}
+            notesVersion={notesVersion}
+            onNoteChange={handleNoteChange}
+            onNoteSectionsChange={handleNoteSectionsChange}
           />
         )
       )}
