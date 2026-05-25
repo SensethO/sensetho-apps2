@@ -165,7 +165,7 @@ const MATURITY_LEVELS = [
 
 // ─── ViewTabs ─────────────────────────────────────────────────────────────────
 const ODD_TABS = [
-  { id: 'accueil'    as const, label: 'Accueil',         icon: '🏠' },
+  { id: 'accueil'    as const, label: 'Présentation',    icon: '📋' },
   { id: 'diagnostic' as const, label: 'Diagnostic ISO',  icon: '📝' },
   { id: 'odd'        as const, label: 'Vue ODD',         icon: '🌍' },
   { id: 'dashboard'  as const, label: 'Tableau de bord', icon: '🎯' },
@@ -173,6 +173,8 @@ const ODD_TABS = [
   { id: 'search'     as const, label: 'Recherche',       icon: '🔍' },
 ] as const
 type OddView = typeof ODD_TABS[number]['id']
+/** Règle RSE : onglets verrouillés tant qu'aucune organisation n'est sélectionnée */
+const ODD_NON_PRESENTATION = ODD_TABS.filter(t => t.id !== 'accueil').map(t => t.id)
 
 // ─── Pilier styles ────────────────────────────────────────────────────────────
 const PILIER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -730,7 +732,8 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
 
   return (
     <div className="space-y-6">
-      <ViewTabs tabs={ODD_TABS} active={view} onChange={setView} />
+      <ViewTabs tabs={ODD_TABS} active={view} onChange={setView}
+        disabledIds={!org ? ODD_NON_PRESENTATION : undefined} />
 
       {/* ── ACCUEIL ────────────────────────────────────────────────────────────── */}
       {view === 'accueil' && (

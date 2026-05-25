@@ -431,6 +431,8 @@ const GUIDED_TABS = [
   { id: 'summary'   as const, label: 'Synthèse',        icon: '📊' },
   { id: 'step'      as const, label: 'Questionnaire',   icon: '📝' },
 ] as const
+/** Règle RSE : onglets verrouillés tant qu'aucune organisation n'est sélectionnée */
+const GUIDED_NON_PRESENTATION = GUIDED_TABS.filter(t => t.id !== 'intro').map(t => t.id)
 
 // ─── ShareModal ───────────────────────────────────────────────────────────────
 
@@ -534,6 +536,9 @@ function ShareModal({ diagnosticId, onClose }: { diagnosticId: string; onClose: 
 
 export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   const { org, year, setActions } = ctx
+
+  /** Règle RSE : onglets verrouillés tant qu'aucune organisation n'est sélectionnée */
+  const lockedTabs = !org ? GUIDED_NON_PRESENTATION : undefined
 
   const [diagnostic, setDiagnostic] = useState<DiagnosticRecord | null>(null)
   const [isOwner, setIsOwner] = useState(true)
@@ -989,7 +994,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     const completionPct = Math.round((evalCount / DOMAINS.length) * 100)
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
-        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Hero */}
         <div className="rounded-2xl p-7 text-center"
@@ -1157,19 +1162,25 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   // ── Guards : org / chargement / diagnostic ──────────────────────────────
   if (!org) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-        <div className="text-5xl">🏢</div>
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Sélectionnez une organisation dans le panneau de gauche<br />pour commencer le diagnostic.
-        </p>
+      <div className="space-y-4">
+        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
+        <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+          <div className="text-5xl">🏢</div>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Sélectionnez une organisation dans le panneau de gauche<br />pour commencer le diagnostic.
+          </p>
+        </div>
       </div>
     )
   }
 
   if (loadingDiag) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      <div className="space-y-4">
+        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
+        <div className="flex items-center justify-center py-20">
+          <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        </div>
       </div>
     )
   }
@@ -1182,7 +1193,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   if (view === 'summary') {
     return (
       <div className="space-y-6 max-w-3xl mx-auto">
-        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Scores globaux */}
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
@@ -1339,7 +1350,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
 
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
-        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1546,7 +1557,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
   // ── Vue QUESTIONNAIRE ─────────────────────────────────────────────────────
   return (
     <div className="max-w-5xl mx-auto">
-      <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} />
+      <ViewTabs tabs={GUIDED_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
     <div className="flex gap-4">
       {/* Colonne phases + domaines */}
       <div className="w-52 flex-shrink-0">

@@ -224,6 +224,8 @@ const ISO_TABS = [
   { id: 'search'    as const, label: 'Recherche',       icon: '🔍' },
 ] as const
 type IsoView = typeof ISO_TABS[number]['id']
+/** Règle RSE : onglets verrouillés tant qu'aucune organisation n'est sélectionnée */
+const ISO_NON_PRESENTATION = ISO_TABS.filter(t => t.id !== 'intro').map(t => t.id)
 
 // ─── Radar SVG (7 axes = 7 QC) ───────────────────────────────────────────────
 
@@ -350,6 +352,9 @@ function ShareModal({ diagnosticId, onClose }: { diagnosticId: string; onClose: 
 
 export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const { org, year, setActions } = ctx
+
+  /** Règle RSE : onglets verrouillés tant qu'aucune organisation n'est sélectionnée */
+  const lockedTabs = !org ? ISO_NON_PRESENTATION : undefined
 
   const [view, setView]           = useState<IsoView>('intro')
   const [diagnostic, setDiag]     = useState<DiagnosticRecord | null>(null)
@@ -562,7 +567,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   if (view === 'intro') {
     return (
       <div className="space-y-8 max-w-4xl mx-auto">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Hero */}
         <div className="relative overflow-hidden rounded-2xl p-8 text-white" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #312e81 100%)' }}>
@@ -681,7 +686,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   if (loadingDiag) {
     return (
       <div className="space-y-4">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
         </div>
@@ -701,7 +706,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
 
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Score global */}
         <div className="rounded-xl border p-6 text-center" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
@@ -795,7 +800,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   if (view === 'summary') {
     if (!diagnostic) return (
       <div className="space-y-4">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
         <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
           <div className="text-4xl">🏢</div>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sélectionnez une organisation pour accéder à la synthèse.</p>
@@ -804,7 +809,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     )
     return (
       <div className="space-y-6 max-w-3xl mx-auto">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
           <h3 className="font-semibold text-sm mb-1" style={{ color: 'var(--text)' }}>Synthèse — {evalCount}/{ALL_DOMAINS.length} domaines évalués</h3>
@@ -893,7 +898,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     const oddDomains = selectedOdd ? (ODD_TO_DOMAINS[selectedOdd] ?? []) : []
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Grille 17 ODD */}
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
@@ -998,7 +1003,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
 
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Header */}
         <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
@@ -1125,7 +1130,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
 
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
 
         {/* Barre de recherche */}
         <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
@@ -1198,7 +1203,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   // ── VUE QUESTIONNAIRE ─────────────────────────────────────────────────────
   if (!diagnostic) return (
     <div className="space-y-4">
-      <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+      <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
       <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
         <div className="text-4xl">🏢</div>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sélectionnez une organisation pour accéder au questionnaire.</p>
@@ -1214,7 +1219,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     <div className="flex flex-col" style={{ height: 'calc(100vh - 180px)', minHeight: '500px' }}>
       {/* Bandeau d'onglets — identique à toutes les vues */}
       <div className="flex-shrink-0 pb-3">
-        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} />
+        <ViewTabs tabs={ISO_TABS} active={view} onChange={setView} disabledIds={lockedTabs} />
       </div>
 
       {/* Corps questionnaire (sidebar + contenu) */}
