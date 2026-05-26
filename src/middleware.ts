@@ -12,6 +12,7 @@ const PUBLIC_ROUTES = [
   '/politique-de-confidentialite',
   '/auth/login',
   '/auth/register',
+  '/auth/pending',
   '/auth/forgot-password',
   '/auth/signout',
   '/auth/callback',
@@ -45,6 +46,7 @@ export async function middleware(request: NextRequest) {
 
   const isPublic = PUBLIC_ROUTES.some(r => pathname === r || (r !== '/' && pathname.startsWith(r)))
   const isAuthPage = AUTH_PAGES.some(r => pathname.startsWith(r))
+  const isPendingPage = pathname.startsWith('/auth/pending')
   const isAdminRoute = ADMIN_ROUTES.some(r => pathname.startsWith(r))
   const isApiRoute = pathname.startsWith('/api/')
   const isAccountRoute = pathname === '/account' || pathname.startsWith('/account/')
@@ -56,8 +58,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  // Connecté sur page auth → dashboard
-  if (user && isAuthPage) {
+  // Connecté sur page auth (sauf /auth/pending) → dashboard
+  if (user && isAuthPage && !isPendingPage) {
     const next = new URL(request.url).searchParams.get('next')
     const destination = (next && next.startsWith('/')) ? next : '/dashboard'
     return NextResponse.redirect(new URL(destination, request.url))
@@ -65,8 +67,6 @@ export async function middleware(request: NextRequest) {
 
   // Vérifie le profil pour les routes protégées (pas les API ni les routes publiques)
   if (user && !isPublic && !isAuthPage && !isApiRoute) {
-    // Utilise le service role pour bypass RLS (le client anon ne propage pas
-    // correctement auth.uid() dans le contexte middleware Edge)
     const adminClient = createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -74,9 +74,19 @@ export async function middleware(request: NextRequest) {
     )
     const { data: profile } = await adminClient
       .from('profiles')
-      .select('role, must_change_password')
+      .select('role, status, must_change_password')
       .eq('id', user.id)
       .single()
+
+    // Compte en attente de validation → page d'attente
+    if (profile?.status === 'pending') {
+      return NextResponse.redirect(new URL('/auth/pending', request.url))
+    }
+
+    // Compte suspendu → page d'attente (même page, message adapté)
+    if (profile?.status === 'suspended') {
+      return NextResponse.redirect(new URL('/auth/pending', request.url))
+    }
 
     // Forcer le changement de mot de passe (sauf si déjà sur /account)
     if (profile?.must_change_password && !isAccountRoute) {
@@ -87,6 +97,24 @@ export async function middleware(request: NextRequest) {
 
     // Route admin → vérifier le rôle admin
     if (isAdminRoute && profile?.role !== 'admin') {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+  }
+
+  // Utilisateur connecté qui tente d'accéder à /auth/pending alors qu'il est actif
+  if (user && isPendingPage) {
+    const adminClient = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+    const { data: profile } = await adminClient
+      .from('profiles')
+      .select('status')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.status === 'active') {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
 
@@ -104,11 +105,17 @@ export default function LoginPage() {
                   {loginLoading ? 'Connexion…' : 'Se connecter'}
                 </button>
               </form>
-              <div className="mt-4 text-center">
+              <div className="mt-4 flex flex-col items-center gap-2">
                 <button onClick={() => { setView('forgot'); setForgotEmail(email); setForgotSent(false) }}
                   className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors">
                   Mot de passe oublié ?
                 </button>
+                <div className="w-full border-t border-gray-100 dark:border-slate-700 mt-1 pt-3 text-center">
+                  <Link href="/auth/register"
+                    className="text-xs text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors">
+                    Pas encore de compte ? <span className="font-semibold underline underline-offset-2">Créer un compte</span>
+                  </Link>
+                </div>
               </div>
             </>
           )}
