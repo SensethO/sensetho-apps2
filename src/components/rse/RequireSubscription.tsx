@@ -7,6 +7,7 @@ interface RequireSubscriptionProps {
   appSlug: string
   appName?: string
   children: React.ReactNode
+  devisUrl?: string  // URL vers /devis?app=slug&name=Name
 }
 
 /**
@@ -14,7 +15,7 @@ interface RequireSubscriptionProps {
  * sur l'app indiquée (ou s'il est admin).
  * Sinon, affiche un écran "Accès requis".
  */
-export default function RequireSubscription({ appSlug, appName, children }: RequireSubscriptionProps) {
+export default function RequireSubscription({ appSlug, appName, children, devisUrl }: RequireSubscriptionProps) {
   const { loading, hasAccess } = useSubscription(appSlug)
 
   if (loading) {
@@ -46,6 +47,13 @@ export default function RequireSubscription({ appSlug, appName, children }: Requ
         </div>
 
         <div className="flex flex-col gap-2 w-full">
+          {devisUrl ? (
+            <a href={devisUrl}
+              className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold text-center text-white transition-colors"
+              style={{ backgroundColor: '#0e3d4d' }}>
+              Demander l&apos;accès →
+            </a>
+          ) : null}
           <a href="/account"
             className="w-full py-2.5 px-4 rounded-lg text-sm font-medium text-center transition-colors"
             style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text)', border: '1px solid var(--border)' }}>
