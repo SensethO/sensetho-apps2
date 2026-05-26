@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { LandingNav } from '@/components/layout/LandingNav'
+import { getSiteSettings } from '@/lib/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,7 +59,8 @@ const PUBLIC_APPS = [
   },
 ]
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const S = await getSiteSettings()
   return (
     <div className="min-h-screen bg-white dark:bg-gray-950">
 
@@ -88,16 +90,16 @@ export default function LandingPage() {
             style={{ backgroundColor: 'rgba(14,61,77,0.08)', color: '#0e3d4d' }}
           >
             <span>🎯</span>
-            <span>La plateforme RSE des professionnels et cabinets de conseil</span>
+            <span>{S.hero_badge}</span>
           </div>
 
           <h1 className="text-4xl sm:text-5xl font-extrabold leading-tight tracking-tight" style={{ color: '#0e3d4d' }}>
-            La plateforme RSE<br />
-            <span className="text-gray-400 dark:text-gray-400 font-light">des experts et organisations responsables</span>
+            {S.hero_title_1}<br />
+            <span className="text-gray-400 dark:text-gray-400 font-light">{S.hero_title_2}</span>
           </h1>
 
           <p className="mt-6 text-lg text-gray-500 dark:text-gray-400 max-w-2xl mx-auto leading-relaxed">
-            ISO 26000, CSRD/ESRS, VSME, Parties Prenantes — nos outils couvrent l&apos;ensemble des référentiels RSE internationaux, sans complexité ni frais d&apos;infrastructure.
+            {S.hero_subtitle}
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -118,7 +120,7 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-5 text-sm text-gray-400">
-            Accès sur invitation — géré par votre administrateur
+            {S.hero_cta_note}
           </p>
         </div>
       </section>
@@ -149,26 +151,10 @@ export default function LandingPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              {
-                icon: '🔒',
-                title: 'Données souveraines',
-                desc: 'Hébergées en Europe sur des serveurs à énergie renouvelable. Vos données RSE ne quittent pas l\'UE.',
-              },
-              {
-                icon: '📋',
-                title: 'Standards de référence',
-                desc: 'ISO 26000, CSRD/ESRS, VSME EFRAG, GRI… Les normes internationales intégrées nativement dans chaque outil.',
-              },
-              {
-                icon: '🏢',
-                title: 'Multi-organisations',
-                desc: 'Gérez plusieurs structures depuis un seul compte. Idéal pour les cabinets de conseil RSE et les groupes.',
-              },
-              {
-                icon: '📤',
-                title: 'Export & Partage',
-                desc: 'Exportez vos diagnostics en PDF et Excel. Partagez vers SharePoint en un clic depuis chaque application.',
-              },
+              { icon: '🔒', title: S.feature_1_title, desc: S.feature_1_desc },
+              { icon: '📋', title: S.feature_2_title, desc: S.feature_2_desc },
+              { icon: '🏢', title: S.feature_3_title, desc: S.feature_3_desc },
+              { icon: '📤', title: S.feature_4_title, desc: S.feature_4_desc },
             ].map((feat, i) => (
               <div
                 key={i}
@@ -207,10 +193,10 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-              Vos outils RSE en un seul endroit
+              {S.apps_section_title}
             </h2>
             <p className="mt-4 text-base max-w-2xl mx-auto" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              RSE, Business, Métier — chaque application est disponible depuis votre tableau de bord, par abonnement et avec gestion des droits par organisation.
+              {S.apps_section_subtitle}
             </p>
           </div>
 
@@ -286,22 +272,16 @@ export default function LandingPage() {
                 className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium mb-6"
                 style={{ backgroundColor: 'rgba(14,61,77,0.08)', color: '#0e3d4d' }}
               >
-                <span>🌿</span>
-                <span>Suite RSE complète</span>
+                <span>{S.rse_badge}</span>
               </div>
               <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-6" style={{ color: '#0e3d4d' }}>
-                Pilotez votre démarche RSE avec la norme ISO 26000
+                {S.rse_title}
               </h2>
               <p className="text-lg text-gray-500 dark:text-gray-400 leading-relaxed mb-8">
-                Évaluez votre maturité sur les 13 domaines RSE prioritaires, suivez votre couverture des 17 Objectifs de Développement Durable, et générez un plan d&apos;actions concret pour votre organisation.
+                {S.rse_desc}
               </p>
               <div className="space-y-3">
-                {[
-                  'Diagnostic guidé en 30–50 minutes',
-                  'Cartographie des 17 ODD des Nations Unies',
-                  'Recommandations personnalisées par domaine',
-                  'Rapport exportable PDF et Excel',
-                ].map((item) => (
+                {[S.rse_check_1, S.rse_check_2, S.rse_check_3, S.rse_check_4].map((item) => (
                   <div key={item} className="flex items-center gap-3 text-gray-700 dark:text-gray-300">
                     <div
                       className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
@@ -476,10 +456,10 @@ export default function LandingPage() {
             />
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-4">
-            Prêt à structurer votre démarche RSE ?
+            {S.cta_title}
           </h2>
           <p className="text-base mb-10" style={{ color: 'rgba(255,255,255,0.55)' }}>
-            Rejoignez les professionnels RSE et cabinets de conseil qui utilisent nos outils pour piloter leur démarche et produire des rapports conformes aux standards internationaux.
+            {S.cta_subtitle}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
@@ -507,10 +487,10 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 mb-8">
             <div>
               <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                Plateforme d&apos;outils RSE professionnels. ISO 26000, CSRD, VSME, Parties Prenantes & Matérialité.
+                {S.footer_tagline}
               </p>
               <p className="mt-3 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                Un service de <span style={{ color: 'rgba(255,255,255,0.6)' }}>SCDB PRO SARL</span>
+                Un service de <span style={{ color: 'rgba(255,255,255,0.6)' }}>{S.company_name}</span>
               </p>
             </div>
             <div>

@@ -41,6 +41,7 @@ export interface App {
   order_index: number
   is_active: boolean
   is_admin_only: boolean
+  is_for_sale: boolean
   pricing_type: PricingType
   price_monthly: number | null
   price_annual: number | null
@@ -49,6 +50,16 @@ export interface App {
   created_at: string
   updated_at: string
   category?: AppCategory
+}
+
+export interface SiteSetting {
+  key: string
+  value: string
+  label?: string
+  description?: string
+  category?: string
+  updated_at?: string
+  updated_by?: string
 }
 
 export interface UserAppPermission {

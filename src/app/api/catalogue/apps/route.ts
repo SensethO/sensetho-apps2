@@ -16,8 +16,9 @@ export async function GET() {
 
     const { data: apps, error: appError } = await admin
       .from('apps')
-      .select('id, name, slug, description, icon, route, category_id, order_index, is_active, pricing_type, price_monthly, price_annual, price_perpetual, annual_discount_pct')
+      .select('id, name, slug, description, icon, route, category_id, order_index, is_active, is_for_sale, pricing_type, price_monthly, price_annual, price_perpetual, annual_discount_pct')
       .eq('is_active', true)
+      .eq('is_for_sale', true)
       .order('order_index', { ascending: true })
 
     if (appError) throw appError

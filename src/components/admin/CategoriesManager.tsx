@@ -168,6 +168,7 @@ export default function CategoriesManager() {
       price_annual: editApp.price_annual ?? null,
       annual_discount_pct: editApp.annual_discount_pct ?? 0,
       price_perpetual: editApp.price_perpetual ?? null,
+      is_for_sale: editApp.is_for_sale ?? true,
     }
     if (editApp.id) {
       await supabase.from('apps').update({
@@ -341,6 +342,7 @@ export default function CategoriesManager() {
             <Field label="Ordre" type="number" value={String(editApp.order_index ?? 0)} onChange={v => setEditApp(e => ({ ...e!, order_index: parseInt(v) || 0 }))} />
             <Checkbox label="Réservé aux admins" checked={editApp.is_admin_only ?? false} onChange={v => setEditApp(e => ({ ...e!, is_admin_only: v }))} />
             <Checkbox label="Actif" checked={editApp.is_active ?? true} onChange={v => setEditApp(e => ({ ...e!, is_active: v }))} />
+            <Checkbox label="En vente (visible dans le catalogue)" checked={editApp.is_for_sale ?? true} onChange={v => setEditApp(e => ({ ...e!, is_for_sale: v }))} />
 
             {/* ── Section Tarification ── */}
             <div className="border-t pt-3 mt-3" style={{ borderColor: 'var(--border)' }}>
