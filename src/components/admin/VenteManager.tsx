@@ -374,7 +374,7 @@ export default function VenteManager() {
           {/* Category header */}
           <div className="flex items-center gap-2 mb-4">
             {group.category && (
-              <span className="text-xl leading-none">{group.category.icon}</span>
+              <Icon name={group.category.icon} size={20} style={{ color: 'var(--text-muted)' }} />
             )}
             <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>
               {group.categoryLabel}
