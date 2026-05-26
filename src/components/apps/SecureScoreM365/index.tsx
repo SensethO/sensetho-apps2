@@ -356,12 +356,88 @@ function DiagnosticView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpda
 
 // ── Vue Déblocage ─────────────────────────────────────────────────────────────
 
+function generatePsScript(tenant: M365Tenant): string {
+  return `#Requires -Version 5.1
+# ============================================================
+# Script de déblocage Secure Score — généré par Sensetho Apps
+# Tenant : ${tenant.name} (${tenant.domain})
+# Date   : ${new Date().toLocaleDateString('fr-FR')}
+# ============================================================
+
+param(
+  [string]$ClientId     = "${tenant.client_id}",
+  [string]$TenantId     = "${tenant.tenant_id}",
+  [string]$Domain       = "${tenant.domain}",
+  [string]$ClientSecret = ""   # <-- coller votre Client Secret ici
+)
+
+if (-not $ClientSecret) {
+  $ClientSecret = Read-Host "Client Secret pour ${tenant.name}"
+}
+
+# 1. Installation des modules si manquants
+foreach ($mod in @('ExchangeOnlineManagement','Microsoft.Graph')) {
+  if (-not (Get-Module -ListAvailable -Name $mod)) {
+    Write-Host "Installation de $mod..." -ForegroundColor Cyan
+    Install-Module $mod -Scope CurrentUser -Force -AllowClobber
+  }
+}
+
+# 2. Connexion Exchange Online via client credentials
+Write-Host "Connexion Exchange Online..." -ForegroundColor Cyan
+$body = @{
+  grant_type    = "client_credentials"
+  client_id     = $ClientId
+  client_secret = $ClientSecret
+  scope         = "https://outlook.office365.com/.default"
+}
+$tokenRes = Invoke-RestMethod "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" -Method POST -Body $body
+$exoToken = $tokenRes.access_token
+
+# 3. Lire la policy (avec le token REST) — OU connexion module
+try {
+  Connect-ExchangeOnline -AppId $ClientId -ClientSecret (ConvertTo-SecureString $ClientSecret -AsPlainText -Force) -Organization $Domain -ShowBanner:$false 2>&1 | Out-Null
+  Write-Host "Connecte via module EXO" -ForegroundColor Green
+  $policy    = Get-AntiPhishPolicy | Where-Object { $_.IsDefault -eq $true -or $_.Name -match "Default" } | Select-Object -First 1
+  $policyId  = $policy.Identity
+  $threshold = $policy.PhishThresholdLevel
+  $temp      = if ($threshold -eq 2) { 3 } else { 2 }
+
+  Write-Host "Policy : $policyId | PhishThreshold : $threshold" -ForegroundColor White
+  Write-Host "Modification : $threshold -> $temp..." -ForegroundColor Cyan
+  Set-AntiPhishPolicy -Identity $policyId -PhishThresholdLevel $temp -Confirm:$false
+  Write-Host "Attente 30s..." -ForegroundColor Yellow
+  Start-Sleep -Seconds 30
+  Write-Host "Restauration : $temp -> $threshold..." -ForegroundColor Cyan
+  Set-AntiPhishPolicy -Identity $policyId -PhishThresholdLevel $threshold -Confirm:$false
+  Write-Host "Pipeline relance ! Score visible dans 1-2h sur security.microsoft.com/securescore" -ForegroundColor Green
+  Disconnect-ExchangeOnline -Confirm:$false 2>&1 | Out-Null
+} catch {
+  Write-Host "Erreur : $_" -ForegroundColor Red
+  Write-Host "Verifiez que le Service Principal est bien dans le role 'Exchange Administrator'" -ForegroundColor Yellow
+}
+`
+}
+
 function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTenant: () => void }) {
   const [running, setRunning] = useState(false)
   const [log, setLog] = useState<string[]>([])
   const [done, setDone] = useState(false)
   const [afterScore, setAfterScore] = useState<{ score: number; max: number } | null>(null)
   const [error, setError] = useState('')
+  const [showPrereqs, setShowPrereqs] = useState(false)
+  const is401 = error.includes('401')
+
+  function downloadScript() {
+    const script = generatePsScript(tenant)
+    const blob = new Blob([script], { type: 'text/plain' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `unlock-${tenant.domain.replace(/\./g, '-')}.ps1`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   async function runUnlock() {
     if (!confirm(`Débloquer le pipeline de "${tenant.name}" ?\n\nCette opération modifie temporairement la politique Anti-Phish (30 secondes) puis la restaure. La configuration finale est identique à l'état initial.`)) return
@@ -391,7 +467,7 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
         <Icon name="lock" size={32} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
         <p className="text-sm font-medium mb-1" style={{ color: 'var(--text)' }}>Client Secret requis</p>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          Ajoutez un Client Secret à ce tenant pour utiliser le déblocage automatique.
+          Ajoutez un Client Secret à ce tenant pour utiliser le déblocage.
         </p>
       </div>
     )
@@ -399,36 +475,69 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
 
   return (
     <div className="flex flex-col gap-4">
-      {/* En-tête */}
+      {/* En-tête méthode */}
       <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
             <Icon name="lightning" size={20} className="text-amber-600 dark:text-amber-400" />
           </div>
-          <div>
+          <div className="flex-1">
             <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text)' }}>
               Méthode AntiPhish PhishThreshold
             </p>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              Modifie temporairement la valeur PhishThreshold (3→2) puis la restaure (2→3).
-              Cette opération réveille le pipeline MDO/EXO bloqué.
-              La configuration reste identique à l&apos;état initial.
+              Modifie temporairement PhishThreshold (3→2→3) pour réveiller le pipeline MDO/EXO bloqué. Configuration restaurée à l&apos;identique.
             </p>
             <p className="text-xs mt-1 text-emerald-600 dark:text-emerald-400 font-medium">
-              ✅ Validé : +104.8 pts en 1h sur tenant SCDB PRO SARL (52.9% → 90.6%)
+              ✅ Validé : +104.8 pts en 1h sur SCDB PRO SARL (52.9% → 90.6%)
             </p>
+            <button onClick={() => setShowPrereqs(!showPrereqs)}
+              className="text-xs text-indigo-500 hover:underline mt-1 flex items-center gap-1">
+              <Icon name="info" size={11} />
+              {showPrereqs ? 'Masquer' : 'Voir les prérequis Azure AD'}
+            </button>
           </div>
         </div>
+
+        {showPrereqs && (
+          <div className="mt-4 pt-4 border-t flex flex-col gap-3" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
+              Prérequis pour le déblocage automatique (API Exchange Online)
+            </p>
+            <div className="flex flex-col gap-2">
+              {[
+                { step: '1', label: 'Azure AD → App Registrations → [votre app] → API permissions', detail: 'Ajouter : APIs my organization uses → "Office 365 Exchange Online" → Application permissions → Exchange.ManageAsApp → Grant admin consent' },
+                { step: '2', label: 'Microsoft 365 Admin Center → Roles → Exchange Administrator', detail: 'Ajouter le service principal de votre app dans ce rôle (Roles > Exchange Administrator > Add apps)' },
+                { step: '3', label: 'Attendre 5-10 minutes', detail: 'La propagation des permissions peut prendre quelques minutes avant de relancer le déblocage.' },
+              ].map(s => (
+                <div key={s.step} className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center shrink-0">{s.step}</span>
+                  <div>
+                    <p className="text-xs font-medium" style={{ color: 'var(--text)' }}>{s.label}</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Bouton */}
+      {/* Boutons d'action */}
       {!running && !done && (
-        <button
-          onClick={runUnlock}
-          className="w-full py-3 rounded-xl font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
-          <Icon name="lightning" size={16} />
-          Lancer le déblocage pour {tenant.name}
-        </button>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button onClick={runUnlock}
+            className="flex-1 py-3 rounded-xl font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
+            <Icon name="lightning" size={16} />
+            Déblocage automatique (API)
+          </button>
+          <button onClick={downloadScript}
+            className="flex-1 py-3 rounded-xl font-semibold border transition-colors flex items-center justify-center gap-2"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)', backgroundColor: 'var(--bg-card)' }}>
+            <Icon name="download" size={16} />
+            Script PowerShell (.ps1)
+          </button>
+        </div>
       )}
 
       {/* Log temps réel */}
@@ -452,28 +561,47 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
         </div>
       )}
 
-      {/* Résultat */}
+      {/* Résultat succès */}
       {done && afterScore && (
         <div className="rounded-xl p-5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
           <p className="font-semibold text-emerald-700 dark:text-emerald-400 mb-2">✅ Déblocage réussi !</p>
-          <p className="text-sm" style={{ color: 'var(--text)' }}>
-            Score actuel : <strong>{afterScore.score}/{afterScore.max}</strong>
-          </p>
+          <p className="text-sm" style={{ color: 'var(--text)' }}>Score actuel : <strong>{afterScore.score}/{afterScore.max}</strong></p>
           <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-            Le pipeline recalcule en arrière-plan. Le score final sera visible dans 1-2 heures sur{' '}
+            Score final visible dans 1-2h sur{' '}
             <a href="https://security.microsoft.com/securescore" target="_blank" rel="noreferrer"
               className="underline text-indigo-500">security.microsoft.com/securescore</a>
           </p>
         </div>
       )}
 
+      {/* Erreur — avec guide permissions si 401 */}
       {error && !done && (
-        <div className="rounded-xl p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-          <p className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">Erreur</p>
-          <p className="text-xs font-mono text-red-600 dark:text-red-500">{error}</p>
-          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-            Si l&apos;API Exchange Online n&apos;est pas accessible, utilisez le script PowerShell disponible dans la documentation.
-          </p>
+        <div className="rounded-xl border overflow-hidden border-red-200 dark:border-red-800">
+          <div className="p-4 bg-red-50 dark:bg-red-900/20">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">
+              {is401 ? '🔐 Permissions Exchange Online insuffisantes (401)' : '❌ Erreur'}
+            </p>
+            <p className="text-xs font-mono text-red-600 dark:text-red-500">{error}</p>
+          </div>
+          {is401 && (
+            <div className="p-4 border-t border-red-200 dark:border-red-800 bg-amber-50 dark:bg-amber-900/10">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">
+                Pour activer le déblocage automatique, configurez ces 2 éléments :
+              </p>
+              <ol className="text-xs space-y-1.5 text-amber-700 dark:text-amber-500 list-decimal list-inside">
+                <li><strong>portal.azure.com</strong> → App Registrations → [app] → API permissions → ajouter <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">Exchange.ManageAsApp</code> → Grant admin consent</li>
+                <li><strong>admin.microsoft.com</strong> → Roles → <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">Exchange Administrator</code> → Add apps → sélectionner votre app</li>
+              </ol>
+              <p className="text-xs mt-3 text-amber-600 dark:text-amber-500">
+                En attendant, utilisez le script PowerShell :
+              </p>
+              <button onClick={downloadScript}
+                className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                <Icon name="download" size={12} />
+                Télécharger le script PowerShell pré-rempli
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
