@@ -1,0 +1,805 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import Icon from '@/components/ui/Icon'
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+type TenantStatus = 'unknown' | 'ok' | 'frozen' | 'error'
+
+type M365Tenant = {
+  id: string
+  owner_id: string
+  name: string
+  domain: string
+  tenant_id: string
+  client_id: string
+  client_secret: string | null
+  notes: string
+  is_shared: boolean
+  last_score: number | null
+  last_max_score: number | null
+  last_status: TenantStatus
+  last_run_date: string | null
+  created_at: string
+}
+
+type ScoreResult = {
+  score: number
+  maxScore: number
+  frozenSince: string | null
+  daysOld: number
+  controlsByDate: { date: string; count: number; daysAgo: number }[]
+}
+
+type Tab = 'tenants' | 'dashboard' | 'diagnostic' | 'unlock' | 'optimize'
+
+// ── Helpers UI ───────────────────────────────────────────────────────────────
+
+function ScoreBar({ score, max }: { score: number; max: number }) {
+  const pct = max > 0 ? Math.round((score / max) * 100) : 0
+  const color = pct >= 90 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-500' : 'bg-red-500'
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-mono font-semibold w-10 text-right" style={{ color: 'var(--text)' }}>
+        {pct}%
+      </span>
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status: TenantStatus }) {
+  const map = {
+    ok:      { label: 'Opérationnel', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    frozen:  { label: 'Pipeline gelé', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+    error:   { label: 'Erreur', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+    unknown: { label: 'Non vérifié', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
+  }
+  const { label, cls } = map[status]
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{label}</span>
+}
+
+function Input({ label, value, onChange, type = 'text', placeholder, mono, required }: {
+  label: string; value: string; onChange: (v: string) => void
+  type?: string; placeholder?: string; mono?: boolean; required?: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      <input
+        type={type} value={value} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder} required={required}
+        className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 ${mono ? 'font-mono' : ''}`}
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text)' }}
+      />
+    </div>
+  )
+}
+
+// ── Formulaire tenant ─────────────────────────────────────────────────────────
+
+function TenantForm({
+  initial, onSave, onCancel, hasOrg,
+}: {
+  initial?: Partial<M365Tenant>
+  onSave: (data: Partial<M365Tenant>) => Promise<void>
+  onCancel: () => void
+  hasOrg: boolean
+}) {
+  const [name, setName] = useState(initial?.name ?? '')
+  const [domain, setDomain] = useState(initial?.domain ?? '')
+  const [tenantId, setTenantId] = useState(initial?.tenant_id ?? '')
+  const [clientId, setClientId] = useState(initial?.client_id ?? '')
+  const [clientSecret, setClientSecret] = useState(initial?.client_secret ?? '')
+  const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [isShared, setIsShared] = useState(initial?.is_shared ?? false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name || !domain || !tenantId || !clientId) {
+      setError('Veuillez remplir tous les champs obligatoires.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      await onSave({ name, domain, tenant_id: tenantId, client_id: clientId, client_secret: clientSecret || null, notes, is_shared: isShared })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Input label="Nom du tenant" value={name} onChange={setName} placeholder="SCDB PRO SARL" required />
+        <Input label="Domaine" value={domain} onChange={setDomain} placeholder="contoso.onmicrosoft.com" required />
+        <Input label="Tenant ID" value={tenantId} onChange={setTenantId} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" mono required />
+        <Input label="Client ID (App ID)" value={clientId} onChange={setClientId} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" mono required />
+        <div className="md:col-span-2">
+          <Input label="Client Secret" value={clientSecret} onChange={setClientSecret} type="password" placeholder="••••••••••••" />
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            Requis pour lire le score et débloquer le pipeline.
+            Créez un App Registration Azure AD avec les permissions <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">SecurityEvents.Read.All</code> et <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">Exchange.ManageAsApp</code>.
+          </p>
+        </div>
+        <div className="md:col-span-2">
+          <Input label="Notes" value={notes} onChange={setNotes} placeholder="Ex: tenant principal, licence Business Premium…" />
+        </div>
+      </div>
+
+      {hasOrg && (
+        <label className="flex items-center gap-3 cursor-pointer select-none">
+          <div
+            onClick={() => setIsShared(!isShared)}
+            className={`w-10 h-5 rounded-full transition-colors ${isShared ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+          >
+            <div className={`w-4 h-4 mt-0.5 ml-0.5 bg-white rounded-full shadow transition-transform ${isShared ? 'translate-x-5' : ''}`} />
+          </div>
+          <span className="text-sm" style={{ color: 'var(--text)' }}>
+            Partager avec mon organisation
+          </span>
+        </label>
+      )}
+
+      {error && <p className="text-sm text-red-500">{error}</p>}
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" onClick={onCancel}
+          className="px-4 py-2 rounded-lg text-sm border"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+          Annuler
+        </button>
+        <button type="submit" disabled={saving}
+          className="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50">
+          {saving ? 'Enregistrement…' : (initial?.id ? 'Mettre à jour' : 'Ajouter le tenant')}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+// ── Carte tenant ──────────────────────────────────────────────────────────────
+
+function TenantCard({
+  tenant, isOwner, onEdit, onDelete, onSelect, isActive,
+}: {
+  tenant: M365Tenant; isOwner: boolean
+  onEdit: () => void; onDelete: () => void
+  onSelect: () => void; isActive: boolean
+}) {
+  const pct = tenant.last_score && tenant.last_max_score
+    ? Math.round((tenant.last_score / tenant.last_max_score) * 100) : null
+
+  return (
+    <div
+      onClick={onSelect}
+      className={`rounded-xl border p-4 cursor-pointer transition-all hover:shadow-md ${isActive ? 'ring-2 ring-indigo-500' : ''}`}
+      style={{ borderColor: isActive ? 'transparent' : 'var(--border)', backgroundColor: 'var(--bg-card)' }}
+    >
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{tenant.name}</span>
+            {tenant.is_shared && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+                Partagé
+              </span>
+            )}
+            {!isOwner && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800" style={{ color: 'var(--text-muted)' }}>
+                Lecture seule
+              </span>
+            )}
+          </div>
+          <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>{tenant.domain}</p>
+        </div>
+        <StatusBadge status={tenant.last_status} />
+      </div>
+
+      {pct !== null && tenant.last_score !== null && tenant.last_max_score !== null ? (
+        <div className="mb-3">
+          <ScoreBar score={tenant.last_score} max={tenant.last_max_score} />
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {tenant.last_score}/{tenant.last_max_score} pts
+            {tenant.last_run_date && ` · ${new Date(tenant.last_run_date).toLocaleDateString('fr-FR')}`}
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>Score non encore lu</p>
+      )}
+
+      {isOwner && (
+        <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}
+          onClick={e => e.stopPropagation()}>
+          <button onClick={onEdit}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            style={{ color: 'var(--text-muted)' }}>
+            <Icon name="edit" size={12} /> Modifier
+          </button>
+          <button onClick={onDelete}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors">
+            <Icon name="trash" size={12} /> Supprimer
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Vue Diagnostic ────────────────────────────────────────────────────────────
+
+function DiagnosticView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTenant: () => void }) {
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<ScoreResult | null>(null)
+  const [error, setError] = useState('')
+
+  async function runDiagnostic() {
+    setLoading(true); setError(''); setResult(null)
+    try {
+      const res = await fetch('/api/secure-score/score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantDbId: tenant.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setResult(data)
+      onUpdateTenant()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!tenant.client_secret) {
+    return (
+      <div className="rounded-xl border p-6 text-center" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+        <Icon name="lock" size={32} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+        <p className="text-sm font-medium mb-1" style={{ color: 'var(--text)' }}>Client Secret requis</p>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          Ajoutez un Client Secret à ce tenant pour pouvoir lire le score.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold" style={{ color: 'var(--text)' }}>{tenant.name}</h3>
+          <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{tenant.domain}</p>
+        </div>
+        <button
+          onClick={runDiagnostic} disabled={loading}
+          className="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 flex items-center gap-2">
+          {loading
+            ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Lecture…</>
+            : <><Icon name="refresh" size={14} />Lire le score</>}
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-xl p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <p className="text-sm text-red-700 dark:text-red-400 font-medium">Erreur</p>
+          <p className="text-xs text-red-600 dark:text-red-500 mt-1 font-mono">{error}</p>
+        </div>
+      )}
+
+      {result && (
+        <div className="flex flex-col gap-4">
+          {/* Score principal */}
+          <div className={`rounded-xl p-5 border ${result.frozenSince ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10' : 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/10'}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="text-3xl font-bold" style={{ color: 'var(--text)' }}>
+                  {result.score}<span className="text-lg font-normal text-gray-400">/{result.maxScore}</span>
+                </p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  {Math.round((result.score / result.maxScore) * 100)}% du score maximum
+                </p>
+              </div>
+              <StatusBadge status={result.frozenSince ? 'frozen' : 'ok'} />
+            </div>
+            <ScoreBar score={result.score} max={result.maxScore} />
+          </div>
+
+          {/* Alerte gel */}
+          {result.frozenSince && (
+            <div className="rounded-xl p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+              <p className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">
+                🔴 Pipeline gelé depuis le {new Date(result.frozenSince).toLocaleDateString('fr-FR')} ({result.daysOld} jours)
+              </p>
+              <p className="text-xs text-red-600 dark:text-red-500">
+                Le backend Microsoft MDO/EXO est bloqué. Utilisez l&apos;onglet <strong>Déblocage</strong> pour corriger.
+              </p>
+            </div>
+          )}
+
+          {/* Distribution des contrôles */}
+          <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Distribution des contrôles par date</p>
+            <div className="flex flex-col gap-1.5">
+              {result.controlsByDate.map(d => (
+                <div key={d.date} className="flex items-center gap-3">
+                  <span className="text-xs font-mono w-24 shrink-0" style={{ color: 'var(--text-muted)' }}>{d.date}</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${d.daysAgo > 30 ? 'bg-red-400' : 'bg-indigo-500'}`}
+                      style={{ width: `${Math.min(100, (d.count / result.controlsByDate[0]?.count) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs w-20 text-right shrink-0" style={{ color: 'var(--text-muted)' }}>
+                    {d.count} contrôles{d.daysAgo > 30 ? ' ⚠️' : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Vue Déblocage ─────────────────────────────────────────────────────────────
+
+function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTenant: () => void }) {
+  const [running, setRunning] = useState(false)
+  const [log, setLog] = useState<string[]>([])
+  const [done, setDone] = useState(false)
+  const [afterScore, setAfterScore] = useState<{ score: number; max: number } | null>(null)
+  const [error, setError] = useState('')
+
+  async function runUnlock() {
+    if (!confirm(`Débloquer le pipeline de "${tenant.name}" ?\n\nCette opération modifie temporairement la politique Anti-Phish (30 secondes) puis la restaure. La configuration finale est identique à l'état initial.`)) return
+    setRunning(true); setLog([]); setError(''); setDone(false); setAfterScore(null)
+    try {
+      const res = await fetch('/api/secure-score/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantDbId: tenant.id }),
+      })
+      const data = await res.json()
+      setLog(data.log ?? [])
+      if (data.afterScore != null) setAfterScore({ score: data.afterScore, max: data.afterMax })
+      if (!res.ok || !data.success) throw new Error(data.error ?? 'Déblocage échoué')
+      setDone(true)
+      onUpdateTenant()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  if (!tenant.client_secret) {
+    return (
+      <div className="rounded-xl border p-6 text-center" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+        <Icon name="lock" size={32} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+        <p className="text-sm font-medium mb-1" style={{ color: 'var(--text)' }}>Client Secret requis</p>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          Ajoutez un Client Secret à ce tenant pour utiliser le déblocage automatique.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* En-tête */}
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+            <Icon name="lightning" size={20} className="text-amber-600 dark:text-amber-400" />
+          </div>
+          <div>
+            <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text)' }}>
+              Méthode AntiPhish PhishThreshold
+            </p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Modifie temporairement la valeur PhishThreshold (3→2) puis la restaure (2→3).
+              Cette opération réveille le pipeline MDO/EXO bloqué.
+              La configuration reste identique à l&apos;état initial.
+            </p>
+            <p className="text-xs mt-1 text-emerald-600 dark:text-emerald-400 font-medium">
+              ✅ Validé : +104.8 pts en 1h sur tenant SCDB PRO SARL (52.9% → 90.6%)
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Bouton */}
+      {!running && !done && (
+        <button
+          onClick={runUnlock}
+          className="w-full py-3 rounded-xl font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
+          <Icon name="lightning" size={16} />
+          Lancer le déblocage pour {tenant.name}
+        </button>
+      )}
+
+      {/* Log temps réel */}
+      {(running || log.length > 0) && (
+        <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+          <div className="px-4 py-2 text-xs font-semibold border-b flex items-center gap-2"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+            {running && <span className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />}
+            Journal d&apos;exécution
+          </div>
+          <div className="p-4 font-mono text-xs space-y-1 bg-gray-950 dark:bg-black max-h-64 overflow-y-auto">
+            {log.map((line, i) => (
+              <p key={i} className={
+                line.includes('✅') ? 'text-emerald-400' :
+                line.includes('❌') || line.includes('⚠️') ? 'text-red-400' :
+                'text-gray-300'
+              }>{line}</p>
+            ))}
+            {running && <p className="text-indigo-400 animate-pulse">…</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Résultat */}
+      {done && afterScore && (
+        <div className="rounded-xl p-5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+          <p className="font-semibold text-emerald-700 dark:text-emerald-400 mb-2">✅ Déblocage réussi !</p>
+          <p className="text-sm" style={{ color: 'var(--text)' }}>
+            Score actuel : <strong>{afterScore.score}/{afterScore.max}</strong>
+          </p>
+          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+            Le pipeline recalcule en arrière-plan. Le score final sera visible dans 1-2 heures sur{' '}
+            <a href="https://security.microsoft.com/securescore" target="_blank" rel="noreferrer"
+              className="underline text-indigo-500">security.microsoft.com/securescore</a>
+          </p>
+        </div>
+      )}
+
+      {error && !done && (
+        <div className="rounded-xl p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <p className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">Erreur</p>
+          <p className="text-xs font-mono text-red-600 dark:text-red-500">{error}</p>
+          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+            Si l&apos;API Exchange Online n&apos;est pas accessible, utilisez le script PowerShell disponible dans la documentation.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Vue Optimisation ──────────────────────────────────────────────────────────
+
+function OptimizeView() {
+  const steps = [
+    { pts: 6, label: 'Auto-Sensitivity Labels', diff: 'Moyen', desc: 'Créer des stratégies d\'étiquetage automatique pour les données sensibles (CB, IBAN, PII).', url: 'https://compliance.microsoft.com', tag: 'Compliance' },
+    { pts: 5, label: 'DLP Policies (3 min.)', diff: 'Moyen', desc: 'Créer au moins 3 politiques DLP : données personnelles, cartes de crédit, données financières.', url: 'https://compliance.microsoft.com', tag: 'Compliance' },
+    { pts: 3, label: 'Block Risky Logins', diff: 'Moyen', desc: 'Accès conditionnel : bloquer les connexions à risque élevé ou moyen.', url: 'https://portal.azure.com', tag: 'Azure AD' },
+    { pts: 3, label: 'Advanced Threat Protection', diff: 'Facile', desc: 'Activer Pièces jointes fiables, Liens fiables, ZAP anti-malware.', url: 'https://security.microsoft.com', tag: 'Defender' },
+    { pts: 3, label: 'Passwordless Sign-in', diff: 'Moyen', desc: 'Activer Windows Hello, FIDO2 ou Microsoft Authenticator sans mot de passe.', url: 'https://portal.azure.com', tag: 'Azure AD' },
+    { pts: 2, label: 'Enforce MFA (Conditional Access)', diff: 'Facile', desc: 'Exiger l\'authentification MFA pour tous les utilisateurs via une règle d\'accès conditionnel.', url: 'https://portal.azure.com', tag: 'Azure AD' },
+    { pts: 2, label: 'Advanced Auditing (365 j)', diff: 'Facile', desc: 'Set-AdminAuditLogConfig -AdminAuditLogAgeLimit 365.00:00:00', url: 'https://admin.microsoft.com', tag: 'Exchange' },
+    { pts: 4, label: 'Insider Risk Management', diff: 'E5 requis', desc: 'Nécessite Microsoft 365 E5 ou add-on Insider Risk Management.', url: 'https://compliance.microsoft.com', tag: 'Compliance' },
+  ]
+
+  const diffColor: Record<string, string> = {
+    'Facile':   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    'Moyen':    'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    'E5 requis':'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  }
+
+  const total = steps.reduce((s, x) => s + x.pts, 0)
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-xl p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
+        <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">
+          Guide d&apos;optimisation — vers 278/278 (100%)
+        </p>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+          Ces {steps.length} configurations représentent jusqu&apos;à +{total} points supplémentaires.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {steps.map((s, i) => (
+          <div key={i} className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{s.label}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${diffColor[s.diff] ?? ''}`}>{s.diff}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800" style={{ color: 'var(--text-muted)' }}>{s.tag}</span>
+              </div>
+              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 shrink-0">+{s.pts} pts</span>
+            </div>
+            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>{s.desc}</p>
+            <a href={s.url} target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+              Ouvrir le portail <Icon name="externalLink" size={11} />
+            </a>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── App principale ────────────────────────────────────────────────────────────
+
+export default function SecureScoreApp() {
+  const supabase = createClient()
+  const [tab, setTab] = useState<Tab>('tenants')
+  const [ownTenants, setOwnTenants] = useState<M365Tenant[]>([])
+  const [sharedTenants, setSharedTenants] = useState<M365Tenant[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [hasOrg, setHasOrg] = useState(false)
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [editTenant, setEditTenant] = useState<M365Tenant | null>(null)
+
+  const allTenants = [...ownTenants, ...sharedTenants]
+  const activeTenant = allTenants.find(t => t.id === activeTenantId) ?? null
+
+  const loadTenants = useCallback(async () => {
+    const res = await fetch('/api/secure-score/tenants')
+    if (res.ok) {
+      const data = await res.json()
+      setOwnTenants(data.own ?? [])
+      setSharedTenants(data.shared ?? [])
+      if (!activeTenantId && data.own?.[0]) setActiveTenantId(data.own[0].id)
+    }
+  }, [activeTenantId])
+
+  useEffect(() => {
+    async function init() {
+      setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUserId(user.id)
+        const { data: profile } = await supabase.from('profiles').select('org_id').eq('id', user.id).single()
+        setHasOrg(Boolean(profile?.org_id))
+      }
+      await loadTenants()
+      setLoading(false)
+    }
+    init()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleCreate(data: Partial<M365Tenant>) {
+    const res = await fetch('/api/secure-score/tenants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.error)
+    }
+    const created = await res.json()
+    await loadTenants()
+    setActiveTenantId(created.id)
+    setShowForm(false)
+  }
+
+  async function handleUpdate(data: Partial<M365Tenant>) {
+    if (!editTenant) return
+    const res = await fetch(`/api/secure-score/tenants/${editTenant.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.error)
+    }
+    await loadTenants()
+    setEditTenant(null)
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Supprimer ce tenant ?')) return
+    await fetch(`/api/secure-score/tenants/${id}`, { method: 'DELETE' })
+    await loadTenants()
+    if (activeTenantId === id) setActiveTenantId(allTenants.find(t => t.id !== id)?.id ?? null)
+  }
+
+  const tabs: { id: Tab; label: string; icon: string; needsTenant?: boolean }[] = [
+    { id: 'tenants',    label: 'Mes tenants',  icon: 'folder' },
+    { id: 'dashboard',  label: 'Tableau de bord', icon: 'chart' },
+    { id: 'diagnostic', label: 'Diagnostic',   icon: 'search', needsTenant: true },
+    { id: 'unlock',     label: 'Déblocage',    icon: 'lightning', needsTenant: true },
+    { id: 'optimize',   label: 'Optimiser',    icon: 'star' },
+  ]
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <span className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Tabs */}
+      <div className="flex gap-1 overflow-x-auto pb-1">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+              tab === t.id
+                ? 'bg-indigo-600 text-white'
+                : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+            style={tab !== t.id ? { color: 'var(--text-muted)' } : {}}
+          >
+            <Icon name={t.icon} size={14} />
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sélecteur de tenant actif (visible sauf sur tenants/optimize) */}
+      {allTenants.length > 0 && !['tenants', 'optimize'].includes(tab) && (
+        <div className="flex items-center gap-3 px-4 py-2 rounded-xl border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+          <span className="text-xs font-medium shrink-0" style={{ color: 'var(--text-muted)' }}>Tenant actif :</span>
+          <select
+            value={activeTenantId ?? ''}
+            onChange={e => setActiveTenantId(e.target.value)}
+            className="flex-1 text-sm bg-transparent focus:outline-none"
+            style={{ color: 'var(--text)' }}
+          >
+            {allTenants.map(t => (
+              <option key={t.id} value={t.id}>{t.name} — {t.domain}</option>
+            ))}
+          </select>
+          {activeTenant && <StatusBadge status={activeTenant.last_status} />}
+        </div>
+      )}
+
+      {/* ── Contenu par onglet ── */}
+
+      {/* Tenants */}
+      {tab === 'tenants' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              {ownTenants.length} tenant{ownTenants.length > 1 ? 's' : ''} personnel{ownTenants.length > 1 ? 's' : ''}
+              {sharedTenants.length > 0 && ` · ${sharedTenants.length} partagé${sharedTenants.length > 1 ? 's' : ''}`}
+            </p>
+            <button
+              onClick={() => { setShowForm(true); setEditTenant(null) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white">
+              <Icon name="plus" size={14} /> Ajouter un tenant
+            </button>
+          </div>
+
+          {(showForm || editTenant) && (
+            <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+              <h3 className="font-semibold text-sm mb-4" style={{ color: 'var(--text)' }}>
+                {editTenant ? 'Modifier le tenant' : 'Nouveau tenant Microsoft 365'}
+              </h3>
+              <TenantForm
+                initial={editTenant ?? undefined}
+                onSave={editTenant ? handleUpdate : handleCreate}
+                onCancel={() => { setShowForm(false); setEditTenant(null) }}
+                hasOrg={hasOrg}
+              />
+            </div>
+          )}
+
+          {allTenants.length === 0 && !showForm ? (
+            <div className="rounded-xl border p-12 text-center" style={{ borderColor: 'var(--border)' }}>
+              <Icon name="cloud" size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-sm font-medium mb-1" style={{ color: 'var(--text)' }}>Aucun tenant configuré</p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Ajoutez votre premier tenant Microsoft 365 pour commencer.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {ownTenants.map(t => (
+                <TenantCard key={t.id} tenant={t} isOwner={t.owner_id === userId}
+                  isActive={t.id === activeTenantId}
+                  onSelect={() => setActiveTenantId(t.id)}
+                  onEdit={() => { setEditTenant(t); setShowForm(false) }}
+                  onDelete={() => handleDelete(t.id)} />
+              ))}
+              {sharedTenants.map(t => (
+                <TenantCard key={t.id} tenant={t} isOwner={false}
+                  isActive={t.id === activeTenantId}
+                  onSelect={() => setActiveTenantId(t.id)}
+                  onEdit={() => {}} onDelete={() => {}} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dashboard */}
+      {tab === 'dashboard' && (
+        <div className="flex flex-col gap-3">
+          {allTenants.length === 0 ? (
+            <p className="text-sm text-center py-12" style={{ color: 'var(--text-muted)' }}>
+              Aucun tenant — ajoutez-en un dans l&apos;onglet Mes tenants.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {allTenants.map(t => {
+                  const pct = t.last_score && t.last_max_score
+                    ? Math.round((t.last_score / t.last_max_score) * 100) : null
+                  return (
+                    <div key={t.id} className="rounded-xl border p-4 flex flex-col gap-3"
+                      style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{t.name}</p>
+                          <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{t.domain}</p>
+                        </div>
+                        <StatusBadge status={t.last_status} />
+                      </div>
+                      {pct !== null && t.last_score !== null && t.last_max_score !== null ? (
+                        <>
+                          <div>
+                            <p className="text-2xl font-bold mb-1" style={{ color: 'var(--text)' }}>
+                              {t.last_score}<span className="text-base font-normal text-gray-400">/{t.last_max_score}</span>
+                            </p>
+                            <ScoreBar score={t.last_score} max={t.last_max_score} />
+                          </div>
+                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            Mis à jour {t.last_run_date ? new Date(t.last_run_date).toLocaleDateString('fr-FR') : '—'}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          Score non lu — utilisez l&apos;onglet Diagnostic
+                        </p>
+                      )}
+                      <button
+                        onClick={() => { setActiveTenantId(t.id); setTab('diagnostic') }}
+                        className="text-xs text-indigo-500 hover:underline text-left">
+                        Lancer le diagnostic →
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Diagnostic */}
+      {tab === 'diagnostic' && (
+        activeTenant
+          ? <DiagnosticView tenant={activeTenant} onUpdateTenant={loadTenants} />
+          : <p className="text-sm text-center py-12" style={{ color: 'var(--text-muted)' }}>Sélectionnez un tenant.</p>
+      )}
+
+      {/* Déblocage */}
+      {tab === 'unlock' && (
+        activeTenant
+          ? <UnlockView tenant={activeTenant} onUpdateTenant={loadTenants} />
+          : <p className="text-sm text-center py-12" style={{ color: 'var(--text-muted)' }}>Sélectionnez un tenant.</p>
+      )}
+
+      {/* Optimisation */}
+      {tab === 'optimize' && <OptimizeView />}
+    </div>
+  )
+}
