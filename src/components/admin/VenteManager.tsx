@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAllApps, broadcastAppsUpdate } from '@/hooks/useApps'
+import Icon from '@/components/ui/Icon'
 import type { App, AppCategory, PricingType } from '@/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -146,7 +147,7 @@ function AppCard({
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-2xl leading-none flex-shrink-0">{app.icon}</span>
+          <Icon name={app.icon} size={22} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
           <div className="min-w-0">
             <div className="font-semibold text-sm truncate" style={{ color: 'var(--text)' }}>
               {app.name}
@@ -165,7 +166,7 @@ function AppCard({
               backgroundColor: 'var(--bg-card)',
             }}
           >
-            {app.category.icon} {app.category.name}
+            <Icon name={app.category.icon} size={12} /> {app.category.name}
           </span>
         )}
       </div>
