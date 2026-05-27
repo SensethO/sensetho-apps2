@@ -30,12 +30,12 @@ async function getAllExchangeRoles(graphToken: string): Promise<{ id: string; di
   let url: string | null = `https://graph.microsoft.com/beta/roleManagement/exchange/roleDefinitions?$select=id,displayName&$top=100`
 
   while (url) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${graphToken}` } })
+    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${graphToken}` } })
     if (!res.ok) {
       const txt = await res.text()
       throw new Error(`Liste rôles Exchange: ${res.status} — ${txt}`)
     }
-    const data = await res.json()
+    const data: { value?: { id: string; displayName: string }[]; '@odata.nextLink'?: string } = await res.json()
     allRoles.push(...(data.value ?? []))
     url = data['@odata.nextLink'] ?? null
   }
