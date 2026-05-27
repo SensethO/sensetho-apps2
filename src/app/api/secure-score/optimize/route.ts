@@ -148,16 +148,29 @@ export async function POST(request: NextRequest) {
     // AUDIT — Set-AdminAuditLogConfig -AdminAuditLogAgeLimit 365 jours
     // ════════════════════════════════════════════════════════════════════════════
     if (action === 'audit') {
-      log.push(`[${ts()}] Obtention des tokens…`)
-      const [graphToken, exoToken] = await Promise.all([
-        getToken(tenant.tenant_id, tenant.client_id, tenant.client_secret, 'https://graph.microsoft.com/.default'),
-        getToken(tenant.tenant_id, tenant.client_id, tenant.client_secret, 'https://outlook.office365.com/.default'),
-      ])
-      log.push(`[${ts()}] Tokens obtenus ✅`)
+      log.push(`[${ts()}] Obtention du token Exchange Online…`)
+      const exoToken = await getToken(
+        tenant.tenant_id, tenant.client_id, tenant.client_secret,
+        'https://outlook.office365.com/.default'
+      )
+      log.push(`[${ts()}] Token obtenu ✅`)
 
-      // Auto-assigner le rôle Exchange "Audit Logs" si absent
-      log.push(`[${ts()}] Vérification rôle RBAC "Audit Logs"…`)
-      await ensureExchangeRole(graphToken, tenant.client_id, 'Audit Logs', log, ts)
+      // Auto-assigner le rôle Exchange classique "Audit Logs" via InvokeCommand
+      log.push(`[${ts()}] Auto-assignation rôle RBAC "Audit Logs"…`)
+      try {
+        await exoInvoke(exoToken, 'New-ManagementRoleAssignment', {
+          App: tenant.client_id,
+          Role: 'Audit Logs',
+        })
+        log.push(`[${ts()}] Rôle "Audit Logs" assigné ✅`)
+      } catch (e) {
+        const msg = (e as Error).message
+        if (alreadyExists(msg)) {
+          log.push(`[${ts()}] Rôle "Audit Logs" déjà assigné ✅`)
+        } else {
+          log.push(`[${ts()}] Assignation rôle: ${msg} (poursuite…)`)
+        }
+      }
 
       log.push(`[${ts()}] Configuration Advanced Auditing — rétention 365 jours…`)
       await exoInvoke(exoToken, 'Set-AdminAuditLogConfig', {
@@ -169,16 +182,29 @@ export async function POST(request: NextRequest) {
     // ATP — Safe Attachments + Safe Links + ZAP
     // ════════════════════════════════════════════════════════════════════════════
     } else if (action === 'atp') {
-      log.push(`[${ts()}] Obtention des tokens…`)
-      const [graphToken, token] = await Promise.all([
-        getToken(tenant.tenant_id, tenant.client_id, tenant.client_secret, 'https://graph.microsoft.com/.default'),
-        getToken(tenant.tenant_id, tenant.client_id, tenant.client_secret, 'https://outlook.office365.com/.default'),
-      ])
-      log.push(`[${ts()}] Tokens obtenus ✅`)
+      log.push(`[${ts()}] Obtention du token Exchange Online…`)
+      const token = await getToken(
+        tenant.tenant_id, tenant.client_id, tenant.client_secret,
+        'https://outlook.office365.com/.default'
+      )
+      log.push(`[${ts()}] Token obtenu ✅`)
 
-      // Auto-assigner le rôle Exchange "Hygiene Management" si absent
-      log.push(`[${ts()}] Vérification rôle RBAC "Hygiene Management"…`)
-      await ensureExchangeRole(graphToken, tenant.client_id, 'Hygiene Management', log, ts)
+      // Auto-assigner le rôle Exchange classique "Hygiene Management" via InvokeCommand
+      log.push(`[${ts()}] Auto-assignation rôle RBAC "Hygiene Management"…`)
+      try {
+        await exoInvoke(token, 'New-ManagementRoleAssignment', {
+          App: tenant.client_id,
+          Role: 'Hygiene Management',
+        })
+        log.push(`[${ts()}] Rôle "Hygiene Management" assigné ✅`)
+      } catch (e) {
+        const msg = (e as Error).message
+        if (alreadyExists(msg)) {
+          log.push(`[${ts()}] Rôle "Hygiene Management" déjà assigné ✅`)
+        } else {
+          log.push(`[${ts()}] Assignation rôle: ${msg} (poursuite…)`)
+        }
+      }
 
       // Safe Attachments Policy
       log.push(`[${ts()}] Création Safe Attachments policy…`)
