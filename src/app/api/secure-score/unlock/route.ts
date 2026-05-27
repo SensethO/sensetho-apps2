@@ -63,53 +63,52 @@ export async function POST(request: NextRequest) {
       log.push(`[${ts()}] Token aud:${payload.aud} appid:${payload.appid} roles:${JSON.stringify(payload.roles ?? [])}`)
     } catch { log.push(`[${ts()}] (impossible de décoder le token)`) }
 
-    // 2. Lire la politique actuelle
-    log.push(`[${ts()}] Lecture de la politique Anti-Phish…`)
-    const domain = tenant.domain
-    const policyUrl = `https://outlook.office365.com/adminapi/beta/${domain}/Configuration/AntiPhishPolicy`
+    // Helper : appel InvokeCommand (EXO REST API v2)
+    const invokeCommand = async (cmdletName: string, parameters: Record<string, unknown>) => {
+      const url = `https://outlook.office365.com/adminapi/beta/${tenant.tenant_id}/InvokeCommand`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${exoToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ CmdletInput: { CmdletName: cmdletName, Parameters: parameters } }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(`${cmdletName} échoué (${res.status}): ${JSON.stringify(body).slice(0, 400)}`)
+      return body
+    }
 
-    const getRes = await fetch(policyUrl, {
-      headers: { Authorization: `Bearer ${exoToken}`, Accept: 'application/json' },
-    })
+    // 2. Lire la politique actuelle via Get-AntiPhishPolicy
+    log.push(`[${ts()}] Lecture de la politique Anti-Phish (Get-AntiPhishPolicy)…`)
 
     let currentThreshold = 3
-    let policyId = 'Default'
+    let policyIdentity = 'Office365 AntiPhish Default'
 
-    if (getRes.ok) {
-      const policyData = await getRes.json()
-      const policies = policyData.value ?? [policyData]
-      const defaultPolicy = policies.find((p: Record<string, unknown>) =>
-        String(p.Name).toLowerCase().includes('default') ||
-        String(p.Identity).toLowerCase().includes('default')
+    try {
+      const getBody = await invokeCommand('Get-AntiPhishPolicy', {})
+      const policies: Record<string, unknown>[] = getBody.value ?? (Array.isArray(getBody) ? getBody : [getBody])
+      const defaultPolicy = policies.find((p) =>
+        String(p.Name ?? p.Identity ?? '').toLowerCase().includes('default')
       ) ?? policies[0]
       if (defaultPolicy) {
-        currentThreshold = defaultPolicy.PhishThresholdLevel ?? 3
-        policyId = defaultPolicy.Identity ?? defaultPolicy.Name ?? 'Default'
-        log.push(`[${ts()}] Policy "${policyId}" trouvée — PhishThreshold actuel: ${currentThreshold} ✅`)
+        currentThreshold = (defaultPolicy.PhishThresholdLevel as number) ?? 3
+        policyIdentity = (defaultPolicy.Identity as string) ?? (defaultPolicy.Name as string) ?? policyIdentity
+        log.push(`[${ts()}] Policy "${policyIdentity}" — PhishThreshold actuel: ${currentThreshold} ✅`)
       }
-    } else {
-      const getErrBody = await getRes.text()
-      log.push(`[${ts()}] Lecture policy EXO: ${getRes.status} — ${getErrBody.slice(0, 300) || '(empty body)'} — utilisation des valeurs par défaut`)
+    } catch (e) {
+      log.push(`[${ts()}] Lecture policy: ${(e as Error).message} — utilisation des valeurs par défaut`)
     }
 
     const tempThreshold = currentThreshold === 2 ? 3 : 2
 
-    // 3. Modification temporaire
-    log.push(`[${ts()}] Modification: ${currentThreshold} → ${tempThreshold}…`)
-    const patchUrl = `https://outlook.office365.com/adminapi/beta/${domain}/Configuration/AntiPhishPolicy('${policyId}')`
-    const patchRes = await fetch(patchUrl, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${exoToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ PhishThresholdLevel: tempThreshold }),
+    // 3. Modification temporaire via Set-AntiPhishPolicy
+    log.push(`[${ts()}] Modification: ${currentThreshold} → ${tempThreshold} (Set-AntiPhishPolicy)…`)
+    await invokeCommand('Set-AntiPhishPolicy', {
+      Identity: policyIdentity,
+      PhishThresholdLevel: tempThreshold,
     })
-
-    if (!patchRes.ok) {
-      const errText = await patchRes.text()
-      throw new Error(`PATCH policy échoué (${patchRes.status}): ${errText}`)
-    }
     log.push(`[${ts()}] Modifié à ${tempThreshold} ✅`)
 
     // 4. Attente 30s
@@ -119,20 +118,14 @@ export async function POST(request: NextRequest) {
 
     // 5. Restauration
     log.push(`[${ts()}] Restauration: ${tempThreshold} → ${currentThreshold}…`)
-    const restoreRes = await fetch(patchUrl, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${exoToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ PhishThresholdLevel: currentThreshold }),
-    })
-
-    if (!restoreRes.ok) {
-      const errText = await restoreRes.text()
-      log.push(`[${ts()}] ⚠️ RESTAURATION ÉCHOUÉE: ${errText} — valeur actuelle: ${tempThreshold}`)
-    } else {
+    try {
+      await invokeCommand('Set-AntiPhishPolicy', {
+        Identity: policyIdentity,
+        PhishThresholdLevel: currentThreshold,
+      })
       log.push(`[${ts()}] Restauré à ${currentThreshold} ✅`)
+    } catch (e) {
+      log.push(`[${ts()}] ⚠️ RESTAURATION ÉCHOUÉE: ${(e as Error).message} — valeur actuelle: ${tempThreshold}`)
     }
 
     // 6. Lire le score après
