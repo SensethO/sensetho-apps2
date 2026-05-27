@@ -966,8 +966,32 @@ type OptResult = { success: boolean; log: string[]; error?: string; needsRbac?: 
 
 function OptimizeView({ tenant }: { tenant: M365Tenant | null }) {
   const [running, setRunning] = useState<OptAction | null>(null)
-  const [results, setResults] = useState<Partial<Record<OptAction, OptResult>>>({})
+
+  // Résultats persistés dans localStorage (clé par tenant) pour survivre aux navigations
+  const storageKey = tenant ? `optimize-results-${tenant.id}` : null
+  const [results, setResults] = useState<Partial<Record<OptAction, OptResult>>>(() => {
+    if (typeof window === 'undefined' || !tenant) return {}
+    try {
+      const stored = localStorage.getItem(`optimize-results-${tenant.id}`)
+      return stored ? JSON.parse(stored) : {}
+    } catch { return {} }
+  })
   const [expanded, setExpanded] = useState<Partial<Record<OptAction, boolean>>>({})
+
+  // Sync results → localStorage à chaque modification
+  useEffect(() => {
+    if (!storageKey) return
+    try { localStorage.setItem(storageKey, JSON.stringify(results)) } catch { /* ignore */ }
+  }, [results, storageKey])
+
+  // Recharger les résultats quand le tenant change
+  useEffect(() => {
+    if (!tenant) { setResults({}); return }
+    try {
+      const stored = localStorage.getItem(`optimize-results-${tenant.id}`)
+      setResults(stored ? JSON.parse(stored) : {})
+    } catch { setResults({}) }
+  }, [tenant?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const steps: {
     pts: number; label: string; diff: string; desc: string; url: string; tag: string
