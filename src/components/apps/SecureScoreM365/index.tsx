@@ -909,55 +909,225 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
 
 // ── Vue Optimisation ──────────────────────────────────────────────────────────
 
-function OptimizeView() {
-  const steps = [
-    { pts: 6, label: 'Auto-Sensitivity Labels', diff: 'Moyen', desc: 'Créer des stratégies d\'étiquetage automatique pour les données sensibles (CB, IBAN, PII).', url: 'https://compliance.microsoft.com', tag: 'Compliance' },
-    { pts: 5, label: 'DLP Policies (3 min.)', diff: 'Moyen', desc: 'Créer au moins 3 politiques DLP : données personnelles, cartes de crédit, données financières.', url: 'https://compliance.microsoft.com', tag: 'Compliance' },
-    { pts: 3, label: 'Block Risky Logins', diff: 'Moyen', desc: 'Accès conditionnel : bloquer les connexions à risque élevé ou moyen.', url: 'https://portal.azure.com', tag: 'Azure AD' },
-    { pts: 3, label: 'Advanced Threat Protection', diff: 'Facile', desc: 'Activer Pièces jointes fiables, Liens fiables, ZAP anti-malware.', url: 'https://security.microsoft.com', tag: 'Defender' },
-    { pts: 3, label: 'Passwordless Sign-in', diff: 'Moyen', desc: 'Activer Windows Hello, FIDO2 ou Microsoft Authenticator sans mot de passe.', url: 'https://portal.azure.com', tag: 'Azure AD' },
-    { pts: 2, label: 'Enforce MFA (Conditional Access)', diff: 'Facile', desc: 'Exiger l\'authentification MFA pour tous les utilisateurs via une règle d\'accès conditionnel.', url: 'https://portal.azure.com', tag: 'Azure AD' },
-    { pts: 2, label: 'Advanced Auditing (365 j)', diff: 'Facile', desc: 'Set-AdminAuditLogConfig -AdminAuditLogAgeLimit 365.00:00:00', url: 'https://admin.microsoft.com', tag: 'Exchange' },
-    { pts: 4, label: 'Insider Risk Management', diff: 'E5 requis', desc: 'Nécessite Microsoft 365 E5 ou add-on Insider Risk Management.', url: 'https://compliance.microsoft.com', tag: 'Compliance' },
+type OptAction = 'audit' | 'atp' | 'dlp' | 'mfa' | 'block-risky'
+type OptResult = { success: boolean; log: string[]; error?: string }
+
+function OptimizeView({ tenant }: { tenant: M365Tenant | null }) {
+  const [running, setRunning] = useState<OptAction | null>(null)
+  const [results, setResults] = useState<Partial<Record<OptAction, OptResult>>>({})
+  const [expanded, setExpanded] = useState<Partial<Record<OptAction, boolean>>>({})
+
+  const steps: {
+    pts: number; label: string; diff: string; desc: string; url: string; tag: string
+    action?: OptAction; needs?: string
+  }[] = [
+    {
+      pts: 6, label: 'Auto-Sensitivity Labels', diff: 'Moyen', tag: 'Compliance',
+      desc: 'Créer des stratégies d\'étiquetage automatique pour les données sensibles (CB, IBAN, PII).',
+      url: 'https://compliance.microsoft.com',
+    },
+    {
+      pts: 5, label: 'DLP Policies', diff: 'Moyen', tag: 'Compliance',
+      desc: '3 politiques DLP automatiques : données personnelles, cartes de crédit, données financières (IBAN).',
+      url: 'https://compliance.microsoft.com',
+      action: 'dlp',
+    },
+    {
+      pts: 3, label: 'Block Risky Logins', diff: 'Moyen', tag: 'Azure AD',
+      desc: 'Accès conditionnel : bloquer les connexions à risque élevé ou moyen.',
+      url: 'https://portal.azure.com',
+      action: 'block-risky',
+      needs: 'Policy.ReadWrite.ConditionalAccess',
+    },
+    {
+      pts: 3, label: 'Advanced Threat Protection', diff: 'Facile', tag: 'Defender',
+      desc: 'Activer Pièces jointes fiables, Liens fiables, ZAP anti-malware via Safe Attachments/Links.',
+      url: 'https://security.microsoft.com',
+      action: 'atp',
+    },
+    {
+      pts: 3, label: 'Passwordless Sign-in', diff: 'Moyen', tag: 'Azure AD',
+      desc: 'Activer Windows Hello, FIDO2 ou Microsoft Authenticator sans mot de passe.',
+      url: 'https://portal.azure.com',
+    },
+    {
+      pts: 2, label: 'Enforce MFA (Conditional Access)', diff: 'Facile', tag: 'Azure AD',
+      desc: 'Exiger l\'authentification MFA pour tous les utilisateurs via une règle d\'accès conditionnel.',
+      url: 'https://portal.azure.com',
+      action: 'mfa',
+      needs: 'Policy.ReadWrite.ConditionalAccess',
+    },
+    {
+      pts: 2, label: 'Advanced Auditing (365 j)', diff: 'Facile', tag: 'Exchange',
+      desc: 'Étendre la rétention des journaux d\'audit à 365 jours via Set-AdminAuditLogConfig.',
+      url: 'https://admin.microsoft.com',
+      action: 'audit',
+    },
+    {
+      pts: 4, label: 'Insider Risk Management', diff: 'E5 requis', tag: 'Compliance',
+      desc: 'Nécessite Microsoft 365 E5 ou add-on Insider Risk Management.',
+      url: 'https://compliance.microsoft.com',
+    },
   ]
 
   const diffColor: Record<string, string> = {
-    'Facile':   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    'Moyen':    'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    'E5 requis':'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+    'Facile':    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    'Moyen':     'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    'E5 requis': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
   }
 
+  const canAuto = !!tenant?.client_secret
   const total = steps.reduce((s, x) => s + x.pts, 0)
+  const automatable = steps.filter(s => s.action).length
+
+  async function runAction(action: OptAction) {
+    if (!tenant || running) return
+    setRunning(action)
+    setResults(prev => { const n = { ...prev }; delete n[action]; return n })
+    try {
+      const res = await fetch('/api/secure-score/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantDbId: tenant.id, action }),
+      })
+      const data = await res.json()
+      setResults(prev => ({ ...prev, [action]: data }))
+      setExpanded(prev => ({ ...prev, [action]: true }))
+    } catch (e) {
+      setResults(prev => ({ ...prev, [action]: { success: false, log: [], error: String(e) } }))
+    } finally {
+      setRunning(null)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
+      {/* En-tête */}
       <div className="rounded-xl p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
         <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">
           Guide d&apos;optimisation — vers 278/278 (100%)
         </p>
         <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-          Ces {steps.length} configurations représentent jusqu&apos;à +{total} points supplémentaires.
+          Ces {steps.length} configurations représentent jusqu&apos;à +{total} points.{' '}
+          <span className="text-indigo-600 dark:text-indigo-400 font-medium">
+            {automatable} automatisables directement.
+          </span>
         </p>
+        {!tenant && (
+          <p className="text-xs mt-2 text-amber-600 dark:text-amber-400">
+            ⚠️ Sélectionnez un tenant dans l&apos;onglet &quot;Mes tenants&quot; pour activer l&apos;automatisation.
+          </p>
+        )}
+        {tenant && !tenant.client_secret && (
+          <p className="text-xs mt-2 text-amber-600 dark:text-amber-400">
+            ⚠️ Ajoutez un Client Secret au tenant pour activer l&apos;automatisation.
+          </p>
+        )}
       </div>
 
+      {/* Liste */}
       <div className="flex flex-col gap-3">
-        {steps.map((s, i) => (
-          <div key={i} className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{s.label}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${diffColor[s.diff] ?? ''}`}>{s.diff}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800" style={{ color: 'var(--text-muted)' }}>{s.tag}</span>
+        {steps.map((s, i) => {
+          const res = s.action ? results[s.action] : undefined
+          const isRunning = s.action ? running === s.action : false
+          const isExpanded = s.action ? expanded[s.action] : false
+
+          return (
+            <div key={i} className="rounded-xl border overflow-hidden"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+              <div className="p-4">
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {res?.success && <span className="text-emerald-500">✅</span>}
+                    {res && !res.success && <span className="text-red-500">❌</span>}
+                    <span className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{s.label}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${diffColor[s.diff] ?? ''}`}>
+                      {s.diff}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800"
+                      style={{ color: 'var(--text-muted)' }}>
+                      {s.tag}
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                    +{s.pts} pts
+                  </span>
+                </div>
+
+                <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>{s.desc}</p>
+
+                {/* Footer actions */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <a href={s.url} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                    Ouvrir le portail <Icon name="externalLink" size={11} />
+                  </a>
+
+                  {s.action && (
+                    <>
+                      <span className="text-gray-300 dark:text-gray-600">|</span>
+                      <button
+                        onClick={() => runAction(s.action!)}
+                        disabled={!canAuto || isRunning || !!running}
+                        className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
+                          !canAuto || (running && !isRunning)
+                            ? 'opacity-40 cursor-not-allowed bg-gray-100 dark:bg-gray-800 text-gray-500'
+                            : res?.success
+                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                            : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50'
+                        }`}
+                      >
+                        {isRunning ? (
+                          <>
+                            <span className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                            En cours…
+                          </>
+                        ) : res?.success ? (
+                          '✅ Configuré'
+                        ) : (
+                          <>⚡ Automatiser</>
+                        )}
+                      </button>
+
+                      {s.needs && (
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          Nécessite : <code className="font-mono text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">{s.needs}</code>
+                        </span>
+                      )}
+
+                      {res && (
+                        <button
+                          onClick={() => setExpanded(prev => ({ ...prev, [s.action!]: !prev[s.action!] }))}
+                          className="text-xs text-gray-500 hover:underline ml-auto">
+                          {isExpanded ? 'Masquer le log' : 'Voir le log'}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
-              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 shrink-0">+{s.pts} pts</span>
+
+              {/* Log inline */}
+              {s.action && res && isExpanded && (
+                <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+                  <div className="p-3 font-mono text-xs space-y-0.5 bg-gray-950 dark:bg-black max-h-48 overflow-y-auto">
+                    {res.log.map((line, j) => (
+                      <p key={j} className={
+                        line.includes('✅') ? 'text-emerald-400' :
+                        line.includes('❌') || line.includes('⚠️') ? 'text-red-400' :
+                        'text-gray-300'
+                      }>{line}</p>
+                    ))}
+                    {!res.success && res.error && (
+                      <p className="text-red-400 mt-1 pt-1 border-t border-gray-800">{res.error}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>{s.desc}</p>
-            <a href={s.url} target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
-              Ouvrir le portail <Icon name="externalLink" size={11} />
-            </a>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -1080,8 +1250,8 @@ export default function SecureScoreApp() {
         ))}
       </div>
 
-      {/* Sélecteur de tenant actif (visible sauf sur tenants/optimize) */}
-      {allTenants.length > 0 && !['tenants', 'optimize'].includes(tab) && (
+      {/* Sélecteur de tenant actif (visible sauf sur tenants) */}
+      {allTenants.length > 0 && tab !== 'tenants' && (
         <div className="flex items-center gap-3 px-4 py-2 rounded-xl border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
           <span className="text-xs font-medium shrink-0" style={{ color: 'var(--text-muted)' }}>Tenant actif :</span>
           <select
@@ -1226,7 +1396,7 @@ export default function SecureScoreApp() {
       )}
 
       {/* Optimisation */}
-      {tab === 'optimize' && <OptimizeView />}
+      {tab === 'optimize' && <OptimizeView tenant={activeTenant} />}
     </div>
   )
 }
