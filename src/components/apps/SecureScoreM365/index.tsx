@@ -1125,14 +1125,26 @@ function OptimizeView({ tenant }: { tenant: M365Tenant | null }) {
       {/* En-tête */}
       <div className="rounded-xl p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
         <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">
-          Guide d&apos;optimisation — vers 278/278 (100%)
+          Guide d&apos;optimisation
+          {tenant?.last_score != null && tenant?.last_max_score != null && (
+            <span className="font-normal ml-1">
+              — actuellement <strong>{tenant.last_score}/{tenant.last_max_score}</strong>{' '}
+              ({Math.round((tenant.last_score / tenant.last_max_score) * 100)}%)
+            </span>
+          )}
         </p>
         <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-          Ces {steps.length} configurations représentent jusqu&apos;à +{total} points.{' '}
+          Ces {steps.length} configurations représentent jusqu&apos;à +{total} points supplémentaires.{' '}
           <span className="text-indigo-600 dark:text-indigo-400 font-medium">
             {automatable} automatisables directement.
           </span>
         </p>
+        {tenant?.last_max_score != null && tenant.last_max_score < 200 && (
+          <p className="text-xs mt-1.5 text-amber-600 dark:text-amber-400">
+            ℹ️ Score max = <strong>{tenant.last_max_score} pts</strong> — Microsoft n&apos;inclut que les contrôles applicables à votre abonnement.
+            Certaines optimisations ci-dessous nécessitent des licences supérieures (E3/E5, Azure AD P1/P2).
+          </p>
+        )}
         {!tenant && (
           <p className="text-xs mt-2 text-amber-600 dark:text-amber-400">
             ⚠️ Sélectionnez un tenant dans l&apos;onglet &quot;Mes tenants&quot; pour activer l&apos;automatisation.
