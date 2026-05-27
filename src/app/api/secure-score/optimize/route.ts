@@ -15,6 +15,72 @@ async function getToken(tenantId: string, clientId: string, clientSecret: string
   return (await res.json()).access_token as string
 }
 
+// ── Auto-assignation du rôle Exchange RBAC via Graph RoleManagement.ReadWrite.Exchange ──
+async function ensureExchangeRole(
+  graphToken: string,
+  clientId: string,
+  roleName: string,
+  log: string[],
+  ts: () => string
+) {
+  try {
+    // 1. Récupérer le service principal de l'app dans ce tenant
+    const spRes = await fetch(
+      `https://graph.microsoft.com/v1.0/servicePrincipals(appId='${clientId}')`,
+      { headers: { Authorization: `Bearer ${graphToken}` } }
+    )
+    if (!spRes.ok) {
+      log.push(`[${ts()}] RBAC auto: SP introuvable (${spRes.status}) — passage en mode manuel`)
+      return false
+    }
+    const principalId = (await spRes.json()).id as string
+
+    // 2. Trouver l'ID de la définition de rôle Exchange
+    const defRes = await fetch(
+      `https://graph.microsoft.com/v1.0/roleManagement/exchange/roleDefinitions?$filter=displayName eq '${encodeURIComponent(roleName)}'`,
+      { headers: { Authorization: `Bearer ${graphToken}` } }
+    )
+    const defData = await defRes.json()
+    const roleDefId = defData.value?.[0]?.id as string | undefined
+    if (!roleDefId) {
+      log.push(`[${ts()}] RBAC auto: rôle "${roleName}" introuvable dans Exchange`)
+      return false
+    }
+
+    // 3. Vérifier si déjà assigné
+    const existRes = await fetch(
+      `https://graph.microsoft.com/v1.0/roleManagement/exchange/roleAssignments?$filter=principalId eq '${principalId}' and roleDefinitionId eq '${roleDefId}'`,
+      { headers: { Authorization: `Bearer ${graphToken}` } }
+    )
+    const existData = await existRes.json()
+    if ((existData.value?.length ?? 0) > 0) {
+      log.push(`[${ts()}] RBAC: rôle "${roleName}" déjà assigné ✅`)
+      return true
+    }
+
+    // 4. Assigner le rôle
+    const assignRes = await fetch(
+      `https://graph.microsoft.com/v1.0/roleManagement/exchange/roleAssignments`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${graphToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roleDefinitionId: roleDefId, appScopeId: '/', principalId }),
+      }
+    )
+    if (assignRes.ok) {
+      log.push(`[${ts()}] RBAC: rôle "${roleName}" assigné ✅`)
+      return true
+    } else {
+      const err = await assignRes.json().catch(() => ({}))
+      log.push(`[${ts()}] RBAC: assignation "${roleName}" échouée (${assignRes.status}): ${JSON.stringify(err).slice(0, 200)}`)
+      return false
+    }
+  } catch (e) {
+    log.push(`[${ts()}] RBAC auto: ${(e as Error).message}`)
+    return false
+  }
+}
+
 type Action = 'audit' | 'atp' | 'dlp' | 'mfa' | 'block-risky'
 
 export async function POST(request: NextRequest) {
@@ -82,15 +148,19 @@ export async function POST(request: NextRequest) {
     // AUDIT — Set-AdminAuditLogConfig -AdminAuditLogAgeLimit 365 jours
     // ════════════════════════════════════════════════════════════════════════════
     if (action === 'audit') {
-      log.push(`[${ts()}] Obtention du token Exchange Online…`)
-      const token = await getToken(
-        tenant.tenant_id, tenant.client_id, tenant.client_secret,
-        'https://outlook.office365.com/.default'
-      )
-      log.push(`[${ts()}] Token obtenu ✅`)
+      log.push(`[${ts()}] Obtention des tokens…`)
+      const [graphToken, exoToken] = await Promise.all([
+        getToken(tenant.tenant_id, tenant.client_id, tenant.client_secret, 'https://graph.microsoft.com/.default'),
+        getToken(tenant.tenant_id, tenant.client_id, tenant.client_secret, 'https://outlook.office365.com/.default'),
+      ])
+      log.push(`[${ts()}] Tokens obtenus ✅`)
+
+      // Auto-assigner le rôle Exchange "Audit Logs" si absent
+      log.push(`[${ts()}] Vérification rôle RBAC "Audit Logs"…`)
+      await ensureExchangeRole(graphToken, tenant.client_id, 'Audit Logs', log, ts)
 
       log.push(`[${ts()}] Configuration Advanced Auditing — rétention 365 jours…`)
-      await exoInvoke(token, 'Set-AdminAuditLogConfig', {
+      await exoInvoke(exoToken, 'Set-AdminAuditLogConfig', {
         AdminAuditLogAgeLimit: '365.00:00:00',
       })
       log.push(`[${ts()}] ✅ AdminAuditLogAgeLimit = 365 jours configuré`)
@@ -99,12 +169,16 @@ export async function POST(request: NextRequest) {
     // ATP — Safe Attachments + Safe Links + ZAP
     // ════════════════════════════════════════════════════════════════════════════
     } else if (action === 'atp') {
-      log.push(`[${ts()}] Obtention du token Exchange Online…`)
-      const token = await getToken(
-        tenant.tenant_id, tenant.client_id, tenant.client_secret,
-        'https://outlook.office365.com/.default'
-      )
-      log.push(`[${ts()}] Token obtenu ✅`)
+      log.push(`[${ts()}] Obtention des tokens…`)
+      const [graphToken, token] = await Promise.all([
+        getToken(tenant.tenant_id, tenant.client_id, tenant.client_secret, 'https://graph.microsoft.com/.default'),
+        getToken(tenant.tenant_id, tenant.client_id, tenant.client_secret, 'https://outlook.office365.com/.default'),
+      ])
+      log.push(`[${ts()}] Tokens obtenus ✅`)
+
+      // Auto-assigner le rôle Exchange "Hygiene Management" si absent
+      log.push(`[${ts()}] Vérification rôle RBAC "Hygiene Management"…`)
+      await ensureExchangeRole(graphToken, tenant.client_id, 'Hygiene Management', log, ts)
 
       // Safe Attachments Policy
       log.push(`[${ts()}] Création Safe Attachments policy…`)
