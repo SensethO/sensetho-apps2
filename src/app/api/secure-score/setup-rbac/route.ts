@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-async function getGraphToken(tenantId: string, clientId: string, clientSecret: string) {
+async function getToken(tenantId: string, clientId: string, clientSecret: string, scope: string) {
   const res = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
     {
@@ -12,16 +12,67 @@ async function getGraphToken(tenantId: string, clientId: string, clientSecret: s
         grant_type: 'client_credentials',
         client_id: clientId,
         client_secret: clientSecret,
-        scope: 'https://graph.microsoft.com/.default',
+        scope,
       }),
     }
   )
   if (!res.ok) {
     const txt = await res.text()
-    throw new Error(`Auth Graph: ${txt}`)
+    throw new Error(`Auth token (${scope}): ${txt}`)
   }
   const json = await res.json()
   return json.access_token as string
+}
+
+function getGraphToken(tenantId: string, clientId: string, clientSecret: string) {
+  return getToken(tenantId, clientId, clientSecret, 'https://graph.microsoft.com/.default')
+}
+
+async function sleep(ms: number) {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+// Tenter d'activer Enable-OrganizationCustomization via l'API EXO REST
+async function tryEnableOrgCustomization(
+  tenantId: string, clientId: string, clientSecret: string, domain: string, log: string[]
+): Promise<boolean> {
+  const ts = () => new Date().toISOString().slice(11, 19)
+  try {
+    log.push(`[${ts()}] Tentative d'activation automatique via EXO REST API…`)
+    const exoToken = await getToken(tenantId, clientId, clientSecret, 'https://outlook.office365.com/.default')
+
+    const invokeRes = await fetch(
+      `https://outlook.office365.com/adminapi/beta/${domain}/InvokeCommand`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${exoToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          CmdletInput: {
+            CmdletName: 'Enable-OrganizationCustomization',
+            Parameters: {},
+          },
+        }),
+      }
+    )
+
+    if (invokeRes.ok) {
+      log.push(`[${ts()}] ✅ Enable-OrganizationCustomization exécuté via API`)
+      log.push(`[${ts()}] Attente 15s pour la propagation…`)
+      await sleep(15000)
+      return true
+    } else {
+      const errText = await invokeRes.text()
+      log.push(`[${ts()}] ⚠️ EXO invoke échoué (${invokeRes.status}): ${errText.slice(0, 200)}`)
+      return false
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    log.push(`[${ts()}] ⚠️ EXO invoke exception: ${msg}`)
+    return false
+  }
 }
 
 // Récupérer tous les rôles Exchange (pagination)
@@ -150,6 +201,43 @@ export async function POST(request: NextRequest) {
       const errText = await assignRes.text()
       // Détecter le cas "organisation déshydratée" (tenant non personnalisé)
       if (errText.includes('Enable-OrganizationCustomization')) {
+        log.push(`[${ts()}] ⚠️ Organisation Exchange déshydratée — tentative d'activation automatique…`)
+
+        const enabled = await tryEnableOrgCustomization(
+          tenant.tenant_id, tenant.client_id, tenant.client_secret, tenant.domain, log
+        )
+
+        if (enabled) {
+          // Réessayer l'assignment après activation
+          log.push(`[${ts()}] Nouvelle tentative d'assignment RBAC…`)
+          const retryRes = await fetch(
+            'https://graph.microsoft.com/beta/roleManagement/exchange/roleAssignments',
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${graphToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                roleDefinitionId: roleDef.id,
+                principalId,
+                directoryScopeId: '/',
+              }),
+            }
+          )
+
+          if (retryRes.ok) {
+            const retryData = await retryRes.json()
+            log.push(`[${ts()}] ✅ Rôle "${roleDef.displayName}" assigné après activation! (assignmentId: ${retryData.id})`)
+            log.push(`[${ts()}] Attendez 2-5 minutes pour la propagation, puis relancez le Déblocage.`)
+            return NextResponse.json({ success: true, log, assignmentId: retryData.id, roleName: roleDef.displayName })
+          } else {
+            const retryErr = await retryRes.text()
+            log.push(`[${ts()}] ❌ Retry assignment échoué (${retryRes.status}): ${retryErr.slice(0, 300)}`)
+          }
+        }
+
+        // Fallback : instructions PowerShell
         return NextResponse.json({
           success: false,
           log,
