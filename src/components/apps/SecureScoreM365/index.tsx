@@ -356,6 +356,39 @@ function DiagnosticView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpda
 
 // ── Vue Déblocage ─────────────────────────────────────────────────────────────
 
+function generateRbacScript(tenant: M365Tenant): string {
+  return `#Requires -Version 5.1
+# ============================================================
+# Script de configuration RBAC Exchange — Sensetho Apps
+# Tenant : ${tenant.name} (${tenant.domain})
+# A executer UNE SEULE FOIS avec un compte Global Admin
+# ============================================================
+
+# Installation du module si manquant
+if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
+  Write-Host "Installation ExchangeOnlineManagement..." -ForegroundColor Cyan
+  Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force -AllowClobber
+}
+
+# Connexion interactive (compte Global Admin requis)
+Write-Host "Connexion Exchange Online..." -ForegroundColor Cyan
+Connect-ExchangeOnline -ShowBanner:$false
+
+# Assignation du role RBAC a l'app Secure-Score
+Write-Host "Assignation du role Organization Management a l'app..." -ForegroundColor Cyan
+try {
+  New-ManagementRoleAssignment -App "${tenant.client_id}" -Role "Organization Management"
+  Write-Host "Role assigne avec succes !" -ForegroundColor Green
+  Write-Host "Attendez 2-5 minutes puis relancez le Deblocage automatique dans Sensetho Apps." -ForegroundColor Yellow
+} catch {
+  Write-Host "Erreur : $_" -ForegroundColor Red
+  Write-Host "Verifiez que vous etes bien connecte avec un compte Global Admin." -ForegroundColor Yellow
+}
+
+Disconnect-ExchangeOnline -Confirm:$false
+`
+}
+
 function generatePsScript(tenant: M365Tenant): string {
   return `#Requires -Version 5.1
 # ============================================================
@@ -426,7 +459,27 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
   const [afterScore, setAfterScore] = useState<{ score: number; max: number } | null>(null)
   const [error, setError] = useState('')
   const [showPrereqs, setShowPrereqs] = useState(false)
+  const [copied, setCopied] = useState(false)
   const is401 = error.includes('401')
+
+  function copyRbacCommand() {
+    const cmd = `Connect-ExchangeOnline\nNew-ManagementRoleAssignment -App "${tenant.client_id}" -Role "Organization Management"`
+    navigator.clipboard.writeText(cmd).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    })
+  }
+
+  function downloadRbacScript() {
+    const script = generateRbacScript(tenant)
+    const blob = new Blob([script], { type: 'text/plain' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `rbac-setup-${tenant.domain.replace(/\./g, '-')}.ps1`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   function downloadScript() {
     const script = generatePsScript(tenant)
@@ -507,7 +560,7 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
             <div className="flex flex-col gap-2">
               {[
                 { step: '1', label: 'Azure AD → App Registrations → [votre app] → API permissions', detail: 'Ajouter : APIs my organization uses → "Office 365 Exchange Online" → Application permissions → Exchange.ManageAsApp → Grant admin consent' },
-                { step: '2', label: 'Microsoft 365 Admin Center → Roles → Exchange Administrator', detail: 'Ajouter le service principal de votre app dans ce rôle (Roles > Exchange Administrator > Add apps)' },
+                { step: '2', label: 'PowerShell : New-ManagementRoleAssignment', detail: 'Connect-ExchangeOnline puis New-ManagementRoleAssignment -App "<ClientId>" -Role "Organization Management" — visible dans le guide 401 après une tentative échouée.' },
                 { step: '3', label: 'Attendre 5-10 minutes', detail: 'La propagation des permissions peut prendre quelques minutes avant de relancer le déblocage.' },
               ].map(s => (
                 <div key={s.step} className="flex gap-3">
@@ -584,22 +637,65 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
             <p className="text-xs font-mono text-red-600 dark:text-red-500">{error}</p>
           </div>
           {is401 && (
-            <div className="p-4 border-t border-red-200 dark:border-red-800 bg-amber-50 dark:bg-amber-900/10">
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">
-                Pour activer le déblocage automatique, configurez ces 2 éléments :
+            <div className="p-4 border-t border-red-200 dark:border-red-800 bg-amber-50 dark:bg-amber-900/10 flex flex-col gap-4">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                Configuration requise — 2 étapes (une seule fois)
               </p>
-              <ol className="text-xs space-y-1.5 text-amber-700 dark:text-amber-500 list-decimal list-inside">
-                <li><strong>portal.azure.com</strong> → App Registrations → [app] → API permissions → ajouter <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">Exchange.ManageAsApp</code> → Grant admin consent</li>
-                <li><strong>admin.microsoft.com</strong> → Roles → <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">Exchange Administrator</code> → Add apps → sélectionner votre app</li>
-              </ol>
-              <p className="text-xs mt-3 text-amber-600 dark:text-amber-500">
-                En attendant, utilisez le script PowerShell :
+
+              {/* Étape 1 */}
+              <div className="flex gap-3">
+                <span className="w-5 h-5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                <div>
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                    <strong>portal.azure.com</strong> → App Registrations → API permissions
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
+                    Ajouter <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">Exchange.ManageAsApp</code> → Grant admin consent
+                  </p>
+                </div>
+              </div>
+
+              {/* Étape 2 — PowerShell RBAC */}
+              <div className="flex gap-3">
+                <span className="w-5 h-5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1.5">
+                    Rôle Exchange Online RBAC — PowerShell <span className="font-normal">(~30 sec, compte Global Admin)</span>
+                  </p>
+                  <div className="relative rounded-lg bg-gray-950 p-3">
+                    <p className="font-mono text-xs text-gray-400 mb-0.5"># Si module absent :</p>
+                    <p className="font-mono text-xs text-gray-300 mb-2">Install-Module ExchangeOnlineManagement -Scope CurrentUser</p>
+                    <p className="font-mono text-xs text-gray-400 mb-0.5"># Connexion puis assignation du rôle :</p>
+                    <p className="font-mono text-xs text-emerald-300">Connect-ExchangeOnline</p>
+                    <p className="font-mono text-xs text-emerald-300 break-all">
+                      New-ManagementRoleAssignment -App &quot;{tenant.client_id}&quot; -Role &quot;Organization Management&quot;
+                    </p>
+                    <button
+                      onClick={copyRbacCommand}
+                      className="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors font-medium"
+                      style={{ backgroundColor: copied ? '#10b981' : '#374151', color: copied ? '#fff' : '#d1d5db' }}
+                    >
+                      {copied ? '✅ Copié' : 'Copier'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-3 mt-2">
+                    <button onClick={downloadRbacScript}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                      <Icon name="download" size={12} />
+                      Script de configuration (.ps1)
+                    </button>
+                    <button onClick={downloadScript}
+                      className="flex items-center gap-1.5 text-xs text-indigo-500 dark:text-indigo-500 hover:underline">
+                      <Icon name="download" size={12} />
+                      Script de déblocage complet
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-amber-600 dark:text-amber-500 border-t border-amber-200 dark:border-amber-800 pt-3">
+                ⏱️ Après exécution, attendez <strong>2-5 minutes</strong> puis relancez le Déblocage automatique.
               </p>
-              <button onClick={downloadScript}
-                className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
-                <Icon name="download" size={12} />
-                Télécharger le script PowerShell pré-rempli
-              </button>
             </div>
           )}
         </div>
