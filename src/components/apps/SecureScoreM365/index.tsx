@@ -959,10 +959,54 @@ function RbacSetupCard({ clientId, rbacRole }: { clientId: string; rbacRole: str
   )
 }
 
+function LicenseCard() {
+  return (
+    <div className="p-4 border-t border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 flex flex-col gap-3">
+      <div className="flex items-start gap-2">
+        <span className="text-lg">🔑</span>
+        <div>
+          <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">
+            Licence Azure AD P1 ou P2 requise
+          </p>
+          <p className="text-xs text-blue-600 dark:text-blue-500 mt-0.5">
+            L&apos;accès conditionnel (Conditional Access) nécessite une licence{' '}
+            <strong>Microsoft Entra ID P1</strong> ou <strong>P2</strong> (incluse dans Microsoft 365 Business Premium, E3, E5).
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <a
+          href="https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies"
+          target="_blank" rel="noreferrer"
+          className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+        >
+          <Icon name="externalLink" size={11} />
+          Ouvrir Conditional Access (Entra)
+        </a>
+        <a
+          href="https://www.microsoft.com/fr-fr/microsoft-365/business/compare-all-plans"
+          target="_blank" rel="noreferrer"
+          className="text-xs text-blue-500 dark:text-blue-500 hover:underline flex items-center gap-1"
+        >
+          <Icon name="externalLink" size={11} />
+          Comparer les licences Microsoft 365
+        </a>
+      </div>
+      <p className="text-xs text-blue-600 dark:text-blue-500">
+        💡 En attendant, vous pouvez activer les{' '}
+        <a href="https://aka.ms/securitydefaults" target="_blank" rel="noreferrer" className="underline">
+          Security Defaults
+        </a>{' '}
+        gratuitement (MFA basique sans Conditional Access).
+      </p>
+    </div>
+  )
+}
+
 // ── Vue Optimisation ──────────────────────────────────────────────────────────
 
 type OptAction = 'audit' | 'atp' | 'dlp' | 'mfa' | 'block-risky'
-type OptResult = { success: boolean; log: string[]; error?: string; needsRbac?: boolean; rbacRole?: string }
+type OptResult = { success: boolean; log: string[]; error?: string; needsRbac?: boolean; rbacRole?: string; needsLicense?: boolean }
 
 function OptimizeView({ tenant }: { tenant: M365Tenant | null }) {
   const [running, setRunning] = useState<OptAction | null>(null)
@@ -1204,6 +1248,8 @@ function OptimizeView({ tenant }: { tenant: M365Tenant | null }) {
                   {res.needsRbac && res.rbacRole && tenant && (
                     <RbacSetupCard clientId={tenant.client_id} rbacRole={res.rbacRole} />
                   )}
+                  {/* Carte Licence si Azure AD P1/P2 requise */}
+                  {res.needsLicense && <LicenseCard />}
                 </div>
               )}
             </div>

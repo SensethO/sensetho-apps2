@@ -286,20 +286,27 @@ export async function POST(request: NextRequest) {
       log.push(`[${ts()}] Token obtenu ✅`)
 
       log.push(`[${ts()}] Création de la politique Conditional Access MFA…`)
-      await graphPost(token, '/identity/conditionalAccess/policies', {
-        displayName: 'Require MFA — SensEthO',
-        state: 'enabled',
-        conditions: {
-          users: { includeUsers: ['All'], excludeUsers: [] },
-          applications: { includeApplications: ['All'] },
-        },
-        grantControls: {
-          operator: 'OR',
-          builtInControls: ['mfa'],
-        },
-      })
-      log.push(`[${ts()}] ✅ Politique MFA créée et activée`)
-      log.push(`[${ts()}] Tous les utilisateurs devront utiliser MFA pour se connecter`)
+      try {
+        await graphPost(token, '/identity/conditionalAccess/policies', {
+          displayName: 'Require MFA — SensEthO',
+          state: 'enabled',
+          conditions: {
+            users: { includeUsers: ['All'], excludeUsers: [] },
+            applications: { includeApplications: ['All'] },
+          },
+          grantControls: { operator: 'OR', builtInControls: ['mfa'] },
+        })
+        log.push(`[${ts()}] ✅ Politique MFA créée et activée`)
+        log.push(`[${ts()}] Tous les utilisateurs devront utiliser MFA pour se connecter`)
+      } catch (e) {
+        const msg = (e as Error).message
+        if (alreadyExists(msg)) {
+          log.push(`[${ts()}] ✅ Politique MFA déjà existante`)
+        } else if (msg.includes('AccessDenied') || msg.includes('not licensed')) {
+          log.push(`[${ts()}] ❌ Licence Azure AD P1/P2 requise pour l'accès conditionnel`)
+          return NextResponse.json({ success: false, needsLicense: true, log, error: msg }, { status: 500 })
+        } else { throw e }
+      }
 
     // ════════════════════════════════════════════════════════════════════════════
     // BLOCK-RISKY — Conditional Access : block high/medium risk sign-ins
@@ -313,21 +320,28 @@ export async function POST(request: NextRequest) {
       log.push(`[${ts()}] Token obtenu ✅`)
 
       log.push(`[${ts()}] Création de la politique Block Risky Sign-ins…`)
-      await graphPost(token, '/identity/conditionalAccess/policies', {
-        displayName: 'Block High/Medium Risk Sign-ins — SensEthO',
-        state: 'enabled',
-        conditions: {
-          users: { includeUsers: ['All'], excludeUsers: [] },
-          applications: { includeApplications: ['All'] },
-          signInRiskLevels: ['high', 'medium'],
-        },
-        grantControls: {
-          operator: 'OR',
-          builtInControls: ['block'],
-        },
-      })
-      log.push(`[${ts()}] ✅ Politique Block Risky Sign-ins créée et activée`)
-      log.push(`[${ts()}] Connexions à risque élevé/moyen bloquées automatiquement`)
+      try {
+        await graphPost(token, '/identity/conditionalAccess/policies', {
+          displayName: 'Block High/Medium Risk Sign-ins — SensEthO',
+          state: 'enabled',
+          conditions: {
+            users: { includeUsers: ['All'], excludeUsers: [] },
+            applications: { includeApplications: ['All'] },
+            signInRiskLevels: ['high', 'medium'],
+          },
+          grantControls: { operator: 'OR', builtInControls: ['block'] },
+        })
+        log.push(`[${ts()}] ✅ Politique Block Risky Sign-ins créée et activée`)
+        log.push(`[${ts()}] Connexions à risque élevé/moyen bloquées automatiquement`)
+      } catch (e) {
+        const msg = (e as Error).message
+        if (alreadyExists(msg)) {
+          log.push(`[${ts()}] ✅ Politique Block Risky Sign-ins déjà existante`)
+        } else if (msg.includes('AccessDenied') || msg.includes('not licensed')) {
+          log.push(`[${ts()}] ❌ Licence Azure AD P1/P2 requise pour l'accès conditionnel`)
+          return NextResponse.json({ success: false, needsLicense: true, log, error: msg }, { status: 500 })
+        } else { throw e }
+      }
     }
 
     return NextResponse.json({ success: true, log })
