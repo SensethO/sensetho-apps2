@@ -148,6 +148,16 @@ export async function POST(request: NextRequest) {
 
     if (!assignRes.ok) {
       const errText = await assignRes.text()
+      // Détecter le cas "organisation déshydratée" (tenant non personnalisé)
+      if (errText.includes('Enable-OrganizationCustomization')) {
+        return NextResponse.json({
+          success: false,
+          log,
+          error: 'NEEDS_ORG_CUSTOMIZATION',
+          message: 'L\'organisation Exchange n\'est pas encore personnalisée. Exécutez d\'abord : Enable-OrganizationCustomization via PowerShell, puis relancez l\'auto-configuration.',
+          psCommand: 'Connect-ExchangeOnline\nEnable-OrganizationCustomization',
+        }, { status: 400 })
+      }
       throw new Error(`Création assignment: ${assignRes.status} — ${errText}`)
     }
 

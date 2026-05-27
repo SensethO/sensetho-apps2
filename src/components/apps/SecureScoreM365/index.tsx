@@ -464,6 +464,7 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
   const [rbacLog, setRbacLog] = useState<string[]>([])
   const [rbacDone, setRbacDone] = useState(false)
   const [rbacError, setRbacError] = useState('')
+  const [rbacNeedsOrgCustomization, setRbacNeedsOrgCustomization] = useState(false)
   const is401 = error.includes('401')
 
   function copyRbacCommand() {
@@ -497,7 +498,7 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
   }
 
   async function setupRbac() {
-    setRbacRunning(true); setRbacLog([]); setRbacError(''); setRbacDone(false)
+    setRbacRunning(true); setRbacLog([]); setRbacError(''); setRbacDone(false); setRbacNeedsOrgCustomization(false)
     try {
       const res = await fetch('/api/secure-score/setup-rbac', {
         method: 'POST',
@@ -506,6 +507,10 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
       })
       const data = await res.json()
       setRbacLog(data.log ?? [])
+      if (data.error === 'NEEDS_ORG_CUSTOMIZATION') {
+        setRbacNeedsOrgCustomization(true)
+        return
+      }
       if (!res.ok || !data.success) throw new Error(data.error ?? 'Échec de la configuration RBAC')
       setRbacDone(true)
     } catch (err) {
@@ -750,6 +755,27 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
 
                 {rbacError && (
                   <p className="text-xs text-red-500 font-mono">{rbacError}</p>
+                )}
+
+                {rbacNeedsOrgCustomization && (
+                  <div className="rounded-lg border border-amber-500/50 bg-amber-950/30 p-3 flex flex-col gap-2">
+                    <p className="text-xs font-semibold text-amber-400">
+                      ⚠️ Organisation Exchange non personnalisée
+                    </p>
+                    <p className="text-xs text-amber-300">
+                      Exécutez d&apos;abord cette commande PowerShell, puis relancez l&apos;auto-configuration :
+                    </p>
+                    <div className="rounded bg-gray-950 p-2 font-mono text-xs text-emerald-300">
+                      <p>Connect-ExchangeOnline</p>
+                      <p>Enable-OrganizationCustomization</p>
+                    </div>
+                    <button
+                      onClick={setupRbac}
+                      disabled={rbacRunning}
+                      className="text-xs text-indigo-400 hover:underline text-left">
+                      → Relancer l&apos;auto-configuration après exécution
+                    </button>
+                  </div>
                 )}
 
                 {rbacDone && (
