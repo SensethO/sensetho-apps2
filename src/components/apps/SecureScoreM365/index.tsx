@@ -469,7 +469,7 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
   const [deviceAuthStep, setDeviceAuthStep] = useState<'idle' | 'showing_code' | 'polling' | 'success' | 'error'>('idle')
   const [deviceUserCode, setDeviceUserCode] = useState('')
   const [deviceVerifUri, setDeviceVerifUri] = useState('')
-  const [deviceCodeSecret, setDeviceCodeSecret] = useState('')
+
   const [deviceAuthLog, setDeviceAuthLog] = useState<string[]>([])
   const [devicePollTimer, setDevicePollTimer] = useState<ReturnType<typeof setInterval> | null>(null)
   const is401 = error.includes('401')
@@ -519,7 +519,7 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
       if (!res.ok) { setDeviceAuthStep('error'); setDeviceAuthLog([data.error ?? 'Erreur device code']); return }
       setDeviceUserCode(data.user_code)
       setDeviceVerifUri(data.verification_uri)
-      setDeviceCodeSecret(data.device_code)
+
       setDeviceAuthStep('showing_code')
       // Démarrer le polling automatique
       const interval = data.interval ?? 5
