@@ -1452,8 +1452,10 @@ export default function SecureScoreApp() {
           : <p className="text-sm text-center py-12" style={{ color: 'var(--text-muted)' }}>Sélectionnez un tenant.</p>
       )}
 
-      {/* Optimisation */}
-      {tab === 'optimize' && <OptimizeView tenant={activeTenant} />}
+      {/* Optimisation — toujours monté pour préserver le state des résultats */}
+      <div className={tab !== 'optimize' ? 'hidden' : ''}>
+        <OptimizeView tenant={activeTenant} />
+      </div>
     </div>
   )
 }
