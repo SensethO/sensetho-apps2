@@ -907,10 +907,62 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
   )
 }
 
+// ── Carte RBAC Setup (utilisée dans OptimizeView) ────────────────────────────
+
+function RbacSetupCard({ clientId, rbacRole }: { clientId: string; rbacRole: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const psCommand = `Connect-ExchangeOnline\nNew-ManagementRoleAssignment -App "${clientId}" -Role "${rbacRole}"`
+
+  function copy() {
+    navigator.clipboard.writeText(psCommand).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    })
+  }
+
+  return (
+    <div className="p-4 border-t border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 flex flex-col gap-3">
+      <div className="flex items-start gap-2">
+        <span className="text-lg">⚠️</span>
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+            Rôle Exchange RBAC manquant — setup requis (une seule fois)
+          </p>
+          <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
+            Le rôle classique <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded font-mono">{rbacRole}</code> doit être assigné manuellement à votre app registration via PowerShell (compte Global Admin).
+          </p>
+        </div>
+      </div>
+
+      <div className="relative rounded-lg bg-gray-950 p-3">
+        <p className="font-mono text-xs text-gray-400 mb-0.5"># Si module absent :</p>
+        <p className="font-mono text-xs text-gray-300 mb-2">Install-Module ExchangeOnlineManagement -Scope CurrentUser</p>
+        <p className="font-mono text-xs text-gray-400 mb-0.5"># Connexion puis assignation :</p>
+        <p className="font-mono text-xs text-emerald-300">Connect-ExchangeOnline</p>
+        <p className="font-mono text-xs text-emerald-300 break-all">
+          New-ManagementRoleAssignment -App &quot;{clientId}&quot; -Role &quot;{rbacRole}&quot;
+        </p>
+        <button
+          onClick={copy}
+          className="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors font-medium"
+          style={{ backgroundColor: copied ? '#10b981' : '#374151', color: copied ? '#fff' : '#d1d5db' }}
+        >
+          {copied ? '✅ Copié' : 'Copier'}
+        </button>
+      </div>
+
+      <p className="text-xs text-amber-600 dark:text-amber-500">
+        ⏱️ Après l&apos;assignation, attendez <strong>2-5 minutes</strong> puis relancez l&apos;automatisation.
+      </p>
+    </div>
+  )
+}
+
 // ── Vue Optimisation ──────────────────────────────────────────────────────────
 
 type OptAction = 'audit' | 'atp' | 'dlp' | 'mfa' | 'block-risky'
-type OptResult = { success: boolean; log: string[]; error?: string }
+type OptResult = { success: boolean; log: string[]; error?: string; needsRbac?: boolean; rbacRole?: string }
 
 function OptimizeView({ tenant }: { tenant: M365Tenant | null }) {
   const [running, setRunning] = useState<OptAction | null>(null)
@@ -1123,6 +1175,11 @@ function OptimizeView({ tenant }: { tenant: M365Tenant | null }) {
                       <p className="text-red-400 mt-1 pt-1 border-t border-gray-800">{res.error}</p>
                     )}
                   </div>
+
+                  {/* Carte RBAC si setup requis */}
+                  {res.needsRbac && res.rbacRole && tenant && (
+                    <RbacSetupCard clientId={tenant.client_id} rbacRole={res.rbacRole} />
+                  )}
                 </div>
               )}
             </div>

@@ -155,28 +155,23 @@ export async function POST(request: NextRequest) {
       )
       log.push(`[${ts()}] Token obtenu ✅`)
 
-      // Auto-assigner le rôle Exchange classique "Audit Logs" via InvokeCommand
-      log.push(`[${ts()}] Auto-assignation rôle RBAC "Audit Logs"…`)
+      log.push(`[${ts()}] Configuration Advanced Auditing — rétention 365 jours…`)
       try {
-        await exoInvoke(exoToken, 'New-ManagementRoleAssignment', {
-          App: tenant.client_id,
-          Role: 'Audit Logs',
+        await exoInvoke(exoToken, 'Set-AdminAuditLogConfig', {
+          AdminAuditLogAgeLimit: '365.00:00:00',
         })
-        log.push(`[${ts()}] Rôle "Audit Logs" assigné ✅`)
+        log.push(`[${ts()}] ✅ AdminAuditLogAgeLimit = 365 jours configuré`)
       } catch (e) {
         const msg = (e as Error).message
-        if (alreadyExists(msg)) {
-          log.push(`[${ts()}] Rôle "Audit Logs" déjà assigné ✅`)
-        } else {
-          log.push(`[${ts()}] Assignation rôle: ${msg} (poursuite…)`)
+        if (msg.includes('(403)')) {
+          log.push(`[${ts()}] ❌ Rôle Exchange RBAC "Audit Logs" manquant — setup requis (une fois)`)
+          return NextResponse.json({
+            success: false, needsRbac: true, rbacRole: 'Audit Logs',
+            log, error: msg,
+          }, { status: 500 })
         }
+        throw e
       }
-
-      log.push(`[${ts()}] Configuration Advanced Auditing — rétention 365 jours…`)
-      await exoInvoke(exoToken, 'Set-AdminAuditLogConfig', {
-        AdminAuditLogAgeLimit: '365.00:00:00',
-      })
-      log.push(`[${ts()}] ✅ AdminAuditLogAgeLimit = 365 jours configuré`)
 
     // ════════════════════════════════════════════════════════════════════════════
     // ATP — Safe Attachments + Safe Links + ZAP
@@ -188,23 +183,6 @@ export async function POST(request: NextRequest) {
         'https://outlook.office365.com/.default'
       )
       log.push(`[${ts()}] Token obtenu ✅`)
-
-      // Auto-assigner le rôle Exchange classique "Hygiene Management" via InvokeCommand
-      log.push(`[${ts()}] Auto-assignation rôle RBAC "Hygiene Management"…`)
-      try {
-        await exoInvoke(token, 'New-ManagementRoleAssignment', {
-          App: tenant.client_id,
-          Role: 'Hygiene Management',
-        })
-        log.push(`[${ts()}] Rôle "Hygiene Management" assigné ✅`)
-      } catch (e) {
-        const msg = (e as Error).message
-        if (alreadyExists(msg)) {
-          log.push(`[${ts()}] Rôle "Hygiene Management" déjà assigné ✅`)
-        } else {
-          log.push(`[${ts()}] Assignation rôle: ${msg} (poursuite…)`)
-        }
-      }
 
       // Safe Attachments Policy
       log.push(`[${ts()}] Création Safe Attachments policy…`)
@@ -218,8 +196,17 @@ export async function POST(request: NextRequest) {
         log.push(`[${ts()}] Safe Attachments policy créée ✅`)
       } catch (e) {
         const msg = (e as Error).message
-        if (alreadyExists(msg)) log.push(`[${ts()}] Safe Attachments policy déjà existante ✅`)
-        else throw e
+        if (alreadyExists(msg)) {
+          log.push(`[${ts()}] Safe Attachments policy déjà existante ✅`)
+        } else if (msg.includes('(403)')) {
+          log.push(`[${ts()}] ❌ Rôle Exchange RBAC "Hygiene Management" manquant — setup requis (une fois)`)
+          return NextResponse.json({
+            success: false, needsRbac: true, rbacRole: 'Hygiene Management',
+            log, error: msg,
+          }, { status: 500 })
+        } else {
+          throw e
+        }
       }
 
       // Safe Attachments Rule
