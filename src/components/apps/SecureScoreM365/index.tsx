@@ -460,6 +460,10 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
   const [error, setError] = useState('')
   const [showPrereqs, setShowPrereqs] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [rbacRunning, setRbacRunning] = useState(false)
+  const [rbacLog, setRbacLog] = useState<string[]>([])
+  const [rbacDone, setRbacDone] = useState(false)
+  const [rbacError, setRbacError] = useState('')
   const is401 = error.includes('401')
 
   function copyRbacCommand() {
@@ -490,6 +494,25 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
     a.download = `unlock-${tenant.domain.replace(/\./g, '-')}.ps1`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  async function setupRbac() {
+    setRbacRunning(true); setRbacLog([]); setRbacError(''); setRbacDone(false)
+    try {
+      const res = await fetch('/api/secure-score/setup-rbac', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantDbId: tenant.id }),
+      })
+      const data = await res.json()
+      setRbacLog(data.log ?? [])
+      if (!res.ok || !data.success) throw new Error(data.error ?? 'Échec de la configuration RBAC')
+      setRbacDone(true)
+    } catch (err) {
+      setRbacError(err instanceof Error ? err.message : 'Erreur')
+    } finally {
+      setRbacRunning(false)
+    }
   }
 
   async function runUnlock() {
@@ -693,9 +716,57 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
                 </div>
               </div>
 
-              <p className="text-xs text-amber-600 dark:text-amber-500 border-t border-amber-200 dark:border-amber-800 pt-3">
-                ⏱️ Après exécution, attendez <strong>2-5 minutes</strong> puis relancez le Déblocage automatique.
-              </p>
+              {/* Auto-configuration via Graph API */}
+              <div className="border-t border-amber-200 dark:border-amber-800 pt-4 flex flex-col gap-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-amber-600 dark:text-amber-400 text-xs font-semibold">🤖 Alternative :</span>
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Configurer automatiquement le rôle Exchange RBAC via l&apos;API Graph (sans PowerShell)
+                  </p>
+                </div>
+
+                {!rbacDone && (
+                  <button
+                    onClick={setupRbac}
+                    disabled={rbacRunning}
+                    className="w-full py-2.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white flex items-center justify-center gap-2 transition-colors">
+                    {rbacRunning
+                      ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Configuration en cours…</>
+                      : <><Icon name="lightning" size={14} />Auto-configurer les permissions RBAC</>}
+                  </button>
+                )}
+
+                {(rbacLog.length > 0) && (
+                  <div className="rounded-lg bg-gray-950 p-3 max-h-40 overflow-y-auto font-mono text-xs space-y-0.5">
+                    {rbacLog.map((line, i) => (
+                      <p key={i} className={
+                        line.includes('✅') ? 'text-emerald-400' :
+                        line.includes('❌') ? 'text-red-400' :
+                        'text-gray-300'
+                      }>{line}</p>
+                    ))}
+                  </div>
+                )}
+
+                {rbacError && (
+                  <p className="text-xs text-red-500 font-mono">{rbacError}</p>
+                )}
+
+                {rbacDone && (
+                  <div className="rounded-lg bg-emerald-900/30 border border-emerald-700 p-3">
+                    <p className="text-xs font-semibold text-emerald-400">✅ Rôle RBAC configuré avec succès !</p>
+                    <p className="text-xs text-emerald-300 mt-1">
+                      Attendez <strong>2-5 minutes</strong> pour la propagation, puis relancez le Déblocage automatique.
+                    </p>
+                  </div>
+                )}
+
+                {!rbacDone && (
+                  <p className="text-xs text-amber-600 dark:text-amber-500">
+                    ⏱️ Après la configuration (auto ou PowerShell), attendez <strong>2-5 minutes</strong> puis relancez le Déblocage automatique.
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>
