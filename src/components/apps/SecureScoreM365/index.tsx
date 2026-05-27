@@ -465,7 +465,19 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
   const [rbacDone, setRbacDone] = useState(false)
   const [rbacError, setRbacError] = useState('')
   const [rbacNeedsOrgCustomization, setRbacNeedsOrgCustomization] = useState(false)
+  // Device-code auth flow
+  const [deviceAuthStep, setDeviceAuthStep] = useState<'idle' | 'showing_code' | 'polling' | 'success' | 'error'>('idle')
+  const [deviceUserCode, setDeviceUserCode] = useState('')
+  const [deviceVerifUri, setDeviceVerifUri] = useState('')
+  const [deviceCodeSecret, setDeviceCodeSecret] = useState('')
+  const [deviceAuthLog, setDeviceAuthLog] = useState<string[]>([])
+  const [devicePollTimer, setDevicePollTimer] = useState<ReturnType<typeof setInterval> | null>(null)
   const is401 = error.includes('401')
+
+  // Nettoyer le timer de polling au démontage
+  useEffect(() => {
+    return () => { if (devicePollTimer) clearInterval(devicePollTimer) }
+  }, [devicePollTimer])
 
   function copyRbacCommand() {
     const cmd = `Connect-ExchangeOnline\nNew-ManagementRoleAssignment -App "${tenant.client_id}" -Role "Organization Management"`
@@ -495,6 +507,46 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
     a.download = `unlock-${tenant.domain.replace(/\./g, '-')}.ps1`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  async function startDeviceAuth() {
+    setDeviceAuthStep('idle')
+    setDeviceAuthLog([])
+    if (devicePollTimer) { clearInterval(devicePollTimer); setDevicePollTimer(null) }
+    try {
+      const res = await fetch(`/api/secure-score/device-auth?tenantDbId=${tenant.id}`)
+      const data = await res.json()
+      if (!res.ok) { setDeviceAuthStep('error'); setDeviceAuthLog([data.error ?? 'Erreur device code']); return }
+      setDeviceUserCode(data.user_code)
+      setDeviceVerifUri(data.verification_uri)
+      setDeviceCodeSecret(data.device_code)
+      setDeviceAuthStep('showing_code')
+      // Démarrer le polling automatique
+      const interval = data.interval ?? 5
+      const timer = setInterval(async () => {
+        try {
+          const pollRes = await fetch('/api/secure-score/device-auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tenantDbId: tenant.id, device_code: data.device_code }),
+          })
+          const pollData = await pollRes.json()
+          if (pollData.status === 'pending' || pollData.status === 'slow_down') return
+          clearInterval(timer); setDevicePollTimer(null)
+          if (pollData.status === 'success') {
+            setDeviceAuthLog(pollData.log ?? [])
+            setDeviceAuthStep('success')
+          } else {
+            setDeviceAuthLog([pollData.error ?? 'Authentification échouée'])
+            setDeviceAuthStep('error')
+          }
+        } catch { /* silent */ }
+      }, interval * 1000)
+      setDevicePollTimer(timer)
+    } catch (err) {
+      setDeviceAuthStep('error')
+      setDeviceAuthLog([err instanceof Error ? err.message : 'Erreur'])
+    }
   }
 
   async function setupRbac() {
@@ -758,23 +810,77 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
                 )}
 
                 {rbacNeedsOrgCustomization && (
-                  <div className="rounded-lg border border-amber-500/50 bg-amber-950/30 p-3 flex flex-col gap-2">
-                    <p className="text-xs font-semibold text-amber-400">
-                      ⚠️ Organisation Exchange non personnalisée
-                    </p>
-                    <p className="text-xs text-amber-300">
-                      Exécutez d&apos;abord cette commande PowerShell, puis relancez l&apos;auto-configuration :
-                    </p>
-                    <div className="rounded bg-gray-950 p-2 font-mono text-xs text-emerald-300">
-                      <p>Connect-ExchangeOnline</p>
-                      <p>Enable-OrganizationCustomization</p>
+                  <div className="rounded-lg border border-amber-500/50 bg-amber-950/30 p-3 flex flex-col gap-3">
+                    <p className="text-xs font-semibold text-amber-400">⚠️ Organisation Exchange non personnalisée</p>
+
+                    {/* Option A : Authentification déléguée automatique */}
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs text-amber-300 font-medium">Option 1 — Authentification déléguée (recommandé) :</p>
+                      {deviceAuthStep === 'idle' && (
+                        <button
+                          onClick={startDeviceAuth}
+                          className="text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded px-3 py-2 text-left font-medium transition-colors">
+                          🔑 Activer via authentification navigateur (sans PowerShell)
+                        </button>
+                      )}
+                      {deviceAuthStep === 'showing_code' && (
+                        <div className="flex flex-col gap-2 rounded bg-gray-950 p-3">
+                          <p className="text-xs text-gray-300">Ouvrez ce lien dans votre navigateur et entrez le code :</p>
+                          <a href={deviceVerifUri} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-indigo-400 underline break-all">{deviceVerifUri}</a>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="font-mono text-lg font-bold text-white tracking-widest">{deviceUserCode}</span>
+                            <button onClick={() => navigator.clipboard.writeText(deviceUserCode)}
+                              className="text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded border border-gray-600">
+                              Copier
+                            </button>
+                          </div>
+                          <p className="text-xs text-gray-400 flex items-center gap-1">
+                            <span className="w-3 h-3 border border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
+                            En attente de votre authentification…
+                          </p>
+                        </div>
+                      )}
+                      {deviceAuthStep === 'polling' && (
+                        <p className="text-xs text-indigo-300 flex items-center gap-1">
+                          <span className="w-3 h-3 border border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
+                          Authentification confirmée — exécution en cours…
+                        </p>
+                      )}
+                      {deviceAuthStep === 'success' && (
+                        <div className="flex flex-col gap-1">
+                          <p className="text-xs text-emerald-400 font-semibold">✅ Enable-OrganizationCustomization exécuté !</p>
+                          {deviceAuthLog.map((l, i) => (
+                            <p key={i} className={`font-mono text-xs ${l.includes('✅') ? 'text-emerald-400' : l.includes('❌') ? 'text-red-400' : 'text-gray-300'}`}>{l}</p>
+                          ))}
+                          <button onClick={setupRbac} disabled={rbacRunning}
+                            className="mt-1 text-xs text-indigo-400 hover:underline text-left">
+                            → Relancer l&apos;auto-configuration RBAC maintenant
+                          </button>
+                        </div>
+                      )}
+                      {deviceAuthStep === 'error' && (
+                        <div className="flex flex-col gap-1">
+                          {deviceAuthLog.map((l, i) => <p key={i} className="font-mono text-xs text-red-400">{l}</p>)}
+                          <button onClick={startDeviceAuth} className="text-xs text-indigo-400 hover:underline text-left">→ Réessayer</button>
+                        </div>
+                      )}
                     </div>
-                    <button
-                      onClick={setupRbac}
-                      disabled={rbacRunning}
-                      className="text-xs text-indigo-400 hover:underline text-left">
-                      → Relancer l&apos;auto-configuration après exécution
-                    </button>
+
+                    {/* Option B : PowerShell manuel */}
+                    <div className="flex flex-col gap-1 border-t border-amber-800/40 pt-2">
+                      <p className="text-xs text-amber-300 font-medium">Option 2 — PowerShell manuel :</p>
+                      <div className="rounded bg-gray-950 p-2 font-mono text-xs text-emerald-300">
+                        <p>Connect-ExchangeOnline</p>
+                        <p>Enable-OrganizationCustomization</p>
+                      </div>
+                      <button
+                        onClick={setupRbac}
+                        disabled={rbacRunning}
+                        className="text-xs text-indigo-400 hover:underline text-left">
+                        → Relancer l&apos;auto-configuration après exécution
+                      </button>
+                    </div>
                   </div>
                 )}
 
