@@ -82,7 +82,8 @@ export async function POST(request: NextRequest) {
         log.push(`[${ts()}] Policy "${policyId}" trouvée — PhishThreshold actuel: ${currentThreshold} ✅`)
       }
     } else {
-      log.push(`[${ts()}] Lecture policy EXO: ${getRes.status} — utilisation des valeurs par défaut`)
+      const getErrBody = await getRes.text()
+      log.push(`[${ts()}] Lecture policy EXO: ${getRes.status} — ${getErrBody.slice(0, 300) || '(empty body)'} — utilisation des valeurs par défaut`)
     }
 
     const tempThreshold = currentThreshold === 2 ? 3 : 2
