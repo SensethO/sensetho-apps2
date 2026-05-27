@@ -111,10 +111,13 @@ export async function POST(request: NextRequest) {
       throw new Error(`Aucun rôle approprié trouvé. Liste complète (${allRoles.length}): ${roleNames}`)
     }
 
+    // L'API Exchange RBAC requiert le préfixe /ServicePrincipals/ dans principalId
+    const principalId = `/ServicePrincipals/${sp.id}`
+
     // 5. Vérifier si l'assignment existe déjà
     log.push(`[${ts()}] Vérification d'un assignment existant…`)
     const existRes = await fetch(
-      `https://graph.microsoft.com/beta/roleManagement/exchange/roleAssignments?$filter=principalId eq '${sp.id}' and roleDefinitionId eq '${roleDef.id}'`,
+      `https://graph.microsoft.com/beta/roleManagement/exchange/roleAssignments?$filter=principalId eq '${principalId}' and roleDefinitionId eq '${roleDef.id}'`,
       { headers: { Authorization: `Bearer ${graphToken}` } }
     )
     if (existRes.ok) {
@@ -137,7 +140,7 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           roleDefinitionId: roleDef.id,
-          principalId: sp.id,
+          principalId,           // format: /ServicePrincipals/{id}
           directoryScopeId: '/',
         }),
       }
