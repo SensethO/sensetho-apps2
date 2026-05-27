@@ -56,6 +56,12 @@ export async function POST(request: NextRequest) {
       'https://outlook.office365.com/.default'
     )
     log.push(`[${ts()}] Token obtenu ✅`)
+    // Debug: décoder le JWT pour vérifier audience et rôles
+    try {
+      const parts = exoToken.split('.')
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString())
+      log.push(`[${ts()}] Token aud:${payload.aud} appid:${payload.appid} roles:${JSON.stringify(payload.roles ?? [])}`)
+    } catch { log.push(`[${ts()}] (impossible de décoder le token)`) }
 
     // 2. Lire la politique actuelle
     log.push(`[${ts()}] Lecture de la politique Anti-Phish…`)
