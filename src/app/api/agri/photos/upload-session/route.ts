@@ -23,10 +23,12 @@ function folderCode(name: string, id: string): string {
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-zA-Z0-9]/g, '')
     .toUpperCase()
-    .slice(0, 5)
-    .padEnd(5, 'X')
-  const suffix = id.replace(/-/g, '').slice(-4).toUpperCase()
-  return `${clean}-${suffix}`
+    .slice(0, 10)
+    .padEnd(10, 'X')
+  // Suffixe numérique court (4 chiffres) dérivé de l'UUID pour éviter les doublons
+  const hexSuffix = id.replace(/-/g, '').slice(-4)
+  const numSuffix = String(parseInt(hexSuffix, 16) % 10000).padStart(4, '0')
+  return `${clean}-${numSuffix}`
 }
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'

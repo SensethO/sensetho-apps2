@@ -21,19 +21,31 @@ export async function PATCH(
 
   const { id } = await params
   const body = await request.json()
-  const { status, role } = body
+  const { status, role, full_name, email } = body
 
-  const update: Record<string, string> = {}
-  if (status && ['pending', 'active', 'suspended'].includes(status)) update.status = status
-  if (role && ['user', 'admin'].includes(role)) update.role = role
+  const profileUpdate: Record<string, string> = {}
+  if (status && ['pending', 'active', 'suspended'].includes(status)) profileUpdate.status = status
+  if (role   && ['user', 'admin'].includes(role)) profileUpdate.role = role
+  if (typeof full_name === 'string' && full_name.trim()) profileUpdate.full_name = full_name.trim()
 
-  if (Object.keys(update).length === 0) {
+  // Changement d'email : mise à jour Supabase Auth + profil
+  if (typeof email === 'string' && email.trim()) {
+    const adminClient = createAdminClient()
+    const { error: authErr } = await adminClient.auth.admin.updateUserById(id, {
+      email: email.trim(),
+      email_confirm: true,
+    })
+    if (authErr) return NextResponse.json({ error: authErr.message }, { status: 500 })
+    profileUpdate.email = email.trim()
+  }
+
+  if (Object.keys(profileUpdate).length === 0) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
 
   const { data, error } = await createAdminClient()
     .from('profiles')
-    .update(update)
+    .update(profileUpdate)
     .eq('id', id)
     .select()
     .single()
