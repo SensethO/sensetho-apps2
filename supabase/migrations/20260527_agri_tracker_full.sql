@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS photos_terrain (
   type_sujet      text        CHECK (type_sujet IN ('fruit', 'plante', 'arbre', 'sol', 'maladie', 'autre')),
   produit         text,
   commentaire     text,
+  observation_id  uuid,
   created_at      timestamptz DEFAULT now()
 );
 
