@@ -45,16 +45,17 @@ export default function SubscriptionsManager() {
 
   async function load() {
     setLoading(true)
-    const [{ data: subsRaw }, { data: appsRaw }, { data: usersRaw }] = await Promise.all([
+    const [{ data: subsRaw }, { data: appsRaw }, profilesRes] = await Promise.all([
       supabase.from('app_subscriptions')
         .select('*, profile:profiles(email, full_name), app:apps(name, slug, icon)')
         .order('created_at', { ascending: false }),
       supabase.from('apps').select('*').eq('is_active', true).order('name'),
-      supabase.from('profiles').select('*').order('email'),
+      // Utilise la route admin pour bypasser le RLS sur profiles
+      fetch('/api/admin/profiles').then(r => r.json()),
     ])
     setSubs((subsRaw ?? []) as SubRow[])
     setApps((appsRaw ?? []) as App[])
-    setUsers((usersRaw ?? []) as Profile[])
+    setUsers(((profilesRes as { data?: Profile[] }).data ?? []) as Profile[])
     setLoading(false)
   }
 
