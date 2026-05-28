@@ -170,16 +170,15 @@ export async function GET(request: Request) {
         }
 
         // 5. Insérer en ignorant les conflits (ne pas écraser les saisies manuelles)
-        const { error: insErr, count } = await svc
+        const { error: insErr } = await svc
           .from('observations_meteo')
           .upsert(rows, {
             onConflict: 'plantation_id,date,periode',
             ignoreDuplicates: true,
           })
-          .select('id', { count: 'exact', head: true })
 
         if (insErr) throw new Error(insErr.message)
-        results.push({ plantation: plantation.nom, inserted: count ?? 0 })
+        results.push({ plantation: plantation.nom, inserted: rows.length })
       } catch (e) {
         results.push({ plantation: plantation.nom, inserted: 0, error: String(e) })
       }
