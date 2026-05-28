@@ -35,6 +35,9 @@ export default function SubscriptionsManager() {
     user_id: string; app_id: string; plan: SubscriptionPlan
     price_paid: string; expires_at: string; notes: string
   }>>({ plan: 'monthly' })
+  const [userSearch, setUserSearch] = useState('')
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false)
+  const [selectedUserLabel, setSelectedUserLabel] = useState('')
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
 
@@ -78,6 +81,8 @@ export default function SubscriptionsManager() {
     setSaving(false)
     setShowModal(false)
     setForm({ plan: 'monthly' })
+    setUserSearch('')
+    setSelectedUserLabel('')
     load()
   }
 
@@ -106,6 +111,14 @@ export default function SubscriptionsManager() {
   })
 
   const paidApps = apps.filter(a => a.pricing_type !== 'free')
+
+  const filteredUsers = userSearch.trim().length === 0
+    ? users
+    : users.filter(u => {
+        const q = userSearch.toLowerCase()
+        return (u.full_name ?? '').toLowerCase().includes(q)
+          || (u.email ?? '').toLowerCase().includes(q)
+      })
 
   if (loading) return <div className="text-gray-400 text-sm">Chargement…</div>
 
@@ -223,23 +236,53 @@ export default function SubscriptionsManager() {
       {/* Modal nouvel abonnement */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowModal(false)} />
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setShowModal(false); setUserSearch(''); setSelectedUserLabel('') }} />
           <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900 dark:text-slate-100">Nouvel abonnement</h3>
-              <button onClick={() => setShowModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700">
+              <button onClick={() => { setShowModal(false); setUserSearch(''); setSelectedUserLabel('') }} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700">
                 <Icon name="x" size={16} className="text-gray-500" />
               </button>
             </div>
 
             <div className="space-y-3">
-              <div>
+              <div className="relative">
                 <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Utilisateur *</label>
-                <select value={form.user_id ?? ''} onChange={e => setForm(f => ({ ...f, user_id: e.target.value }))}
-                  className="w-full border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-gray-900">
-                  <option value="">Sélectionner un utilisateur</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.full_name ?? u.email} ({u.email})</option>)}
-                </select>
+                <input
+                  type="text"
+                  placeholder="Rechercher par nom, prénom ou email…"
+                  value={userSearch || selectedUserLabel}
+                  onFocus={() => { setUserSearch(''); setSelectedUserLabel(''); setUserDropdownOpen(true) }}
+                  onBlur={() => setTimeout(() => setUserDropdownOpen(false), 150)}
+                  onChange={e => { setUserSearch(e.target.value); setUserDropdownOpen(true); setForm(f => ({ ...f, user_id: undefined })) }}
+                  className="w-full border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+                {userDropdownOpen && filteredUsers.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {filteredUsers.map(u => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          setForm(f => ({ ...f, user_id: u.id }))
+                          setSelectedUserLabel(`${u.full_name ?? u.email} (${u.email})`)
+                          setUserSearch('')
+                          setUserDropdownOpen(false)
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-700 border-b border-gray-50 dark:border-slate-700 last:border-0"
+                      >
+                        <span className="font-medium text-gray-900 dark:text-slate-100">{u.full_name ?? '—'}</span>
+                        <span className="ml-2 text-gray-400 dark:text-slate-500 text-xs">{u.email}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {userDropdownOpen && userSearch.length > 0 && filteredUsers.length === 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-lg p-3 text-sm text-gray-400">
+                    Aucun utilisateur trouvé
+                  </div>
+                )}
               </div>
 
               <div>
@@ -289,7 +332,7 @@ export default function SubscriptionsManager() {
             </div>
 
             <div className="flex gap-2 mt-4">
-              <button onClick={() => setShowModal(false)}
+              <button onClick={() => { setShowModal(false); setUserSearch(''); setSelectedUserLabel('') }}
                 className="flex-1 px-3 py-2 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-slate-700">
                 Annuler
               </button>
