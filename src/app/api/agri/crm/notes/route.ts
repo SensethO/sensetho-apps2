@@ -12,12 +12,27 @@ export async function GET(req: Request) {
     const svc = makeSvc()
     const { allowed } = await checkPlantationAccess(svc, user.id, plantationId)
     if (!allowed) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
-    const { data } = await svc
+
+    // Savoir si l'utilisateur est propriétaire de la plantation
+    const { data: plantation } = await svc
+      .from('plantations').select('user_id').eq('id', plantationId).single()
+    const isOwner = plantation?.user_id === user.id
+
+    const { data: allNotes } = await svc
       .from('agri_crm_notes')
       .select('*')
       .eq('plantation_id', plantationId)
       .order('updated_at', { ascending: false })
-    return NextResponse.json({ notes: data ?? [] })
+
+    // Confidentialité : les notes CRM archivées (acheteur_user_id set) ne sont
+    // visibles qu'au planteur ET à l'acheteur concerné. Les autres notes sont
+    // visibles à tous les utilisateurs ayant accès à la plantation.
+    const notes = (allNotes ?? []).filter((n: { acheteur_user_id?: string | null }) => {
+      if (!n.acheteur_user_id) return true          // note classique → tout le monde
+      return isOwner || n.acheteur_user_id === user.id  // note CRM → participants seulement
+    })
+
+    return NextResponse.json({ notes })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }

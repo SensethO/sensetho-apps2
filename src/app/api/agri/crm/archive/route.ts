@@ -130,11 +130,12 @@ export async function POST(req: Request) {
       }
     }
 
-    // Insert note
+    // Insert note — acheteur_user_id stocké pour filtrage de confidentialité
     const { data: note, error: insertErr } = await svc
       .from('agri_crm_notes')
       .insert({
         plantation_id,
+        acheteur_user_id,   // identifie les participants → note privée
         titre,
         contenu,
         fichiers,
