@@ -51,8 +51,8 @@ export async function middleware(request: NextRequest) {
   const isApiRoute = pathname.startsWith('/api/')
   const isAccountRoute = pathname === '/account' || pathname.startsWith('/account/')
 
-  // Non connecté → login
-  if (!user && !isPublic) {
+  // Non connecté → login (les routes /api/ gèrent leur propre auth — pas de redirect)
+  if (!user && !isPublic && !isApiRoute) {
     const loginUrl = new URL('/auth/login', request.url)
     loginUrl.searchParams.set('next', pathname)
     return NextResponse.redirect(loginUrl)
