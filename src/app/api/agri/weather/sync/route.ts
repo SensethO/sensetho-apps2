@@ -160,7 +160,7 @@ export async function GET(request: Request) {
         // 4. Construire les observations pour chaque jour
         const rows: object[] = []
         let dayCount = 0
-        let ptr = new Date(startDate)
+        const ptr = new Date(startDate)
         while (ptr <= endDate) {
           const dateStr = fmt(ptr)
           const obs = buildObservations(dateStr, plantation.id, hourly, dayCount * 24)
