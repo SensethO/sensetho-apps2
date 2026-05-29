@@ -89,15 +89,25 @@ export async function POST(req: Request) {
 
     const svc = createAdminClient()
 
-    // Vérifier que l'utilisateur a accès à cette plantation (owner ou admin)
+    // Vérifier que l'utilisateur a accès à cette plantation (owner, admin ou acheteur autorisé)
     const { data: profile } = await svc.from('profiles').select('role').eq('id', user.id).single()
     const isAdmin = profile?.role === 'admin'
 
     if (!isAdmin) {
       const { data: plantation } = await svc
         .from('plantations').select('user_id').eq('id', plantation_id).single()
-      if (plantation?.user_id !== user.id) {
-        return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+      const isOwner = plantation?.user_id === user.id
+      if (!isOwner) {
+        // Vérifier si c'est un acheteur autorisé
+        const { data: acces } = await svc
+          .from('acces_acheteurs')
+          .select('plantation_id')
+          .eq('acheteur_user_id', user.id)
+          .eq('plantation_id', plantation_id)
+          .maybeSingle()
+        if (!acces) {
+          return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+        }
       }
     }
 
