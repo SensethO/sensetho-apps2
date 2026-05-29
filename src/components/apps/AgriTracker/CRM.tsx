@@ -645,8 +645,7 @@ function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadCha
 
 // ─── Messages Tab — Planteur ──────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function MessagesTabPlanteur({ plantationId: _plantationId, currentUserId, isAdmin, onUnreadChange }: {
+function MessagesTabPlanteur({ plantationId, currentUserId, isAdmin, onUnreadChange }: {
   plantationId: string; currentUserId: string; isAdmin?: boolean; onUnreadChange?: (n: number) => void
 }) {
   const [conversations, setConversations] = useState<ConvPlanteur[]>([])
@@ -655,7 +654,7 @@ function MessagesTabPlanteur({ plantationId: _plantationId, currentUserId, isAdm
   const [mobilePage, setMobilePage] = useState<'list' | 'thread'>('list')
 
   const loadConversations = useCallback(() => {
-    fetch('/api/agri/crm/conversations?mode=planteur')
+    fetch(`/api/agri/crm/conversations?mode=planteur&plantation_id=${plantationId}`)
       .then(r => r.json())
       .then(j => {
         const convs: ConvPlanteur[] = j.conversations ?? []
@@ -669,7 +668,7 @@ function MessagesTabPlanteur({ plantationId: _plantationId, currentUserId, isAdm
       })
       .finally(() => setLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onUnreadChange])
+  }, [plantationId, onUnreadChange])
 
   useEffect(() => { loadConversations() }, [loadConversations])
   useEffect(() => {

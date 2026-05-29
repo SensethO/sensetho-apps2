@@ -144,10 +144,20 @@ export async function GET(req: Request) {
       const { data: profileAdmin } = await svc.from('profiles').select('role').eq('id', user.id).single()
       const isAdminUser = profileAdmin?.role === 'admin'
 
-      // 1. Plantations visibles : toutes pour l'admin, seulement les siennes pour le planteur
-      const plantationsQuery = isAdminUser
+      // plantation_id optionnel — si fourni, on restreint à cette plantation uniquement
+      const plantationIdFilter = searchParams.get('plantation_id')
+
+      // 1. Plantations visibles : filtrées par plantation_id si fourni
+      //    Pour un non-admin, on vérifie aussi la propriété (user_id = user.id)
+      let plantationsQuery = isAdminUser
         ? svc.from('plantations').select('id, nom, pays_nom')
         : svc.from('plantations').select('id, nom, pays_nom').eq('user_id', user.id)
+
+      if (plantationIdFilter) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        plantationsQuery = (plantationsQuery as any).eq('id', plantationIdFilter)
+      }
+
       const { data: plantations } = await plantationsQuery
 
       const plantationIds = (plantations ?? []).map((p: { id: string }) => p.id)
