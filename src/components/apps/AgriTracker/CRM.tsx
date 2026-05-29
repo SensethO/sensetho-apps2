@@ -282,9 +282,10 @@ interface ThreadProps {
   isAcheteur: boolean
   isAdmin?: boolean
   headerLabel: string
+  onMessageSent?: () => void  // callback pour rafraîchir la liste conversations
 }
 
-function Thread({ plantationId, acheteurUserId, currentUserId, isAcheteur, isAdmin, headerLabel }: ThreadProps) {
+function Thread({ plantationId, acheteurUserId, currentUserId, isAcheteur, isAdmin, headerLabel, onMessageSent }: ThreadProps) {
   const [messages, setMessages] = useState<(CRMMessage & { attachments?: Attachment[] })[]>([])
   const [loading, setLoading] = useState(true)
   const [content, setContent] = useState('')
@@ -307,7 +308,8 @@ function Thread({ plantationId, acheteurUserId, currentUserId, isAcheteur, isAdm
   }, [plantationId, acheteurUserId])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { const t = setInterval(load, 8000); return () => clearInterval(t) }, [load])
+  // Polling 4s — synchronisation live sans WebSocket
+  useEffect(() => { const t = setInterval(load, 4000); return () => clearInterval(t) }, [load])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   async function send() {
@@ -365,6 +367,7 @@ function Thread({ plantationId, acheteurUserId, currentUserId, isAcheteur, isAdm
       setMessages(prev => [...prev, j.message])
       setContent('')
       setPendingFiles([])
+      onMessageSent?.()  // rafraîchir la liste des conversations immédiatement
     }
     setSending(false)
   }
@@ -625,6 +628,7 @@ function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadCha
             headerLabel={selected.acheteur_nom
               ? `${selected.plantation_nom} — ${selected.acheteur_nom}`
               : `${selected.plantation_nom} — ${selected.planteur_nom}`}
+            onMessageSent={loadConversations}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2">
@@ -648,16 +652,28 @@ function MessagesTabPlanteur({ plantationId: _plantationId, currentUserId, isAdm
   const [loading, setLoading] = useState(true)
   const [mobilePage, setMobilePage] = useState<'list' | 'thread'>('list')
 
-  useEffect(() => {
+  const loadConversations = useCallback(() => {
     fetch('/api/agri/crm/conversations?mode=planteur')
       .then(r => r.json())
       .then(j => {
         const convs: ConvPlanteur[] = j.conversations ?? []
         setConversations(convs)
+        // Mettre à jour la sélection si elle existe toujours
+        setSelected(prev => prev
+          ? convs.find(c => c.plantation_id === prev.plantation_id && c.acheteur_user_id === prev.acheteur_user_id) ?? prev
+          : null
+        )
         onUnreadChange?.(convs.reduce((s, c) => s + c.unread_count, 0))
       })
       .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onUnreadChange])
+
+  useEffect(() => { loadConversations() }, [loadConversations])
+  useEffect(() => {
+    const t = setInterval(loadConversations, 30000)
+    return () => clearInterval(t)
+  }, [loadConversations])
 
   const timeStr = (dt: string | null) => {
     if (!dt) return ''
@@ -728,6 +744,7 @@ function MessagesTabPlanteur({ plantationId: _plantationId, currentUserId, isAdm
             isAcheteur={false}
             isAdmin={isAdmin}
             headerLabel={`${selected.acheteur_nom} — ${selected.plantation_nom}`}
+            onMessageSent={loadConversations}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2">

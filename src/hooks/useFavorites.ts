@@ -9,7 +9,11 @@ import { createClient } from '@/lib/supabase/client'
  * - Chargement initial depuis Supabase (cross-browser, cross-appareil)
  * - Migration automatique des favoris localStorage existants au 1er chargement
  * - Optimistic UI : la mise à jour locale est immédiate, Supabase suit en arrière-plan
- * - Realtime Supabase : synchronisation entre onglets et navigateurs
+ *
+ * Note : Supabase Realtime (WebSocket) intentionnellement désactivé.
+ * Le Realtime génère des erreurs WebSocket dans certains environnements
+ * (navigation privée, Firefox strict mode, réseaux restreints) sans apporter
+ * de bénéfice réel pour les favoris (pas de multi-onglet critique).
  */
 export function useFavorites(userId: string | null | undefined) {
   const [favoriteIds, setFavoriteIds] = useState<string[]>([])
@@ -65,54 +69,6 @@ export function useFavorites(userId: string | null | undefined) {
 
     load()
     return () => { cancelled = true }
-  }, [userId])
-
-  // ── Realtime — synchronisation cross-onglets / cross-navigateurs ───────────
-  // Optionnel : si WebSocket bloqué (Firefox strict mode, réseau restreint…)
-  // l'app continue de fonctionner normalement grâce à l'UI optimiste.
-  useEffect(() => {
-    if (!userId) return
-
-    const supabase = createClient()
-    let channel: ReturnType<typeof supabase.channel> | null = null
-
-    try {
-      channel = supabase
-        .channel(`favorites:${userId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'user_app_favorites',
-            filter: `user_id=eq.${userId}`,
-          },
-          (payload: { eventType: string; new: Record<string, unknown>; old: Record<string, unknown> }) => {
-            try {
-              if (payload.eventType === 'INSERT') {
-                const appId = payload.new['app_id'] as string
-                setFavoriteIds(prev => prev.includes(appId) ? prev : [...prev, appId])
-              } else if (payload.eventType === 'DELETE') {
-                const appId = payload.old['app_id'] as string
-                setFavoriteIds(prev => prev.filter(id => id !== appId))
-              }
-            } catch { /* silencieux */ }
-          }
-        )
-        .subscribe(() => {
-          // Silencieux — Realtime est best-effort.
-          // Les erreurs WebSocket (Firefox strict mode, réseau restreint…)
-          // sont gérées par le backoff exponentiel du client Supabase.
-        })
-    } catch {
-      // Silencieux
-    }
-
-    return () => {
-      if (channel) {
-        try { supabase.removeChannel(channel) } catch { /* silencieux */ }
-      }
-    }
   }, [userId])
 
   // ── Toggle favori (optimistic) ─────────────────────────────────────────────

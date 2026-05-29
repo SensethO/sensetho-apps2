@@ -47,14 +47,20 @@ export async function GET(req: Request) {
     }
 
     // Récupérer la dernière analyse pour cette plantation
-    const { data: row } = await svc
+    // On utilise created_at pour l'ordre (toujours présent, pas besoin de updated_at)
+    const { data: row, error: fetchErr } = await svc
       .from('saved_simulations')
-      .select('id, data, created_at, updated_at')
+      .select('id, data, created_at')
       .eq('app_id', APP_ID)
       .eq('name', plantationId)
-      .order('updated_at', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+
+    if (fetchErr) {
+      console.error('[analyses GET] DB error:', fetchErr.message)
+      return NextResponse.json({ analyse: null })
+    }
 
     if (!row) return NextResponse.json({ analyse: null })
 
@@ -63,7 +69,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       id: row.id,
       analyse: payload?.analyse ?? null,
-      created_at: row.updated_at ?? row.created_at,
+      created_at: row.created_at,
     })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
@@ -95,64 +101,56 @@ export async function POST(req: Request) {
       }
     }
 
-    const now = new Date().toISOString()
     const payload = { plantation_id, plantation_nom, analyse }
 
-    let id: string | null = null
+    // Chercher un enregistrement existant par (app_id, name) — sans filtre user_id
+    // pour éviter les doublons quand admin et owner génèrent tous les deux
+    const { data: existing, error: lookupErr } = await svc
+      .from('saved_simulations')
+      .select('id')
+      .eq('app_id', APP_ID)
+      .eq('name', plantation_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-    if (existing_id) {
-      // Mise à jour
+    if (lookupErr) {
+      console.error('[analyses POST] lookup error:', lookupErr.message)
+    }
+
+    const targetId = existing_id ?? existing?.id ?? null
+
+    if (targetId) {
+      // Mettre à jour l'existant — utiliser data uniquement (pas updated_at si colonne absente)
       const { data: row, error } = await svc
         .from('saved_simulations')
-        .update({ data: payload, updated_at: now })
-        .eq('id', existing_id)
-        .select('id, updated_at')
+        .update({ data: payload })
+        .eq('id', targetId)
+        .select('id, created_at')
         .single()
-      if (error) throw new Error(error.message)
-      id = row?.id ?? null
-      return NextResponse.json({ id, created_at: row?.updated_at ?? now })
-    } else {
-      // Insertion — ou mise à jour si une entrée existe déjà pour cette plantation
-      // Recherche sans filtre user_id pour trouver l'analyse existante quelle que soit
-      // la personne qui l'a créée (admin ou owner)
-      const { data: existing } = await svc
-        .from('saved_simulations')
-        .select('id')
-        .eq('app_id', APP_ID)
-        .eq('name', plantation_id)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (existing?.id) {
-        // Mettre à jour l'existant
-        const { data: row, error } = await svc
-          .from('saved_simulations')
-          .update({ data: payload, updated_at: now })
-          .eq('id', existing.id)
-          .select('id, updated_at')
-          .single()
-        if (error) throw new Error(error.message)
-        id = row?.id ?? null
-        return NextResponse.json({ id, created_at: row?.updated_at ?? now })
-      } else {
-        // Nouvelle entrée
-        const { data: row, error } = await svc
-          .from('saved_simulations')
-          .insert({
-            app_id: APP_ID,
-            user_id: user.id,
-            name: plantation_id,
-            year: new Date().getFullYear(),
-            data: payload,
-            updated_at: now,
-          })
-          .select('id, created_at')
-          .single()
-        if (error) throw new Error(error.message)
-        id = row?.id ?? null
-        return NextResponse.json({ id, created_at: row?.created_at ?? now })
+      if (error) {
+        console.error('[analyses POST] update error:', error.message)
+        throw new Error(error.message)
       }
+      return NextResponse.json({ id: row?.id ?? targetId, created_at: row?.created_at })
+    } else {
+      // Nouvelle entrée
+      const { data: row, error } = await svc
+        .from('saved_simulations')
+        .insert({
+          app_id: APP_ID,
+          user_id: user.id,
+          name: plantation_id,
+          year: new Date().getFullYear(),
+          data: payload,
+        })
+        .select('id, created_at')
+        .single()
+      if (error) {
+        console.error('[analyses POST] insert error:', error.message)
+        throw new Error(error.message)
+      }
+      return NextResponse.json({ id: row?.id, created_at: row?.created_at })
     }
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
