@@ -25,6 +25,23 @@ const SYMBOL_MAP: Record<ProduitKey, string> = {
   cafe: 'KC=F',
 }
 
+// Normalise n'importe quel nom produit (FAOSTAT anglais, français, clé interne, etc.)
+// vers la clé interne 'cacao' | 'cafe'. Retourne null si non reconnu.
+function normalizeProduit(raw: string): ProduitKey | null {
+  const s = raw.trim().toLowerCase()
+  if (
+    s === 'cacao' || s === 'cocoa' ||
+    s.startsWith('cocoa') || s.startsWith('cacao') ||
+    s === 'cc=f'
+  ) return 'cacao'
+  if (
+    s === 'cafe' || s === 'café' || s === 'coffee' ||
+    s.startsWith('coffee') || s.startsWith('café') || s.startsWith('cafe') ||
+    s === 'kc=f'
+  ) return 'cafe'
+  return null
+}
+
 interface PriceEntry {
   date: string
   open: number
@@ -67,12 +84,23 @@ function generateMockPrices(produit: ProduitKey): PriceEntry[] {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const produit = (searchParams.get('produit') ?? 'cacao').toLowerCase() as ProduitKey
+    const rawProduit = searchParams.get('produit') ?? 'cacao'
 
-    if (!SYMBOL_MAP[produit]) {
+    // Accepte une liste séparée par virgules (ex. "Cocoa beans,Coffee, green")
+    // → prend le premier produit reconnu, sinon fallback sur 'cacao'
+    const parts = rawProduit.split(',')
+    let produit: ProduitKey = 'cacao'
+    for (const part of parts) {
+      const norm = normalizeProduit(part)
+      if (norm) { produit = norm; break }
+    }
+
+    // Sécurité : si aucun des termes n'est reconnu, retourner une erreur claire
+    const allUnknown = parts.every(p => normalizeProduit(p) === null)
+    if (allUnknown) {
       return NextResponse.json(
         {
-          error: `Produit "${produit}" non supporté. Valeurs acceptées : ${Object.keys(SYMBOL_MAP).join(', ')}`,
+          error: `Produit "${rawProduit}" non supporté. Valeurs acceptées : cacao, cafe (ou noms FAOSTAT : "Cocoa beans", "Coffee, green"…)`,
         },
         { status: 400 }
       )
