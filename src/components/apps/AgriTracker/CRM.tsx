@@ -383,6 +383,8 @@ function Thread({ plantationId, acheteurUserId, currentUserId, isAcheteur, isAdm
       setArchiveMsg('✓ Archivé dans Notes & Docs')
       // Vider les messages — ils sont maintenant dans Notes & Docs
       setMessages([])
+      // Rafraîchir la liste des conversations (la conv disparaît si plus de messages)
+      onMessageSent?.()
     } else {
       const j = await res.json().catch(() => ({}))
       setArchiveMsg(`⚠️ ${j.error ?? 'Erreur'}`)
