@@ -13,10 +13,12 @@ export async function GET(req: Request) {
     const { allowed } = await checkPlantationAccess(svc, user.id, plantationId)
     if (!allowed) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
 
-    // Savoir si l'utilisateur est propriétaire de la plantation
+    // Savoir si l'utilisateur est propriétaire ou admin
     const { data: plantation } = await svc
       .from('plantations').select('user_id').eq('id', plantationId).single()
     const isOwner = plantation?.user_id === user.id
+    const { data: profileData } = await svc.from('profiles').select('role').eq('id', user.id).single()
+    const isAdminUser = profileData?.role === 'admin'
 
     const { data: allNotes } = await svc
       .from('agri_crm_notes')
@@ -25,11 +27,11 @@ export async function GET(req: Request) {
       .order('updated_at', { ascending: false })
 
     // Confidentialité : les notes CRM archivées (acheteur_user_id set) ne sont
-    // visibles qu'au planteur ET à l'acheteur concerné. Les autres notes sont
-    // visibles à tous les utilisateurs ayant accès à la plantation.
+    // visibles qu'au planteur, à l'acheteur concerné ET à l'administrateur.
+    // Les autres notes sont visibles à tous les utilisateurs ayant accès à la plantation.
     const notes = (allNotes ?? []).filter((n: { acheteur_user_id?: string | null }) => {
-      if (!n.acheteur_user_id) return true          // note classique → tout le monde
-      return isOwner || n.acheteur_user_id === user.id  // note CRM → participants seulement
+      if (!n.acheteur_user_id) return true                        // note classique → tout le monde
+      return isAdminUser || isOwner || n.acheteur_user_id === user.id  // note CRM → participants + admin
     })
 
     return NextResponse.json({ notes })

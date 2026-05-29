@@ -8,7 +8,10 @@
  * Utilise l'API FAOSTAT (fenixservices.fao.org). Fallback statique si indisponible.
  * Cache 24h.
  */
-export const dynamic = 'force-dynamic'
+// Cache ISR 24h : les données FAOSTAT sont stables sur la journée.
+// On supprime force-dynamic pour que Vercel serve la réponse depuis son cache
+// plutôt que d'appeler l'API FAO (Rome) à chaque visite.
+export const revalidate = 86400
 
 import { NextResponse } from 'next/server'
 
@@ -118,7 +121,7 @@ export async function GET(request: Request) {
       const url = `${FAOSTAT_BASE}/data/QCL?area=5707&item=${itemCode}&element=5510&lang=en&output_type=objects`
       const res = await fetch(url, {
         next: { revalidate: 86400 },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(4000), // 4s max, fallback statique si dépassé
       })
 
       if (res.ok) {

@@ -58,6 +58,8 @@ interface ConvAcheteur {
   main_culture: string | null
   planteur_nom: string
   planteur_email: string
+  acheteur_user_id?: string  // présent pour admin — id réel de l'acheteur
+  acheteur_nom?: string      // nom de l'acheteur (pour admin)
   last_message: string | null
   last_message_at: string | null
   unread_count: number
@@ -499,27 +501,43 @@ function Thread({ plantationId, acheteurUserId, currentUserId, isAcheteur, isAdm
 
 // ─── Messages Tab — Acheteur ──────────────────────────────────────────────────
 
+function convKey(c: ConvAcheteur): string {
+  return `${c.plantation_id}__${c.acheteur_user_id ?? ''}`
+}
+
 function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadChange }: {
   plantationId: string; currentUserId: string; isAdmin?: boolean; onUnreadChange?: (n: number) => void
 }) {
   const [conversations, setConversations] = useState<ConvAcheteur[]>([])
-  const [selectedId, setSelectedId] = useState<string>(plantationId)
+  const [selectedKey, setSelectedKey] = useState<string>(plantationId + '__')
   const [loading, setLoading] = useState(true)
   const [mobilePage, setMobilePage] = useState<'list' | 'thread'>('list')
 
-  useEffect(() => {
+  const loadConversations = useCallback(() => {
     fetch('/api/agri/crm/conversations?mode=acheteur')
       .then(r => r.json())
       .then(j => {
         const convs: ConvAcheteur[] = j.conversations ?? []
         setConversations(convs)
-        if (!convs.find(c => c.plantation_id === plantationId) && convs.length > 0) {
-          setSelectedId(convs[0].plantation_id)
+        // Si la sélection actuelle n'existe plus, sélectionner la première conversation
+        const currentExists = convs.find(c => convKey(c) === selectedKey)
+        if (!currentExists && convs.length > 0) {
+          setSelectedKey(convKey(convs[0]))
         }
         onUnreadChange?.(convs.reduce((s, c) => s + c.unread_count, 0))
       })
       .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plantationId, onUnreadChange])
+
+  useEffect(() => {
+    loadConversations()
+  }, [loadConversations])
+
+  useEffect(() => {
+    const t = setInterval(loadConversations, 30000)
+    return () => clearInterval(t)
+  }, [loadConversations])
 
   const grouped = conversations.reduce<Record<string, Record<string, ConvAcheteur[]>>>((acc, c) => {
     const culture = c.main_culture ?? 'Autre'
@@ -530,7 +548,7 @@ function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadCha
     return acc
   }, {})
 
-  const selected = conversations.find(c => c.plantation_id === selectedId)
+  const selected = conversations.find(c => convKey(c) === selectedKey)
 
   const timeStr = (dt: string | null) => {
     if (!dt) return ''
@@ -563,16 +581,18 @@ function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadCha
                   <div className="px-3 py-1 text-[10px] text-gray-400 dark:text-gray-500 font-medium">📍 {paysNom}</div>
                   {convList.map(c => (
                     <button
-                      key={c.plantation_id}
-                      onClick={() => { setSelectedId(c.plantation_id); setMobilePage('thread') }}
+                      key={convKey(c)}
+                      onClick={() => { setSelectedKey(convKey(c)); setMobilePage('thread') }}
                       className={`w-full text-left px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/50 transition ${
-                        selectedId === c.plantation_id
+                        selectedKey === convKey(c)
                           ? 'bg-emerald-50 dark:bg-emerald-900/20 border-l-2 border-l-emerald-500'
                           : 'hover:bg-gray-100 dark:hover:bg-gray-700/50'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-1">
-                        <span className="text-xs font-semibold text-gray-900 dark:text-white leading-tight line-clamp-1">{c.plantation_nom}</span>
+                        <span className="text-xs font-semibold text-gray-900 dark:text-white leading-tight line-clamp-1">
+                          {c.plantation_nom}{c.acheteur_nom ? ` — ${c.acheteur_nom}` : ''}
+                        </span>
                         {c.last_message_at && <span className="text-[10px] text-gray-400 flex-shrink-0">{timeStr(c.last_message_at)}</span>}
                       </div>
                       <div className="flex items-center justify-between mt-0.5">
@@ -598,11 +618,13 @@ function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadCha
         {selected ? (
           <Thread
             plantationId={selected.plantation_id}
-            acheteurUserId={currentUserId}
+            acheteurUserId={selected.acheteur_user_id ?? currentUserId}
             currentUserId={currentUserId}
             isAcheteur
             isAdmin={isAdmin}
-            headerLabel={`${selected.plantation_nom} — ${selected.planteur_nom}`}
+            headerLabel={selected.acheteur_nom
+              ? `${selected.plantation_nom} — ${selected.acheteur_nom}`
+              : `${selected.plantation_nom} — ${selected.planteur_nom}`}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2">

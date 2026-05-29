@@ -99,11 +99,13 @@ export function useFavorites(userId: string | null | undefined) {
             } catch { /* silencieux */ }
           }
         )
-        .subscribe((_status: string, err?: Error) => {
-          if (err) console.warn('[useFavorites] realtime subscribe error (non-fatal):', err)
+        .subscribe(() => {
+          // Silencieux — Realtime est best-effort.
+          // Les erreurs WebSocket (Firefox strict mode, réseau restreint…)
+          // sont gérées par le backoff exponentiel du client Supabase.
         })
-    } catch (e) {
-      console.warn('[useFavorites] realtime unavailable (non-fatal):', e)
+    } catch {
+      // Silencieux
     }
 
     return () => {

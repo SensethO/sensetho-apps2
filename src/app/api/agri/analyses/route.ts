@@ -113,12 +113,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ id, created_at: row?.updated_at ?? now })
     } else {
       // Insertion — ou mise à jour si une entrée existe déjà pour cette plantation
+      // Recherche sans filtre user_id pour trouver l'analyse existante quelle que soit
+      // la personne qui l'a créée (admin ou owner)
       const { data: existing } = await svc
         .from('saved_simulations')
         .select('id')
         .eq('app_id', APP_ID)
         .eq('name', plantation_id)
-        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
 
       if (existing?.id) {
@@ -142,6 +145,7 @@ export async function POST(req: Request) {
             name: plantation_id,
             year: new Date().getFullYear(),
             data: payload,
+            updated_at: now,
           })
           .select('id, created_at')
           .single()

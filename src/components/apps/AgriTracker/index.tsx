@@ -2928,6 +2928,9 @@ function AcheteurDrillDown({
       if (saveRes.ok) {
         const saved = await saveRes.json()
         setAnalyseSavedId(saved.id ?? null)
+      } else {
+        console.error('[IA] Sauvegarde échouée:', await saveRes.json().catch(() => ({})))
+        setAnalyseError('Analyse générée mais sauvegarde échouée — elle sera perdue à la prochaine visite')
       }
     } catch (e) {
       setAnalyseError(e instanceof Error ? e.message : String(e))

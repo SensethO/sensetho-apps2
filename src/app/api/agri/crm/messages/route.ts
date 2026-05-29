@@ -13,13 +13,12 @@ export async function GET(req: Request) {
     if (!plantationId || !acheteurUserId) return NextResponse.json({ error: 'plantation_id et acheteur_user_id requis' }, { status: 400 })
 
     const svc = makeSvc()
-    const { allowed, isOwner } = await checkPlantationAccess(svc, user.id, plantationId)
+    const { allowed, isOwner, isAdmin } = await checkPlantationAccess(svc, user.id, plantationId)
     if (!allowed) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
 
-    // Confidentialité absolue : seuls le planteur (owner) et l'acheteur
-    // impliqué dans la conversation peuvent lire les messages.
-    // Même un admin non-participant n'y a pas accès.
-    if (!isOwner && user.id !== acheteurUserId) {
+    // Confidentialité : seuls le planteur (owner), l'acheteur impliqué
+    // et l'administrateur peuvent lire les messages.
+    if (!isAdmin && !isOwner && user.id !== acheteurUserId) {
       return NextResponse.json({ error: 'Accès refusé — conversation privée' }, { status: 403 })
     }
 
@@ -52,11 +51,11 @@ export async function POST(req: Request) {
     if (!plantation_id || !acheteur_user_id || !content?.trim()) return NextResponse.json({ error: 'Champs requis' }, { status: 400 })
 
     const svc = makeSvc()
-    const { allowed, isOwner } = await checkPlantationAccess(svc, user.id, plantation_id)
+    const { allowed, isOwner, isAdmin } = await checkPlantationAccess(svc, user.id, plantation_id)
     if (!allowed) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
 
-    // Seuls le planteur et l'acheteur concerné peuvent envoyer des messages
-    if (!isOwner && user.id !== acheteur_user_id) {
+    // Seuls le planteur, l'acheteur concerné et l'administrateur peuvent envoyer des messages
+    if (!isAdmin && !isOwner && user.id !== acheteur_user_id) {
       return NextResponse.json({ error: 'Accès refusé — conversation privée' }, { status: 403 })
     }
 
