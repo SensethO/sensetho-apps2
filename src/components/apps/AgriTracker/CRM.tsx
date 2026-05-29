@@ -519,7 +519,7 @@ function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadCha
   const [mobilePage, setMobilePage] = useState<'list' | 'thread'>('list')
 
   const loadConversations = useCallback(() => {
-    fetch('/api/agri/crm/conversations?mode=acheteur')
+    fetch(`/api/agri/crm/conversations?mode=acheteur&plantation_id=${plantationId}`)
       .then(r => r.json())
       .then(j => {
         const convs: ConvAcheteur[] = j.conversations ?? []
