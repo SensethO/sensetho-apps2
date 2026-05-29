@@ -896,7 +896,7 @@ function RdvTab({ plantationId }: { plantationId: string }) {
 
 // ─── Notes Tab ────────────────────────────────────────────────────────────────
 
-function NotesTab({ plantationId }: { plantationId: string }) {
+function NotesTab({ plantationId, isAdmin }: { plantationId: string; isAdmin?: boolean }) {
   const [notes, setNotes] = useState<CRMNote[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -935,7 +935,9 @@ function NotesTab({ plantationId }: { plantationId: string }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="font-semibold text-gray-900 dark:text-white">Notes & Documents ({notes.length})</h3>
-        <button className={btnP()} onClick={() => { setShowForm(v => !v); setEditingId(null); setForm({ titre: '', contenu: '' }) }}>+ Nouvelle note</button>
+        {isAdmin && (
+          <button className={btnP()} onClick={() => { setShowForm(v => !v); setEditingId(null); setForm({ titre: '', contenu: '' }) }}>+ Nouvelle note</button>
+        )}
       </div>
       {(showForm || editingId) && (
         <div className={cardCls('p-4 space-y-3')}>
@@ -984,10 +986,12 @@ function NotesTab({ plantationId }: { plantationId: string }) {
                     </div>
                   </div>
                 )}
-                <div className="flex justify-between items-center pt-2">
-                  <button className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline" onClick={() => { setEditingId(n.id); setForm({ titre: n.titre, contenu: n.contenu }); setShowForm(false) }}>✏️ Modifier</button>
-                  <button onClick={() => deleteNote(n.id)} className="text-xs text-red-500 hover:text-red-600 transition">🗑️ Supprimer</button>
-                </div>
+                {isAdmin && (
+                  <div className="flex justify-between items-center pt-2">
+                    <button className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline" onClick={() => { setEditingId(n.id); setForm({ titre: n.titre, contenu: n.contenu }); setShowForm(false) }}>✏️ Modifier</button>
+                    <button onClick={() => deleteNote(n.id)} className="text-xs text-red-500 hover:text-red-600 transition">🗑️ Supprimer</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1138,7 +1142,7 @@ export default function AgriCRM({ plantationId, plantationNom, isAcheteur, isAdm
           <MessagesTabPlanteur plantationId={plantationId} currentUserId={currentUserId} isAdmin={isAdmin} onUnreadChange={handleUnread} />
         )}
         {tab === 'rdv'       && <RdvTab plantationId={plantationId} />}
-        {tab === 'notes'     && <NotesTab plantationId={plantationId} />}
+        {tab === 'notes'     && <NotesTab plantationId={plantationId} isAdmin={isAdmin} />}
         {tab === 'confiance' && isAcheteur && <ConfianceTab plantationId={plantationId} />}
       </div>
     </div>
