@@ -28,7 +28,11 @@ export default function SubscriptionsManager() {
   const [apps, setApps] = useState<App[]>([])
   const [users, setUsers] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState<SubscriptionStatus | 'all'>('all')
+  const [filterStatus, setFilterStatus] = useState<SubscriptionStatus | 'all'>('active')
+  const [filterApp, setFilterApp] = useState<string>('all')
+  const [filterPlan, setFilterPlan] = useState<SubscriptionPlan | 'all'>('all')
+  const [showExpiringSoon, setShowExpiringSoon] = useState(false)
+  const [activeView, setActiveView] = useState<string>('actifs')
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<Partial<{
@@ -102,12 +106,41 @@ export default function SubscriptionsManager() {
     load()
   }
 
+  // Vues pré-enregistrées
+  const SAVED_VIEWS: { id: string; label: string; status: SubscriptionStatus | 'all'; plan: SubscriptionPlan | 'all'; expiring: boolean }[] = [
+    { id: 'actifs',    label: '✅ Actifs',            status: 'active', plan: 'all',       expiring: false },
+    { id: 'expiring',  label: '⚠️ Expirant (30 j)',   status: 'active', plan: 'all',       expiring: true  },
+    { id: 'perpetual', label: '∞ Perpétuels',          status: 'active', plan: 'perpetual', expiring: false },
+    { id: 'monthly',   label: '📅 Mensuels',           status: 'all',    plan: 'monthly',   expiring: false },
+    { id: 'all',       label: '📋 Tous',               status: 'all',    plan: 'all',       expiring: false },
+  ]
+
+  function applyView(viewId: string) {
+    const v = SAVED_VIEWS.find(x => x.id === viewId)
+    if (!v) return
+    setActiveView(viewId)
+    setFilterStatus(v.status)
+    setFilterPlan(v.plan)
+    setFilterApp('all')
+    setShowExpiringSoon(v.expiring)
+  }
+
+  function resetView() { setActiveView('') }
+
   const filtered = subs.filter(s => {
     if (filterStatus !== 'all' && s.status !== filterStatus) return false
+    if (filterPlan !== 'all' && s.plan !== filterPlan) return false
+    if (filterApp !== 'all' && s.app_id !== filterApp) return false
+    if (showExpiringSoon) {
+      if (!s.expires_at) return false
+      const days = (new Date(s.expires_at).getTime() - Date.now()) / 86400000
+      if (days < 0 || days > 30) return false
+    }
+    const resolvedP = s.profile ?? users.find(u => u.id === s.user_id)
     const q = search.toLowerCase()
     return !q
-      || (s.profile?.email ?? '').toLowerCase().includes(q)
-      || (s.profile?.full_name ?? '').toLowerCase().includes(q)
+      || (resolvedP?.email ?? '').toLowerCase().includes(q)
+      || (resolvedP?.full_name ?? '').toLowerCase().includes(q)
       || (s.app?.name ?? '').toLowerCase().includes(q)
   })
 
@@ -125,24 +158,55 @@ export default function SubscriptionsManager() {
 
   return (
     <div className="space-y-4">
+      {/* Vues pré-enregistrées */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase tracking-wide mr-1">Vues</span>
+        {SAVED_VIEWS.map(v => (
+          <button key={v.id} onClick={() => applyView(v.id)}
+            className={clsx('text-xs px-3 py-1.5 rounded-full border transition-colors font-medium',
+              activeView === v.id
+                ? 'bg-gray-900 dark:bg-slate-200 text-white dark:text-slate-900 border-gray-900 dark:border-slate-200'
+                : 'border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700')}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+
       {/* Barre de filtres */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <input type="text" placeholder="Rechercher…" value={search}
+          <input type="text" placeholder="Rechercher utilisateur, app…" value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-slate-700 dark:text-slate-100" />
           <Icon name="user" size={14} className="absolute left-3 top-2.5 text-gray-400" />
         </div>
 
+        {/* Filtre statut */}
         <div className="flex rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden text-sm">
           {(['all', 'active', 'cancelled', 'expired'] as const).map(s => (
-            <button key={s} onClick={() => setFilterStatus(s)}
+            <button key={s} onClick={() => { setFilterStatus(s); resetView() }}
               className={clsx('px-3 py-2 transition-colors',
-                filterStatus === s ? 'bg-gray-900 dark:bg-slate-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-400')}>
+                filterStatus === s && !activeView ? 'bg-gray-900 dark:bg-slate-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-400')}>
               {s === 'all' ? 'Tous' : s === 'active' ? 'Actifs' : s === 'cancelled' ? 'Annulés' : 'Expirés'}
             </button>
           ))}
         </div>
+
+        {/* Filtre application */}
+        <select value={filterApp} onChange={e => { setFilterApp(e.target.value); resetView() }}
+          className="text-sm border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-gray-900">
+          <option value="all">Toutes les apps</option>
+          {apps.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+
+        {/* Filtre plan */}
+        <select value={filterPlan} onChange={e => { setFilterPlan(e.target.value as SubscriptionPlan | 'all'); resetView() }}
+          className="text-sm border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-gray-900">
+          <option value="all">Tous les plans</option>
+          <option value="monthly">Mensuel</option>
+          <option value="annual">Annuel</option>
+          <option value="perpetual">Perpétuel</option>
+        </select>
 
         <button onClick={() => setShowModal(true)}
           className="flex items-center gap-2 bg-gray-900 dark:bg-slate-600 text-white text-sm px-3 py-2 rounded-lg hover:bg-gray-800 ml-auto">
