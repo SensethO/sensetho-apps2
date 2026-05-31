@@ -114,7 +114,7 @@ function getBadge(score: number) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'presentation' | 'diagnostic' | 'actions'
+type View = 'presentation' | 'dashboard' | 'diagnostic' | 'actions' | 'correspondances'
 
 interface DiagnosticData { id: string; annee: number; statut: string; score_global: number | null }
 interface Reponse { id?: string; critere_id: string; niveau: number; commentaire: string | null }
@@ -157,6 +157,313 @@ function critereLabel(id: string): string {
     if (c) return `${t.icon} ${c.label}`
   }
   return id
+}
+
+// ─── Vue Tableau de bord ─────────────────────────────────────────────────────
+
+function TableauDeBordView({
+  reponses, actions, score,
+}: {
+  reponses: Record<string, Reponse>
+  actions: Action[]
+  score: number
+}) {
+  const badge = getBadge(score)
+
+  // Calcul du % par thème
+  const themeStats = ECOVADIS_THEMES.map(t => {
+    const total = t.criteres.length
+    const niveaux = t.criteres.map(c => reponses[c.id]?.niveau ?? 0)
+    const pct = niveaux.reduce((s, n) => s + (NIVEAUX[n]?.pct ?? 0), 0) / total
+    const renseignes = niveaux.filter(n => n > 0).length
+    return { ...t, pct, renseignes, total }
+  })
+
+  // Radar SVG custom — même pattern que VSME EFRAG
+  const N = themeStats.length
+  const cx = 160, cy = 155, r = 110
+
+  function polarToXY(i: number, radius: number) {
+    const angle = (i / N) * 2 * Math.PI - Math.PI / 2
+    return { x: +(cx + radius * Math.cos(angle)).toFixed(1), y: +(cy + radius * Math.sin(angle)).toFixed(1) }
+  }
+
+  const levels = [0.25, 0.5, 0.75, 1.0]
+  const dataPolygon = themeStats.map((t, i) => {
+    const { x, y } = polarToXY(i, r * Math.max(t.pct, 0.03))
+    return `${x},${y}`
+  }).join(' ')
+
+  const RADAR_COLORS: Record<string, string> = {
+    env: '#16a34a', social: '#2563eb', ethique: '#9333ea', achats: '#ea580c',
+  }
+
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Score global */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className={card('p-5 sm:col-span-1 flex flex-col items-center justify-center gap-2')}>
+          <div className="text-4xl font-black text-gray-900 dark:text-white">{score}</div>
+          <div className="text-sm text-gray-400">/ 100</div>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold" style={{ background: `${badge.color}22`, color: badge.color }}>
+            {badge.icon} {badge.label}
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
+            <div className="h-2 rounded-full transition-all duration-700" style={{ width: `${score}%`, background: badge.color }} />
+          </div>
+          <div className="text-xs text-gray-400 mt-1">Seuils : 25 Bronze · 45 Silver · 65 Gold · 75 Platinum</div>
+        </div>
+
+        {/* Radar */}
+        <div className={card('p-4 sm:col-span-2')}>
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Radar de maturité par thème</h3>
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <svg viewBox="0 0 320 310" className="w-full sm:w-64 flex-shrink-0" style={{ maxHeight: 240 }}>
+              {/* Toile */}
+              {levels.map(level => {
+                const pts = themeStats.map((_, i) => { const { x, y } = polarToXY(i, r * level); return `${x},${y}` }).join(' ')
+                return <polygon key={level} points={pts} fill="none" stroke="var(--border, #374151)" strokeWidth={level === 1 ? '1.5' : '0.7'} />
+              })}
+              {/* Axes */}
+              {themeStats.map((_, i) => { const { x, y } = polarToXY(i, r); return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="var(--border, #374151)" strokeWidth="1" strokeDasharray="3,3" /> })}
+              {/* Zone données */}
+              <polygon points={dataPolygon} fill="#16a34a22" stroke="#16a34a" strokeWidth="2.5" strokeLinejoin="round" />
+              {/* Points */}
+              {themeStats.map((t, i) => { const { x, y } = polarToXY(i, r * Math.max(t.pct, 0.03)); return <circle key={i} cx={x} cy={y} r="5" fill={RADAR_COLORS[t.id] ?? '#16a34a'} stroke="white" strokeWidth="1.5" /> })}
+              {/* Labels % */}
+              {levels.map(level => { const { x, y } = polarToXY(0, r * level); return <text key={level} x={x} y={y - 5} textAnchor="middle" fontSize="8" fill="var(--text-muted, #6b7280)" fontWeight="500">{Math.round(level * 100)}%</text> })}
+              {/* Labels thèmes */}
+              {themeStats.map((t, i) => {
+                const { x, y } = polarToXY(i, r + 26)
+                const anchor = x < cx - 8 ? 'end' : x > cx + 8 ? 'start' : 'middle'
+                return (
+                  <text key={i} x={x} y={y} textAnchor={anchor} dominantBaseline="middle" fontSize="12" fill={RADAR_COLORS[t.id] ?? '#6b7280'} fontWeight="700">
+                    {t.icon}
+                  </text>
+                )
+              })}
+            </svg>
+
+            {/* Légende */}
+            <div className="space-y-2 flex-1 w-full">
+              {themeStats.map(t => (
+                <div key={t.id} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">{t.icon}</span>
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">{t.label}</span>
+                      <span className="text-gray-400">({Math.round(t.poids * 100)}%)</span>
+                    </div>
+                    <span className="font-bold" style={{ color: RADAR_COLORS[t.id] }}>{Math.round(t.pct * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                    <div className="h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.round(t.pct * 100)}%`, background: RADAR_COLORS[t.id] }} />
+                  </div>
+                  <div className="text-[10px] text-gray-400">{t.renseignes}/{t.total} critères évalués</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Détail par thème */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Détail par thème et critère</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {themeStats.map(t => (
+            <div key={t.id} className={card('p-4 space-y-2')}>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{t.icon}</span>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">{t.label}</div>
+                  <div className="text-xs text-gray-400">Poids {Math.round(t.poids * 100)}% · Score thème : <span className="font-bold" style={{ color: RADAR_COLORS[t.id] }}>{Math.round(t.pct * 100)}%</span></div>
+                </div>
+              </div>
+              <div className="space-y-1.5 ml-1">
+                {t.criteres.map(c => {
+                  const n = reponses[c.id]?.niveau ?? 0
+                  const niv = NIVEAUX[n]
+                  return (
+                    <div key={c.id} className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0" style={{ background: (niv?.color ?? '#9ca3af') + '33', color: niv?.color ?? '#9ca3af' }}>
+                        {niv?.shortLabel ?? 'NC'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] text-gray-600 dark:text-gray-400 truncate">{c.label}</div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1 mt-0.5">
+                          <div className="h-1 rounded-full" style={{ width: `${Math.round((niv?.pct ?? 0) * 100)}%`, background: niv?.color ?? '#9ca3af' }} />
+                        </div>
+                      </div>
+                      <div className="text-[9px] font-bold flex-shrink-0" style={{ color: niv?.color ?? '#9ca3af' }}>{Math.round((niv?.pct ?? 0) * 100)}%</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Synthèse actions */}
+      <div className={card('p-4')}>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Plan d&apos;actions — Synthèse</h3>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'À faire',  count: actions.filter(a => a.statut === 'a_faire').length,  color: 'text-gray-600 dark:text-gray-400' },
+            { label: 'En cours', count: actions.filter(a => a.statut === 'en_cours').length, color: 'text-blue-600 dark:text-blue-400' },
+            { label: 'Terminées', count: actions.filter(a => a.statut === 'termine').length, color: 'text-emerald-600 dark:text-emerald-400' },
+          ].map(s => (
+            <div key={s.label} className="text-center">
+              <div className={`text-2xl font-bold ${s.color}`}>{s.count}</div>
+              <div className="text-xs text-gray-400">{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {actions.length > 0 && (
+          <div className="mt-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.round(actions.filter(a => a.statut === 'termine').length / actions.length * 100)}%` }} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Vue Correspondances ──────────────────────────────────────────────────────
+
+const CORRESPONDANCES = [
+  {
+    categorie: 'Applications RSE Sens\'ethO',
+    icon: '🏠',
+    color: 'indigo',
+    items: [
+      {
+        ref: 'ISO 26000',      icon: '⚖️',  route: '/rse/iso26000',
+        desc: 'Domaines RSE transverses — correspond aux 4 thèmes EcoVadis',
+        liens: [
+          { theme: 'env',     label: 'Environnement', iso: 'Domaine 6 — Environnement' },
+          { theme: 'social',  label: 'Social & RH',   iso: 'Domaine 3 — Droits de l\'homme · Domaine 4 — Relations et conditions de travail' },
+          { theme: 'ethique', label: 'Éthique',       iso: 'Domaine 2 — Gouvernance de l\'organisation · Domaine 7 — Loyauté des pratiques' },
+          { theme: 'achats',  label: 'Achats',        iso: 'Domaine 5 — Bonnes pratiques des affaires' },
+        ],
+      },
+      {
+        ref: 'VSME EFRAG',     icon: '📊',  route: '/rse/vsme-efrag',
+        desc: 'Standard PME européen — couvre les mêmes thématiques avec une approche ESRS',
+        liens: [
+          { theme: 'env',     label: 'Environnement', iso: 'Module ENV — Énergie, Eau, Déchets, Émissions GES' },
+          { theme: 'social',  label: 'Social & RH',   iso: 'Module SOC — Travailleurs, Droits humains, Communauté' },
+          { theme: 'ethique', label: 'Éthique',       iso: 'Module GOV — Gouvernance, Éthique, Corruption' },
+        ],
+      },
+      {
+        ref: 'Green Claims',   icon: '🌿',  route: '/rse/green-claims',
+        desc: 'Directive européenne sur les allégations environnementales — impacte le reporting EcoVadis',
+        liens: [
+          { theme: 'env', label: 'Environnement', iso: 'Allégations environnementales vérifiables & reporting' },
+        ],
+      },
+      {
+        ref: 'Parties Prenantes', icon: '👥', route: '/rse/parties-prenantes',
+        desc: 'Cartographie des parties prenantes — sous-traitants & fournisseurs → Achats Responsables',
+        liens: [
+          { theme: 'achats', label: 'Achats Responsables', iso: 'Identification des parties prenantes prioritaires' },
+          { theme: 'social',  label: 'Social & RH',  iso: 'Dialogue social et engagement parties prenantes' },
+        ],
+      },
+    ],
+  },
+  {
+    categorie: 'Certifications & Labels',
+    icon: '🏅',
+    color: 'amber',
+    items: [
+      { ref: 'ISO 14001',   icon: '🌍', route: null, desc: 'Système de management environnemental — certification validée par EcoVadis', liens: [{ theme: 'env', label: 'Environnement', iso: 'Système de management (politique, objectifs, reporting)' }] },
+      { ref: 'ISO 45001',   icon: '🦺', route: null, desc: 'Santé & Sécurité au travail — certification valorisée dans le thème Social', liens: [{ theme: 'social', label: 'Social & RH', iso: 'Santé & Sécurité au travail (management SST)' }] },
+      { ref: 'SA8000',      icon: '👷', route: null, desc: 'Standard de responsabilité sociale des entreprises (audit fournisseurs)', liens: [{ theme: 'social', label: 'Social & RH', iso: 'Conditions de travail, droits humains, droit d\'association' }] },
+      { ref: 'ISO 37001',   icon: '⚖️', route: null, desc: 'Système de management anti-corruption — fortement valorisé en Éthique', liens: [{ theme: 'ethique', label: 'Éthique', iso: 'Anti-corruption, pots-de-vin, programme de conformité' }] },
+      { ref: 'B Corp',      icon: '⭕', route: null, desc: 'Certification entreprise à mission — exigences similaires aux 4 thèmes EcoVadis', liens: [{ theme: 'env', label: 'Env', iso: 'Impact environnemental' }, { theme: 'social', label: 'Social', iso: 'Impact travailleurs & communauté' }, { theme: 'ethique', label: 'Éthique', iso: 'Gouvernance transparente' }] },
+      { ref: 'RGPD / GDPR', icon: '🔐', route: null, desc: 'Protection des données personnelles — critère clé de l\'Éthique EcoVadis', liens: [{ theme: 'ethique', label: 'Éthique', iso: 'Protection des données, vie privée, cybersécurité' }] },
+    ],
+  },
+  {
+    categorie: 'Référentiels de Reporting',
+    icon: '📋',
+    color: 'blue',
+    items: [
+      { ref: 'GRI Standards', icon: '📈', route: null, desc: 'Global Reporting Initiative — référence mondiale du reporting RSE, utilisé par EcoVadis pour le reporting', liens: [{ theme: 'env', label: 'Env', iso: 'GRI 300 Environnement' }, { theme: 'social', label: 'Social', iso: 'GRI 400 Social' }, { theme: 'ethique', label: 'Éthique', iso: 'GRI 200 Économie' }] },
+      { ref: 'CDP',           icon: '🌡️', route: null, desc: 'Carbon Disclosure Project — divulgation carbone valorisée dans le reporting environnemental', liens: [{ theme: 'env', label: 'Environnement', iso: 'Émissions GES, Eau, Biodiversité, Chaîne d\'approvisionnement' }] },
+      { ref: 'CSRD / ESRS',   icon: '🇪🇺', route: null, desc: 'Directive européenne sur le reporting de durabilité — alignée avec les thèmes EcoVadis', liens: [{ theme: 'env', label: 'Env', iso: 'ESRS E1-E5 (Climat, Eau, Biodiversité...)' }, { theme: 'social', label: 'Social', iso: 'ESRS S1-S4 (Travailleurs, Chaîne, Communauté)' }, { theme: 'ethique', label: 'Gouvernance', iso: 'ESRS G1 (Gouvernance, Éthique, Corruption)' }] },
+      { ref: 'ODD / SDGs',    icon: '🎯', route: null, desc: 'Objectifs de Développement Durable ONU — EcoVadis aligne ses critères sur les ODD', liens: [{ theme: 'env', label: 'Env', iso: 'ODD 6, 7, 12, 13, 14, 15' }, { theme: 'social', label: 'Social', iso: 'ODD 3, 4, 5, 8, 10, 11' }, { theme: 'ethique', label: 'Éthique', iso: 'ODD 16, 17' }, { theme: 'achats', label: 'Achats', iso: 'ODD 12, 17' }] },
+    ],
+  },
+]
+
+const THEME_BADGE_CLS: Record<string, string> = {
+  env:     'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  social:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  ethique: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  achats:  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+}
+
+function CorrespondancesView() {
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto">
+      <div className={card('p-4')}>
+        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+          EcoVadis s&apos;inscrit dans un écosystème de standards RSE interconnectés. Les correspondances ci-dessous vous
+          permettent de mutualiser vos efforts de conformité entre plusieurs référentiels et de renforcer votre score en
+          capitalisant sur vos certifications existantes.
+        </p>
+      </div>
+
+      {CORRESPONDANCES.map(cat => (
+        <div key={cat.categorie} className="space-y-3">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <span>{cat.icon}</span>{cat.categorie}
+          </h3>
+          <div className="space-y-3">
+            {cat.items.map(item => (
+              <div key={item.ref} className={card('p-4')}>
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl flex-shrink-0 mt-0.5">{item.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-gray-900 dark:text-white">{item.ref}</span>
+                      {item.route && (
+                        <a href={item.route}
+                          className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 hover:bg-indigo-200 transition-colors font-medium">
+                          ↗ Ouvrir dans Sens&apos;ethO
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{item.desc}</p>
+
+                    {item.liens.length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        {item.liens.map((l, i) => {
+                          const theme = ECOVADIS_THEMES.find(t => t.id === l.theme)
+                          return (
+                            <div key={i} className="flex items-start gap-2 flex-wrap">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${THEME_BADGE_CLS[l.theme] ?? ''}`}>
+                                {theme?.icon} {l.label}
+                              </span>
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 flex-1">{l.iso}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ─── Vue Présentation ─────────────────────────────────────────────────────────
@@ -803,9 +1110,11 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
-  { id: 'presentation', label: 'Présentation',   icon: '📋' },
-  { id: 'diagnostic',   label: 'Diagnostic',      icon: '🎯' },
-  { id: 'actions',      label: 'Plan d\'actions', icon: '📝' },
+  { id: 'presentation',   label: 'Présentation',     icon: '📋' },
+  { id: 'dashboard',      label: 'Tableau de bord',  icon: '📊' },
+  { id: 'diagnostic',     label: 'Diagnostic',        icon: '🎯' },
+  { id: 'actions',        label: 'Plan d\'actions',   icon: '📝' },
+  { id: 'correspondances', label: 'Correspondances',  icon: '🔗' },
 ]
 
 export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
@@ -921,7 +1230,7 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
     }).catch(e => console.error('[ecovadis/notes/sections]', e))
   }
 
-  const lockedTabs = !org || !diagnostic ? ['diagnostic', 'actions'] : []
+  const lockedTabs = !org || !diagnostic ? ['dashboard', 'diagnostic', 'actions'] : []
 
   if (loading && !diagnostic) {
     return <div className="flex justify-center items-center py-20 text-gray-400 text-sm animate-pulse">
@@ -963,6 +1272,14 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
 
       {/* Contenu des vues */}
       {view === 'presentation' && <PresentationView />}
+      {view === 'correspondances' && <CorrespondancesView />}
+      {view === 'dashboard' && org && diagnostic && (
+        <TableauDeBordView
+          reponses={reponses}
+          actions={actions}
+          score={diagnostic.score_global ?? calculateScore(Object.fromEntries(Object.entries(reponses).map(([k, v]) => [k, v.niveau])))}
+        />
+      )}
       {view === 'diagnostic' && org && diagnostic && (
         <DiagnosticView
           diagnostic={diagnostic}
