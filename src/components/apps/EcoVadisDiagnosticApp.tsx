@@ -1,7 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import type { RseContext } from '@/components/rse/RseAppShell'
+import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
+
+// GuidedActionNotePanel chargé en lazy — même pattern que les autres apps RSE
+const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
+  ssr: false,
+  loading: () => <div className="py-3 text-xs text-gray-400 animate-pulse">Chargement éditeur…</div>
+})
 
 // ─── Données statiques EcoVadis ───────────────────────────────────────────────
 
@@ -106,7 +114,7 @@ function getBadge(score: number) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'presentation' | 'diagnostic' | 'actions' | 'documents'
+type View = 'presentation' | 'diagnostic' | 'actions'
 
 interface DiagnosticData { id: string; annee: number; statut: string; score_global: number | null }
 interface Reponse { id?: string; critere_id: string; niveau: number; commentaire: string | null }
@@ -115,12 +123,6 @@ interface Action {
   priorite: 'haute' | 'moyenne' | 'basse'; statut: 'a_faire' | 'en_cours' | 'termine'
   echeance: string | null; responsable: string | null; created_at: string
 }
-interface EcoDoc {
-  id: string; critere_id: string | null; nom: string; description: string | null
-  type_doc: string | null; sp_item_id: string; size: number | null
-  annexe_index: number | null; url?: string
-}
-
 // ─── Helpers UI ───────────────────────────────────────────────────────────────
 
 const THEME_COLORS: Record<string, { ring: string; text: string; bg: string; bar: string }> = {
@@ -148,13 +150,6 @@ const STATUT_COLORS = {
 }
 const STATUT_LABELS = { a_faire: 'À faire', en_cours: 'En cours', termine: 'Terminé' }
 const PRIORITE_LABELS = { haute: '🔴 Haute', moyenne: '🟡 Moyenne', basse: '🟢 Basse' }
-
-function formatSize(bytes: number | null) {
-  if (!bytes) return ''
-  if (bytes < 1024) return `${bytes} o`
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} Ko`
-  return `${(bytes / 1048576).toFixed(1)} Mo`
-}
 
 function critereLabel(id: string): string {
   for (const t of ECOVADIS_THEMES) {
@@ -276,16 +271,19 @@ interface CriterePanelProps {
   critere: EcoCritere
   reponse: Reponse | null
   actions: Action[]
-  documents: EcoDoc[]
   diagnosticId: string
+  noteContent: string
+  noteSections: NoteSection[]
   onReponseChange: (critere_id: string, niveau: number, commentaire: string) => void
   onActionsChange: (actions: Action[]) => void
-  onDocumentsChange: (docs: EcoDoc[]) => void
+  onNoteChange: (critere_id: string, content: string) => void
+  onNoteSectionsChange: (critere_id: string, sections: NoteSection[]) => void
 }
 
 function CriterePanel({
-  theme, critere, reponse, actions, documents,
-  diagnosticId, onReponseChange, onActionsChange, onDocumentsChange,
+  theme, critere, reponse, actions,
+  diagnosticId, noteContent, noteSections,
+  onReponseChange, onActionsChange, onNoteChange, onNoteSectionsChange,
 }: CriterePanelProps) {
   const [niveau, setNiveau] = useState(reponse?.niveau ?? 0)
   const [commentaire, setCommentaire] = useState(reponse?.commentaire ?? '')
@@ -298,15 +296,8 @@ function CriterePanel({
   const [actionForm, setActionForm] = useState({ titre: '', description: '', priorite: 'moyenne', echeance: '', responsable: '' })
   const [savingAction, setSavingAction] = useState(false)
 
-  // Upload doc
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState('')
-  const [typeDoc, setTypeDoc] = useState('politique')
-
   const clr = THEME_COLORS[theme.id]
   const critereActions = actions.filter(a => a.critere_id === critere.id)
-  const critereDocs = documents.filter(d => d.critere_id === critere.id)
 
   // Sync niveau/commentaire si la réponse change de l'extérieur
   useEffect(() => {
@@ -369,90 +360,6 @@ function CriterePanel({
       const { data } = await res.json()
       onActionsChange(actions.map(a => a.id === action.id ? data : a))
     }
-  }
-
-  async function handleFileUpload(file: File) {
-    setUploading(true)
-    setUploadProgress('Préparation upload…')
-    try {
-      // 1. Upload session
-      const sessionRes = await fetch(`/api/ecovadis/${diagnosticId}/upload-session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name, size: file.size, critere_id: critere.id }),
-      })
-      if (!sessionRes.ok) throw new Error('Échec session upload')
-      const { uploadUrl, attachmentId, finalName, annexeIndex } = await sessionRes.json()
-
-      // 2. Upload direct navigateur → SharePoint (aucun transit Vercel)
-      setUploadProgress('Upload vers SharePoint…')
-      const CHUNK_SIZE = 10 * 1024 * 1024 // 10 MB
-      let spItemId = ''
-
-      if (file.size <= CHUNK_SIZE) {
-        const upRes = await fetch(uploadUrl, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': file.type || 'application/octet-stream',
-            'Content-Range': `bytes 0-${file.size - 1}/${file.size}`,
-          },
-          body: file,
-        })
-        if (!upRes.ok) throw new Error('Échec upload SharePoint')
-        const upJson = await upRes.json() as { id?: string }
-        spItemId = upJson.id ?? ''
-      } else {
-        let offset = 0
-        while (offset < file.size) {
-          const chunk = file.slice(offset, Math.min(offset + CHUNK_SIZE, file.size))
-          const end = Math.min(offset + CHUNK_SIZE, file.size) - 1
-          setUploadProgress(`Upload ${Math.round((offset / file.size) * 100)}%…`)
-          const upRes = await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: {
-              'Content-Length': String(chunk.size),
-              'Content-Range': `bytes ${offset}-${end}/${file.size}`,
-            },
-            body: chunk,
-          })
-          if (!upRes.ok && upRes.status !== 202) throw new Error('Échec chunk upload')
-          if (upRes.status !== 202) {
-            const upJson = await upRes.json() as { id?: string }
-            spItemId = upJson.id ?? ''
-          }
-          offset += CHUNK_SIZE
-        }
-      }
-
-      // 3. Confirm — stocke les métadonnées
-      setUploadProgress('Finalisation…')
-      const confirmRes = await fetch(`/api/ecovadis/${diagnosticId}/upload-confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          critere_id: critere.id, attachmentId, spItemId,
-          name: finalName, mime: file.type, size: file.size,
-          type_doc: typeDoc, annexeIndex,
-        }),
-      })
-      if (confirmRes.ok) {
-        const { data } = await confirmRes.json()
-        onDocumentsChange([...documents, data])
-      }
-    } catch (e) {
-      console.error('[ecovadis/upload]', e)
-      alert('Échec de l\'upload : ' + String(e))
-    } finally {
-      setUploading(false)
-      setUploadProgress('')
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
-  async function deleteDoc(doc: EcoDoc) {
-    if (!confirm(`Supprimer "${doc.nom}" ?`)) return
-    const res = await fetch(`/api/ecovadis/${diagnosticId}/documents?doc_id=${doc.id}`, { method: 'DELETE' })
-    if (res.ok) onDocumentsChange(documents.filter(d => d.id !== doc.id))
   }
 
   const niv = NIVEAUX[niveau]
@@ -586,61 +493,18 @@ function CriterePanel({
         </div>
       </div>
 
-      {/* Documents & Preuves */}
-      <div className={card('p-4 space-y-3')}>
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            📂 Documents & Preuves
-            {critereDocs.length > 0 && (
-              <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded-full font-medium">{critereDocs.length}</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <select value={typeDoc} onChange={e => setTypeDoc(e.target.value)}
-              className="text-xs border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
-              <option value="politique">Politique</option>
-              <option value="rapport">Rapport</option>
-              <option value="certificat">Certificat</option>
-              <option value="procedure">Procédure</option>
-              <option value="autre">Autre</option>
-            </select>
-            <input ref={fileRef} type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f) }} />
-            <button onClick={() => fileRef.current?.click()} disabled={uploading} className={btnP('text-xs py-1.5')}>
-              {uploading ? <span className="animate-spin">⟳</span> : '+ Preuve'}
-            </button>
-          </div>
-        </div>
-
-        {uploading && uploadProgress && (
-          <div className="text-xs text-blue-600 dark:text-blue-400 animate-pulse px-2">{uploadProgress}</div>
-        )}
-        <p className="text-[10px] text-gray-400">Fichiers stockés directement dans SharePoint — aucun transit par les serveurs</p>
-
-        {critereDocs.length === 0 && !uploading && (
-          <p className="text-xs text-gray-400 text-center py-3">Aucune preuve uploadée pour ce critère</p>
-        )}
-
-        <div className="space-y-1.5">
-          {critereDocs.map(d => (
-            <div key={d.id} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-100 dark:border-gray-700">
-              <span className="text-sm flex-shrink-0">📄</span>
-              <div className="flex-1 min-w-0">
-                {d.url ? (
-                  <a href={d.url} target="_blank" rel="noopener noreferrer"
-                    className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline truncate block">{d.nom}</a>
-                ) : (
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate block">{d.nom}</span>
-                )}
-                <div className="text-[9px] text-gray-400 flex items-center gap-2">
-                  {d.type_doc && <span className="capitalize">{d.type_doc}</span>}
-                  {d.size && <span>{formatSize(d.size)}</span>}
-                </div>
-              </div>
-              <button onClick={() => deleteDoc(d)} className="text-gray-300 hover:text-red-400 text-xs flex-shrink-0">✕</button>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Notes & documents — même module que les autres apps RSE */}
+      <GuidedActionNotePanel
+        diagnosticId={diagnosticId}
+        actionKey={critere.id}
+        apiBase="/api/ecovadis"
+        noteTable="ecovadis_notes"
+        readOnly={false}
+        note={noteContent}
+        onNoteChange={v => onNoteChange(critere.id, v)}
+        initialSections={noteSections}
+        onSectionsChange={s => onNoteSectionsChange(critere.id, s)}
+      />
     </div>
   )
 }
@@ -651,13 +515,15 @@ interface DiagViewProps {
   diagnostic: DiagnosticData
   reponses: Record<string, Reponse>
   actions: Action[]
-  documents: EcoDoc[]
+  notes: Record<string, string>
+  noteSections: Record<string, NoteSection[]>
   onReponseChange: (critere_id: string, niveau: number, commentaire: string) => void
   onActionsChange: (a: Action[]) => void
-  onDocumentsChange: (d: EcoDoc[]) => void
+  onNoteChange: (critere_id: string, v: string) => void
+  onNoteSectionsChange: (critere_id: string, s: NoteSection[]) => void
 }
 
-function DiagnosticView({ diagnostic, reponses, actions, documents, onReponseChange, onActionsChange, onDocumentsChange }: DiagViewProps) {
+function DiagnosticView({ diagnostic, reponses, actions, notes, noteSections, onReponseChange, onActionsChange, onNoteChange, onNoteSectionsChange }: DiagViewProps) {
   const [activeTheme, setActiveTheme] = useState(ECOVADIS_THEMES[0].id)
   const [activeCritere, setActiveCritere] = useState<string | null>(ECOVADIS_THEMES[0].criteres[0].id)
 
@@ -768,11 +634,13 @@ function DiagnosticView({ diagnostic, reponses, actions, documents, onReponseCha
                 critere={critere}
                 reponse={reponses[activeCritere] ?? null}
                 actions={actions}
-                documents={documents}
                 diagnosticId={diagnostic.id}
+                noteContent={notes[activeCritere] ?? ''}
+                noteSections={noteSections[activeCritere] ?? []}
                 onReponseChange={onReponseChange}
                 onActionsChange={onActionsChange}
-                onDocumentsChange={onDocumentsChange}
+                onNoteChange={onNoteChange}
+                onNoteSectionsChange={onNoteSectionsChange}
               />
             )
           })() : (
@@ -930,103 +798,14 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
   )
 }
 
-// ─── Vue Documents ────────────────────────────────────────────────────────────
 
-function DocumentsView({ diagnostic, documents, onDocumentsChange }: { diagnostic: DiagnosticData; documents: EcoDoc[]; onDocumentsChange: (d: EcoDoc[]) => void }) {
-  const [docsWithUrls, setDocsWithUrls] = useState<EcoDoc[]>(documents)
-  const [loading, setLoading] = useState(false)
-  const [filterTheme, setFilterTheme] = useState('all')
-
-  useEffect(() => {
-    if (!diagnostic.id) return
-    setLoading(true)
-    fetch(`/api/ecovadis/${diagnostic.id}/documents`)
-      .then(r => r.json())
-      .then(({ data }) => { if (data) setDocsWithUrls(data); onDocumentsChange(data ?? []) })
-      .finally(() => setLoading(false))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diagnostic.id])
-
-  const filtered = docsWithUrls.filter(d => {
-    if (filterTheme === 'all') return true
-    const theme = ECOVADIS_THEMES.find(t => t.criteres.some(c => c.id === d.critere_id))
-    return theme?.id === filterTheme
-  })
-
-  async function deleteDoc(doc: EcoDoc) {
-    if (!confirm(`Supprimer "${doc.nom}" ?`)) return
-    const res = await fetch(`/api/ecovadis/${diagnostic.id}/documents?doc_id=${doc.id}`, { method: 'DELETE' })
-    if (res.ok) {
-      const upd = docsWithUrls.filter(d => d.id !== doc.id)
-      setDocsWithUrls(upd)
-      onDocumentsChange(upd)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          {docsWithUrls.length} document{docsWithUrls.length !== 1 ? 's' : ''} stockés dans SharePoint
-        </div>
-        <select value={filterTheme} onChange={e => setFilterTheme(e.target.value)}
-          className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 dark:bg-gray-700 dark:text-white focus:outline-none">
-          <option value="all">Tous les thèmes</option>
-          {ECOVADIS_THEMES.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
-        </select>
-      </div>
-
-      {loading && <div className="text-center py-8 text-gray-400 text-sm animate-pulse">Chargement des URLs SharePoint…</div>}
-
-      {!loading && filtered.length === 0 && (
-        <div className={card('p-8 text-center')}>
-          <p className="text-gray-400 text-sm">Aucun document — uploadez vos preuves depuis chaque critère dans la vue Diagnostic</p>
-        </div>
-      )}
-
-      <div className="space-y-2">
-        {filtered.map(d => {
-          const theme = ECOVADIS_THEMES.find(t => t.criteres.some(c => c.id === d.critere_id))
-          const critere = theme?.criteres.find(c => c.id === d.critere_id)
-          return (
-            <div key={d.id} className={card('p-4 flex items-center gap-3')}>
-              <div className="text-2xl flex-shrink-0">📄</div>
-              <div className="flex-1 min-w-0">
-                {d.url ? (
-                  <a href={d.url} target="_blank" rel="noopener noreferrer"
-                    className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline truncate block">{d.nom}</a>
-                ) : (
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate block">{d.nom}</span>
-                )}
-                <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
-                  {theme && <span>{theme.icon} {critere?.label ?? d.critere_id}</span>}
-                  {d.type_doc && <span className="capitalize">· {d.type_doc}</span>}
-                  {d.size && <span>· {formatSize(d.size)}</span>}
-                  {d.annexe_index && <span>· A{String(d.annexe_index).padStart(3, '0')}</span>}
-                </div>
-              </div>
-              {d.url && (
-                <a href={d.url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-gray-400 hover:text-blue-500 flex-shrink-0 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 hover:border-blue-400 transition-colors">
-                  ⬇ Télécharger
-                </a>
-              )}
-              <button onClick={() => deleteDoc(d)} className="text-gray-300 hover:text-red-400 text-sm flex-shrink-0">✕</button>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
-  { id: 'presentation', label: 'Présentation',     icon: '📋' },
-  { id: 'diagnostic',   label: 'Diagnostic',        icon: '🎯' },
-  { id: 'actions',      label: 'Plan d\'actions',   icon: '📝' },
-  { id: 'documents',    label: 'Documents & Preuves', icon: '📂' },
+  { id: 'presentation', label: 'Présentation',   icon: '📋' },
+  { id: 'diagnostic',   label: 'Diagnostic',      icon: '🎯' },
+  { id: 'actions',      label: 'Plan d\'actions', icon: '📝' },
 ]
 
 export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
@@ -1035,7 +814,8 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [diagnostic, setDiagnostic] = useState<DiagnosticData | null>(null)
   const [reponses, setReponses] = useState<Record<string, Reponse>>({})
   const [actions, setActions] = useState<Action[]>([])
-  const [documents, setDocuments] = useState<EcoDoc[]>([])
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [noteSections, setNoteSections] = useState<Record<string, NoteSection[]>>({})
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(false)
 
@@ -1064,16 +844,19 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
         setDiagnostic(existingDiag)
       }
 
-      // Charger réponses + actions + documents
-      const [repRes, actRes] = await Promise.all([
+      // Charger réponses + actions + notes
+      const [repRes, actRes, notesRes] = await Promise.all([
         fetch(`/api/ecovadis/${diagId}/reponses`),
         fetch(`/api/ecovadis/${diagId}/actions`),
+        fetch(`/api/ecovadis/${diagId}/notes`),
       ])
-      const [{ data: repData }, { data: actData }] = await Promise.all([repRes.json(), actRes.json()])
+      const [{ data: repData }, { data: actData }, notesJson] = await Promise.all([repRes.json(), actRes.json(), notesRes.json()])
       const repMap: Record<string, Reponse> = {}
       for (const r of (repData ?? [])) repMap[r.critere_id] = r
       setReponses(repMap)
       setActions(actData ?? [])
+      setNotes((notesJson?.data?.notes as Record<string, string>) ?? {})
+      setNoteSections((notesJson?.data?.sections as Record<string, NoteSection[]>) ?? {})
     } finally {
       setLoading(false)
     }
@@ -1118,7 +901,27 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
     }, 100)
   }
 
-  const lockedTabs = !org || !diagnostic ? ['diagnostic', 'actions', 'documents'] : []
+  function handleNoteChange(critere_id: string, content: string) {
+    setNotes(prev => ({ ...prev, [critere_id]: content }))
+    if (!diagnostic) return
+    fetch(`/api/ecovadis/${diagnostic.id}/notes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action_key: critere_id, content }),
+    }).catch(e => console.error('[ecovadis/notes]', e))
+  }
+
+  function handleNoteSectionsChange(critere_id: string, sections: NoteSection[]) {
+    setNoteSections(prev => ({ ...prev, [critere_id]: sections }))
+    if (!diagnostic) return
+    fetch(`/api/ecovadis/${diagnostic.id}/notes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action_key: critere_id, sections }),
+    }).catch(e => console.error('[ecovadis/notes/sections]', e))
+  }
+
+  const lockedTabs = !org || !diagnostic ? ['diagnostic', 'actions'] : []
 
   if (loading && !diagnostic) {
     return <div className="flex justify-center items-center py-20 text-gray-400 text-sm animate-pulse">
@@ -1165,17 +968,16 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
           diagnostic={diagnostic}
           reponses={reponses}
           actions={actions}
-          documents={documents}
+          notes={notes}
+          noteSections={noteSections}
           onReponseChange={handleReponseChange}
           onActionsChange={setActions}
-          onDocumentsChange={setDocuments}
+          onNoteChange={handleNoteChange}
+          onNoteSectionsChange={handleNoteSectionsChange}
         />
       )}
       {view === 'actions' && diagnostic && (
         <ActionsView diagnostic={diagnostic} actions={actions} onActionsChange={setActions} />
-      )}
-      {view === 'documents' && diagnostic && (
-        <DocumentsView diagnostic={diagnostic} documents={documents} onDocumentsChange={setDocuments} />
       )}
     </div>
   )
