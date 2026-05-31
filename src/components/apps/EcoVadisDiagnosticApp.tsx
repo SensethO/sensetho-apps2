@@ -472,7 +472,7 @@ function CriterePanel({
                   ? `border-[${n.color}] ${n.bg} ring-2 ring-offset-1`
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
               }`}
-              style={{ borderColor: niveau === n.value ? n.color : undefined, ringColor: n.color }}
+              style={{ borderColor: niveau === n.value ? n.color : undefined, outlineColor: n.color }}
             >
               <div className="text-lg font-bold" style={{ color: n.color }}>{n.shortLabel}</div>
               <div className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mt-0.5">{n.label}</div>
