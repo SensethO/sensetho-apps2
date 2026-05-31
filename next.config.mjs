@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['postgres', 'pg'],
+    serverComponentsExternalPackages: ['postgres', 'pg', 'exceljs'],
   },
 };
 
