@@ -13,13 +13,14 @@ interface SidebarProps {
   categories: AppCategory[]
   ticketCount?: number
   quoteCount?: number
+  agriCrmUnread?: number
   profile?: Profile | null
   isAdmin?: boolean
   onSignOut?: () => void
   onNavigate?: () => void
 }
 
-export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteCount = 0, profile, isAdmin, onSignOut, onNavigate }: SidebarProps) {
+export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteCount = 0, agriCrmUnread = 0, profile, isAdmin, onSignOut, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
   const { favoriteIds, toggleFavorite, isFavorite } = useFavorites(profile?.id ?? null)
@@ -133,6 +134,7 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
                     badge={
                       app.route === '/admin/tickets' && ticketCount > 0 ? ticketCount
                       : app.route === '/admin/quotes' && quoteCount > 0 ? quoteCount
+                      : app.route?.includes('agri-tracker') && agriCrmUnread > 0 ? agriCrmUnread
                       : undefined
                     }
                   />

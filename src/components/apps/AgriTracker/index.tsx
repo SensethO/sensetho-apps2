@@ -3207,7 +3207,7 @@ function AcheteurDrillDown({
 
 // ─── AcheteurView ──────────────────────────────────────────────────────────────
 
-type AcheteurViewTab = 'cafe' | 'cacao' | 'plantations' | 'cours'
+type AcheteurViewTab = 'cafe' | 'cacao' | 'plantations' | 'cours' | 'crm'
 
 function AcheteurView({ isAdmin = false, userId }: { isAdmin?: boolean; userId: string }) {
   const [plantations, setPlantations] = useState<Plantation[]>([])
@@ -3215,6 +3215,7 @@ function AcheteurView({ isAdmin = false, userId }: { isAdmin?: boolean; userId: 
   const [selected, setSelected] = useState<Plantation | null>(null)
   const [viewTab, setViewTab] = useState<AcheteurViewTab>('cafe')
   const [showTuto, setShowTuto] = useState(false)
+  const [crmUnread, setCrmUnread] = useState(0)
 
   // ── Données Café ──────────────────────────────────────────────────────────
   const [cafeData, setCafeData] = useState<{
@@ -3300,11 +3301,12 @@ function AcheteurView({ isAdmin = false, userId }: { isAdmin?: boolean; userId: 
     return <AcheteurDrillDown plantation={selected} onBack={() => setSelected(null)} userId={userId} isAdmin={isAdmin} />
   }
 
-  const viewTabs: { key: AcheteurViewTab; label: string; icon: string }[] = [
+  const viewTabs: { key: AcheteurViewTab; label: string; icon: string; badge?: number }[] = [
     { key: 'cafe',        label: 'Café',           icon: '☕' },
     { key: 'cacao',       label: 'Cacao',          icon: '🍫' },
     { key: 'plantations', label: 'Plantations',    icon: '🌿' },
     { key: 'cours',       label: 'Cours Londres',  icon: '📈' },
+    { key: 'crm',         label: 'CRM',            icon: '💬', badge: crmUnread },
   ]
 
   return (
@@ -3312,7 +3314,25 @@ function AcheteurView({ isAdmin = false, userId }: { isAdmin?: boolean; userId: 
       {showTuto && <TutoModal defaultRole="acheteur" solo onClose={() => setShowTuto(false)} />}
 
       <div className="flex items-center gap-2">
-        <div className="flex-1"><TabBar tabs={viewTabs} active={viewTab} onChange={setViewTab} /></div>
+        <div className="flex-1">
+          <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+            {viewTabs.map(t => (
+              <button key={t.key} onClick={() => setViewTab(t.key)}
+                className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition ${
+                  viewTab === t.key
+                    ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}>
+                <span>{t.icon}</span>{t.label}
+                {t.badge != null && t.badge > 0 && (
+                  <span className="absolute -top-0.5 right-0 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
+                    {t.badge > 9 ? '9+' : t.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
         <button
           onClick={() => setShowTuto(true)}
           className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors text-sm font-bold flex items-center justify-center"
@@ -3432,6 +3452,19 @@ function AcheteurView({ isAdmin = false, userId }: { isAdmin?: boolean; userId: 
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── Onglet CRM global ─────────────────────────────────────────────── */}
+      {viewTab === 'crm' && (
+        <div className="space-y-3">
+          <h3 className="font-semibold text-gray-900 dark:text-white">💬 Mes conversations</h3>
+          <MessagesTabAcheteur
+            plantationId=""
+            currentUserId={userId}
+            isAdmin={isAdmin}
+            onUnreadChange={setCrmUnread}
+          />
         </div>
       )}
     </div>

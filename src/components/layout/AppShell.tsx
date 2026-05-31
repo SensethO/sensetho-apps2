@@ -9,6 +9,7 @@ import Footer from './Footer'
 import { useAuth } from '@/hooks/useAuth'
 import { useApps } from '@/hooks/useApps'
 import { useAdminNotifications } from '@/hooks/useAdminNotifications'
+import { useAgriCrmUnread } from '@/hooks/useAgriCrmUnread'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -18,6 +19,7 @@ export default function AppShell({ children }: AppShellProps) {
   const { profile, isAdmin, signOut } = useAuth()
   const { categories } = useApps(isAdmin)
   const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
+  const agriCrmUnread = useAgriCrmUnread()
 
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -53,6 +55,7 @@ export default function AppShell({ children }: AppShellProps) {
           categories={categories}
           ticketCount={ticketCount}
           quoteCount={quoteCount}
+          agriCrmUnread={agriCrmUnread}
           profile={profile}
           isAdmin={isAdmin}
           onSignOut={signOut}
@@ -77,6 +80,7 @@ export default function AppShell({ children }: AppShellProps) {
                 categories={categories}
                 ticketCount={ticketCount}
                 quoteCount={quoteCount}
+                agriCrmUnread={agriCrmUnread}
                 profile={profile}
                 isAdmin={isAdmin}
                 onSignOut={signOut}

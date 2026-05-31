@@ -5,11 +5,13 @@ import Icon from '@/components/ui/Icon'
 import { useAuth } from '@/hooks/useAuth'
 import { useApps } from '@/hooks/useApps'
 import { useFavorites } from '@/hooks/useFavorites'
+import { useAgriCrmUnread } from '@/hooks/useAgriCrmUnread'
 
 export default function FavoritesBoard() {
   const { profile, isAdmin } = useAuth()
   const { categories } = useApps(isAdmin)
   const { favoriteIds, toggleFavorite, isFavorite } = useFavorites(profile?.id ?? null)
+  const agriCrmUnread = useAgriCrmUnread()
 
   // Catégories filtrées aux apps favorites, dans l'ordre du menu
   const favCategories = categories
@@ -55,23 +57,37 @@ export default function FavoritesBoard() {
 
           {/* Cartes d'applications */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {cat.apps.map(app => (
+            {cat.apps.map(app => {
+              const appBadge = app.route?.includes('agri-tracker') && agriCrmUnread > 0 ? agriCrmUnread : 0
+              return (
               <div key={app.id} className="group relative">
                 <Link
                   href={app.route}
                   className="flex items-center gap-3 p-4 rounded-xl border transition-all hover:shadow-md hover:-translate-y-0.5 block"
                   style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
                 >
-                  {/* Icône */}
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: 'rgba(99,102,241,0.12)', color: 'var(--accent, #6366f1)' }}>
-                    <Icon name={app.icon} size={20} />
+                  {/* Icône avec badge */}
+                  <div className="relative w-10 h-10 flex-shrink-0">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                      style={{ backgroundColor: 'rgba(99,102,241,0.12)', color: 'var(--accent, #6366f1)' }}>
+                      <Icon name={app.icon} size={20} />
+                    </div>
+                    {appBadge > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                        {appBadge > 9 ? '9+' : appBadge}
+                      </span>
+                    )}
                   </div>
 
                   {/* Nom + description */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
                       {app.name}
+                      {appBadge > 0 && (
+                        <span className="ml-2 text-[10px] bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-full font-medium">
+                          {appBadge} nouveau{appBadge > 1 ? 'x' : ''}
+                        </span>
+                      )}
                     </p>
                     {app.description && (
                       <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -94,7 +110,7 @@ export default function FavoritesBoard() {
                   <Icon name={isFavorite(app.id) ? 'starFilled' : 'star'} size={14} />
                 </button>
               </div>
-            ))}
+            )})}
           </div>
         </section>
       ))}
