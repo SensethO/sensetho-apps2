@@ -1184,8 +1184,11 @@ const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: 'correspondances', label: 'Correspondances',  icon: '🔗' },
 ]
 
+interface EcoShare { id: string; permission: string; shared_with_user_id: string; profiles: { email: string; full_name: string | null } }
+interface EcoAnnexe { id: string; nom: string; critere_id: string | null; type_doc: string | null; size: number | null; annexe_index: number | null; url?: string }
+
 export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
-  const { org, year } = ctx
+  const { org, year, setActions: setHeaderActions } = ctx
   const [view, setView] = useState<View>('presentation')
   const [diagnostic, setDiagnostic] = useState<DiagnosticData | null>(null)
   const [reponses, setReponses] = useState<Record<string, Reponse>>({})
@@ -1194,6 +1197,16 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [noteSections, setNoteSections] = useState<Record<string, NoteSection[]>>({})
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(false)
+  const [exportingExcel, setExportingExcel] = useState(false)
+  const [showAnnexes, setShowAnnexes] = useState(false)
+  const [showShare, setShowShare] = useState(false)
+  const [annexes, setAnnexes] = useState<EcoAnnexe[]>([])
+  const [annexesLoading, setAnnexesLoading] = useState(false)
+  const [shares, setShares] = useState<EcoShare[]>([])
+  const [shareEmail, setShareEmail] = useState('')
+  const [sharePermission, setSharePermission] = useState<'read'|'edit'>('read')
+  const [shareSaving, setShareSaving] = useState(false)
+  const [shareError, setShareError] = useState('')
 
   const load = useCallback(async () => {
     if (!org || !year) return
@@ -1297,6 +1310,92 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
     }).catch(e => console.error('[ecovadis/notes/sections]', e))
   }
 
+  // ── Handlers Export/Partage ───────────────────────────────────────────────
+  async function handleExportExcel() {
+    if (!diagnostic) return
+    setExportingExcel(true)
+    try {
+      const res = await fetch(`/api/ecovadis/${diagnostic.id}/export-excel`)
+      if (!res.ok) throw new Error('Échec export')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `EcoVadis_${org?.nom ?? 'diagnostic'}_${year}.xlsx`; a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { alert('Erreur export Excel : ' + String(e)) }
+    finally { setExportingExcel(false) }
+  }
+
+  function handleExportPDF() {
+    window.print()
+  }
+
+  async function handleOpenAnnexes() {
+    if (!diagnostic) return
+    setShowAnnexes(true)
+    setAnnexesLoading(true)
+    try {
+      const res = await fetch(`/api/ecovadis/${diagnostic.id}/documents`)
+      const { data } = await res.json()
+      setAnnexes(data ?? [])
+    } finally { setAnnexesLoading(false) }
+  }
+
+  async function handleOpenShare() {
+    if (!diagnostic) return
+    setShowShare(true)
+    const res = await fetch(`/api/ecovadis/${diagnostic.id}/shares`)
+    const { data } = await res.json()
+    setShares(data ?? [])
+  }
+
+  async function handleAddShare() {
+    if (!diagnostic || !shareEmail.trim()) return
+    setShareSaving(true); setShareError('')
+    try {
+      const res = await fetch(`/api/ecovadis/${diagnostic.id}/shares`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: shareEmail.trim(), permission: sharePermission }),
+      })
+      const j = await res.json()
+      if (!res.ok) { setShareError(j.error ?? 'Erreur'); return }
+      setShares(prev => [...prev.filter(s => s.shared_with_user_id !== j.data.shared_with_user_id), j.data])
+      setShareEmail('')
+    } finally { setShareSaving(false) }
+  }
+
+  async function handleRemoveShare(shareId: string) {
+    if (!diagnostic) return
+    await fetch(`/api/ecovadis/${diagnostic.id}/shares?share_id=${shareId}`, { method: 'DELETE' })
+    setShares(prev => prev.filter(s => s.id !== shareId))
+  }
+
+  // ── Boutons injectés dans le header RseAppShell ───────────────────────────
+  useEffect(() => {
+    if (!diagnostic) { setHeaderActions(null); return }
+    setHeaderActions(
+      <div className="flex items-center gap-2">
+        <button onClick={handleExportExcel} disabled={exportingExcel}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
+          {exportingExcel ? '⟳' : '⬇'} Excel
+        </button>
+        <button onClick={handleExportPDF}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+          📄 PDF
+        </button>
+        <button onClick={handleOpenAnnexes}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+          📎 Annexes
+        </button>
+        <button onClick={handleOpenShare}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition-colors">
+          👥 Partager
+        </button>
+      </div>
+    )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagnostic, exportingExcel])
+
   const lockedTabs = !org || !diagnostic ? ['dashboard', 'diagnostic', 'actions'] : []
 
   if (loading && !diagnostic) {
@@ -1307,6 +1406,108 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
 
   return (
     <div className="space-y-4">
+
+      {/* ── Modale Annexes ──────────────────────────────────────────────────── */}
+      {showAnnexes && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setShowAnnexes(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="font-bold text-gray-900 dark:text-white">📎 Annexes & Pièces jointes</h2>
+              <button onClick={() => setShowAnnexes(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {annexesLoading && <div className="text-center py-8 text-gray-400 text-sm animate-pulse">Chargement…</div>}
+              {!annexesLoading && annexes.length === 0 && (
+                <p className="text-center py-8 text-gray-400 text-sm">Aucune pièce jointe — uploadez des documents depuis le Diagnostic</p>
+              )}
+              <div className="space-y-2">
+                {annexes.map(d => {
+                  const theme = ECOVADIS_THEMES.find(t => t.criteres.some(c => c.id === d.critere_id))
+                  const critere = theme?.criteres.find(c => c.id === d.critere_id)
+                  const sizeKo = d.size ? `${Math.round(d.size / 1024)} Ko` : ''
+                  return (
+                    <div key={d.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs font-bold text-blue-600 dark:text-blue-400 w-10 text-center flex-shrink-0">
+                        {d.annexe_index ? `A${String(d.annexe_index).padStart(3,'0')}` : '—'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{d.nom}</div>
+                        <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                          {theme && <span>{theme.icon} {critere?.label ?? d.critere_id}</span>}
+                          {d.type_doc && <span>· {d.type_doc}</span>}
+                          {sizeKo && <span>· {sizeKo}</span>}
+                        </div>
+                      </div>
+                      {d.url ? (
+                        <a href={d.url} target="_blank" rel="noopener noreferrer" download={d.nom}
+                          className="text-xs px-2 py-1 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0">
+                          ⬇
+                        </a>
+                      ) : (
+                        <span className="text-xs text-gray-400 flex-shrink-0">URL indisponible</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs text-gray-400">Téléchargement direct depuis SharePoint — zéro transit serveur</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modale Partage ──────────────────────────────────────────────────── */}
+      {showShare && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setShowShare(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="font-bold text-gray-900 dark:text-white">👥 Partager le diagnostic</h2>
+              <button onClick={() => setShowShare(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Ajouter un partage */}
+              <div className="space-y-2">
+                <label className={labelCls()}>Email de l&apos;utilisateur</label>
+                <div className="flex gap-2">
+                  <input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="prenom.nom@example.com"
+                    className={`${inputCls()} flex-1`}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddShare() }} />
+                  <select value={sharePermission} onChange={e => setSharePermission(e.target.value as 'read'|'edit')}
+                    className={`${inputCls()} w-24`}>
+                    <option value="read">Lecture</option>
+                    <option value="edit">Édition</option>
+                  </select>
+                </div>
+                {shareError && <p className="text-xs text-red-500">{shareError}</p>}
+                <button onClick={handleAddShare} disabled={shareSaving || !shareEmail.trim()}
+                  className={btnP('w-full text-center')}>
+                  {shareSaving ? 'Partage en cours…' : '+ Partager'}
+                </button>
+              </div>
+
+              {/* Liste des partages */}
+              {shares.length > 0 && (
+                <div className="space-y-2">
+                  <div className={labelCls()}>Partagé avec</div>
+                  {shares.map(s => (
+                    <div key={s.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900/30 rounded-lg">
+                      <div>
+                        <div className="text-xs font-medium text-gray-900 dark:text-white">{s.profiles?.full_name ?? s.profiles?.email}</div>
+                        <div className="text-[10px] text-gray-400">{s.profiles?.email} · {s.permission === 'edit' ? 'Édition' : 'Lecture seule'}</div>
+                      </div>
+                      <button onClick={() => handleRemoveShare(s.id)} className="text-gray-300 hover:text-red-400 text-xs">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {shares.length === 0 && <p className="text-xs text-gray-400 text-center py-2">Non partagé pour l&apos;instant</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Score dans le header */}
       {diagnostic && (
         <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 justify-end">
