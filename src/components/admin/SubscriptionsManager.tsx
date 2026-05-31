@@ -180,12 +180,15 @@ export default function SubscriptionsManager() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-slate-700">
-              {filtered.map(sub => (
+              {filtered.map(sub => {
+                // Fallback : si le join PostgREST n'a pas résolu le profil, on cherche dans la liste admin
+                const resolvedProfile = sub.profile ?? users.find(u => u.id === sub.user_id)
+                return (
                 <tr key={sub.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/50">
                   <td className="px-4 py-3">
                     <div>
-                      <p className="font-medium text-gray-900 dark:text-slate-100 text-xs">{sub.profile?.full_name ?? '—'}</p>
-                      <p className="text-gray-400 dark:text-slate-500 text-[11px]">{sub.profile?.email}</p>
+                      <p className="font-medium text-gray-900 dark:text-slate-100 text-xs">{resolvedProfile?.full_name ?? resolvedProfile?.email?.split('@')[0] ?? '—'}</p>
+                      <p className="text-gray-400 dark:text-slate-500 text-[11px]">{resolvedProfile?.email}</p>
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -225,7 +228,7 @@ export default function SubscriptionsManager() {
                     )}
                   </td>
                 </tr>
-              ))}
+              )})}
               {filtered.length === 0 && (
                 <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">Aucun abonnement</td></tr>
               )}
