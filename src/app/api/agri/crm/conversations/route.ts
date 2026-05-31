@@ -112,6 +112,47 @@ export async function GET(req: Request) {
             unread_count: unread,
           })
         }
+
+        // Compléter avec les paires (plantation, acheteur) de acces_acheteurs sans messages
+        // → permet à l'admin de voir et initier une conv même après archivage
+        const { data: allAccesses } = await svc
+          .from('acces_acheteurs')
+          .select('acheteur_user_id, plantation_id')
+          .in('plantation_id', plantationIds)
+        const existingAcheteurIdSet = new Set(acheteurIds)
+        const newAcheteurIds = Array.from(new Set(
+          (allAccesses ?? [])
+            .map((a: { acheteur_user_id: string }) => a.acheteur_user_id)
+            .filter((id: string) => !existingAcheteurIdSet.has(id))
+        ))
+        let allAcheteurProfiles = acheteurProfiles ?? []
+        if (newAcheteurIds.length) {
+          const { data: extra } = await svc.from('profiles').select('id, email, full_name').in('id', newAcheteurIds)
+          allAcheteurProfiles = [...allAcheteurProfiles, ...(extra ?? [])]
+        }
+        for (const access of (allAccesses ?? []) as Array<{ acheteur_user_id: string; plantation_id: string }>) {
+          const key = `${access.plantation_id}__${access.acheteur_user_id}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          const p = (plantations ?? []).find((pl: { id: string }) => pl.id === access.plantation_id) as { id: string; nom: string; pays_nom: string; user_id: string } | undefined
+          const planteur = (planteurProfiles ?? []).find((pr: { id: string }) => pr.id === p?.user_id) as { email?: string; full_name?: string } | undefined
+          const acheteur = allAcheteurProfiles.find((pr: { id: string }) => pr.id === access.acheteur_user_id) as { email?: string; full_name?: string } | undefined
+          const champ = (champs ?? []).find((c: { plantation_id: string }) => c.plantation_id === access.plantation_id) as { produit_faostat?: string } | undefined
+          conversations.push({
+            plantation_id: access.plantation_id,
+            plantation_nom: p?.nom ?? '',
+            pays_nom: p?.pays_nom ?? '',
+            main_culture: champ?.produit_faostat ?? null,
+            planteur_nom: (planteur?.full_name ?? planteur?.email ?? 'Planteur').split('@')[0],
+            planteur_email: planteur?.email ?? '',
+            acheteur_user_id: access.acheteur_user_id,
+            acheteur_nom: (acheteur?.full_name ?? acheteur?.email ?? 'Acheteur').split('@')[0],
+            last_message: null,
+            last_message_at: null,
+            unread_count: 0,
+          })
+        }
+
         return NextResponse.json({ conversations })
       }
 
@@ -177,7 +218,7 @@ export async function GET(req: Request) {
         ? await svc.from('profiles').select('id, email, full_name').in('id', acheteurIds)
         : { data: [] }
 
-      // 4. Grouper par acheteur + plantation
+      // 4. Grouper par acheteur + plantation (messages existants)
       const seen = new Set<string>()
       const conversations: unknown[] = []
       for (const m of (allMessages ?? []) as Array<{ plantation_id: string; acheteur_user_id: string; content: string; created_at: string; lu_par: string[]; sender_user_id: string }>) {
@@ -198,6 +239,42 @@ export async function GET(req: Request) {
           last_message: m.content,
           last_message_at: m.created_at,
           unread_count: unread,
+        })
+      }
+
+      // 5. Compléter avec les acheteurs autorisés sans messages (acces_acheteurs)
+      // → planteur peut initier/re-initier une conv même après archivage
+      const { data: allAccesses } = await svc
+        .from('acces_acheteurs')
+        .select('acheteur_user_id, plantation_id')
+        .in('plantation_id', plantationIds)
+      const knownIds = new Set(acheteurIds)
+      const missingIds = Array.from(new Set(
+        (allAccesses ?? [])
+          .map((a: { acheteur_user_id: string }) => a.acheteur_user_id)
+          .filter((id: string) => !knownIds.has(id))
+      ))
+      let allProfiles = profiles ?? []
+      if (missingIds.length) {
+        const { data: extra } = await svc.from('profiles').select('id, email, full_name').in('id', missingIds)
+        allProfiles = [...allProfiles, ...(extra ?? [])]
+      }
+      for (const access of (allAccesses ?? []) as Array<{ acheteur_user_id: string; plantation_id: string }>) {
+        const key = `${access.plantation_id}__${access.acheteur_user_id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const plantation = (plantations ?? []).find((p: { id: string }) => p.id === access.plantation_id) as { nom: string; pays_nom: string } | undefined
+        const acheteur = allProfiles.find((p: { id: string }) => p.id === access.acheteur_user_id) as { email?: string; full_name?: string } | undefined
+        conversations.push({
+          plantation_id: access.plantation_id,
+          plantation_nom: plantation?.nom ?? '',
+          pays_nom: plantation?.pays_nom ?? '',
+          acheteur_user_id: access.acheteur_user_id,
+          acheteur_nom: (acheteur?.full_name ?? acheteur?.email ?? 'Acheteur').split('@')[0],
+          acheteur_email: acheteur?.email ?? '',
+          last_message: null,
+          last_message_at: null,
+          unread_count: 0,
         })
       }
 
