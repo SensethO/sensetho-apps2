@@ -324,7 +324,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const buffer = await wb.xlsx.writeBuffer()
     const filename = `EcoVadis_${orgNom.replace(/[^a-z0-9]/gi, '_')}_${diag.annee}.xlsx`
 
-    return new NextResponse(buffer as Buffer, {
+    return new NextResponse(buffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="${filename}"`,
