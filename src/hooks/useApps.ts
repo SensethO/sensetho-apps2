@@ -6,8 +6,17 @@ import type { AppCategory, App } from '@/types'
 
 const CHANNEL_NAME = 'apps-updated'
 
+// ── Cache module-level : survit aux remontages d'AppShell ────────────────────
+// Quand l'utilisateur change de page, AppShell se remonte mais les catégories
+// sont déjà disponibles instantanément sans nouveau fetch réseau.
+let _cachedCategories: AppCategory[] = []
+let _lastFetchMs = 0
+const CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutes
+
 /** Notifie tous les onglets + le même onglet qu'il faut recharger le menu */
 export function broadcastAppsUpdate() {
+  _cachedCategories = []           // invalider le cache
+  _lastFetchMs = 0
   // Même onglet
   window.dispatchEvent(new CustomEvent(CHANNEL_NAME))
   // Autres onglets
@@ -15,10 +24,18 @@ export function broadcastAppsUpdate() {
 }
 
 export function useApps(isAdmin: boolean) {
-  const [categories, setCategories] = useState<AppCategory[]>([])
-  const [loading, setLoading] = useState(true)
+  // Initialiser avec le cache → sidebar visible immédiatement
+  const [categories, setCategories] = useState<AppCategory[]>(_cachedCategories)
+  const [loading, setLoading] = useState(_cachedCategories.length === 0)
 
   const loadApps = useCallback(async () => {
+    // Si le cache est frais, l'utiliser directement (pas de flash, pas de réseau)
+    const now = Date.now()
+    if (_cachedCategories.length > 0 && now - _lastFetchMs < CACHE_TTL_MS) {
+      setCategories(_cachedCategories)
+      setLoading(false)
+      return
+    }
     const supabase = createClient()
     setLoading(true)
 
@@ -75,6 +92,9 @@ export function useApps(isAdmin: boolean) {
       .map(cat => ({ ...cat, apps: apps.filter(a => a.category_id === cat.id) }))
       .filter(cat => cat.apps.length > 0)
 
+    // Mettre en cache
+    _cachedCategories = result
+    _lastFetchMs = Date.now()
     setCategories(result)
     setLoading(false)
   }, [isAdmin])
