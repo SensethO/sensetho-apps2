@@ -579,17 +579,17 @@ interface CriterePanelProps {
   reponse: Reponse | null
   actions: Action[]
   diagnosticId: string
-  noteContent: string
-  noteSections: NoteSection[]
+  allNotes: Record<string, string>
+  allNoteSections: Record<string, NoteSection[]>
   onReponseChange: (critere_id: string, niveau: number, commentaire: string) => void
   onActionsChange: (actions: Action[]) => void
-  onNoteChange: (critere_id: string, content: string) => void
-  onNoteSectionsChange: (critere_id: string, sections: NoteSection[]) => void
+  onNoteChange: (key: string, content: string) => void
+  onNoteSectionsChange: (key: string, sections: NoteSection[]) => void
 }
 
 function CriterePanel({
   theme, critere, reponse, actions,
-  diagnosticId, noteContent, noteSections,
+  diagnosticId, allNotes, allNoteSections,
   onReponseChange, onActionsChange, onNoteChange, onNoteSectionsChange,
 }: CriterePanelProps) {
   const [niveau, setNiveau] = useState(reponse?.niveau ?? 0)
@@ -598,29 +598,29 @@ function CriterePanel({
   const [savedOk, setSavedOk] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Action form
+  // Formulaire nouvelle action
   const [showActionForm, setShowActionForm] = useState(false)
   const [actionForm, setActionForm] = useState({ titre: '', description: '', priorite: 'moyenne', echeance: '', responsable: '' })
   const [savingAction, setSavingAction] = useState(false)
 
+  // Edition inline d'une action existante
+  const [editingActionId, setEditingActionId] = useState<string | null>(null)
+  const [editData, setEditData] = useState<Partial<Action>>({})
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  // Notes & docs ouvertes par action
+  const [expandedActionNoteId, setExpandedActionNoteId] = useState<string | null>(null)
+
   const clr = THEME_COLORS[theme.id]
   const critereActions = actions.filter(a => a.critere_id === critere.id)
 
-  // Sync niveau/commentaire si la réponse change de l'extérieur
   useEffect(() => {
     setNiveau(reponse?.niveau ?? 0)
     setCommentaire(reponse?.commentaire ?? '')
   }, [reponse])
 
-  function handleNiveauChange(n: number) {
-    setNiveau(n)
-    scheduleSave(n, commentaire)
-  }
-
-  function handleCommentaireChange(c: string) {
-    setCommentaire(c)
-    scheduleSave(niveau, c)
-  }
+  function handleNiveauChange(n: number) { setNiveau(n); scheduleSave(n, commentaire) }
+  function handleCommentaireChange(c: string) { setCommentaire(c); scheduleSave(niveau, c) }
 
   function scheduleSave(n: number, c: string) {
     if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -637,8 +637,7 @@ function CriterePanel({
     if (!actionForm.titre.trim()) return
     setSavingAction(true)
     const res = await fetch(`/api/ecovadis/${diagnosticId}/actions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ critere_id: critere.id, ...actionForm }),
     })
     if (res.ok) {
@@ -656,11 +655,24 @@ function CriterePanel({
     onActionsChange(actions.filter(a => a.id !== id))
   }
 
+  async function saveEdit(id: string) {
+    setSavingEdit(true)
+    const res = await fetch(`/api/ecovadis/${diagnosticId}/actions?action_id=${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editData),
+    })
+    if (res.ok) {
+      const { data } = await res.json()
+      onActionsChange(actions.map(a => a.id === id ? data : a))
+      setEditingActionId(null)
+    }
+    setSavingEdit(false)
+  }
+
   async function toggleActionStatut(action: Action) {
     const next = action.statut === 'a_faire' ? 'en_cours' : action.statut === 'en_cours' ? 'termine' : 'a_faire'
     const res = await fetch(`/api/ecovadis/${diagnosticId}/actions?action_id=${action.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ statut: next }),
     })
     if (res.ok) {
@@ -679,7 +691,7 @@ function CriterePanel({
         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{critere.description}</p>
       </div>
 
-      {/* Sélecteur de niveau */}
+      {/* Niveau de maturité */}
       <div className={card('p-4 space-y-3')}>
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">Niveau de maturité</div>
@@ -688,29 +700,18 @@ function CriterePanel({
         </div>
         <div className="grid grid-cols-5 gap-2">
           {NIVEAUX.map(n => (
-            <button
-              key={n.value}
-              onClick={() => handleNiveauChange(n.value)}
-              className={`p-2 rounded-lg border-2 text-center transition-all ${
-                niveau === n.value
-                  ? `border-[${n.color}] ${n.bg} ring-2 ring-offset-1`
-                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-              }`}
-              style={{ borderColor: niveau === n.value ? n.color : undefined, outlineColor: n.color }}
-            >
+            <button key={n.value} onClick={() => handleNiveauChange(n.value)}
+              className={`p-2 rounded-lg border-2 text-center transition-all ${niveau === n.value ? `${n.bg} ring-2 ring-offset-1` : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}`}
+              style={{ borderColor: niveau === n.value ? n.color : undefined, outlineColor: n.color }}>
               <div className="text-lg font-bold" style={{ color: n.color }}>{n.shortLabel}</div>
               <div className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mt-0.5">{n.label}</div>
             </button>
           ))}
         </div>
-        {niv && (
-          <div className={`text-xs px-3 py-1.5 rounded-lg ${niv.bg} ${niv.text} font-medium`}>
-            {niv.description} ({Math.round(niv.pct * 100)}%)
-          </div>
-        )}
+        {niv && <div className={`text-xs px-3 py-1.5 rounded-lg ${niv.bg} ${niv.text} font-medium`}>{niv.description} ({Math.round(niv.pct * 100)}%)</div>}
       </div>
 
-      {/* Commentaire */}
+      {/* Commentaire & contexte + Notes & documents attachés */}
       <div className={card('p-4 space-y-2')}>
         <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">📝 Commentaire & contexte</label>
         <p className="text-xs text-gray-500 dark:text-gray-400">Décrivez vos pratiques actuelles, les preuves existantes et les points d&apos;amélioration identifiés.</p>
@@ -718,8 +719,20 @@ function CriterePanel({
           value={commentaire}
           onChange={e => handleCommentaireChange(e.target.value)}
           rows={4}
-          placeholder="Ex : Nous disposons d'une politique environnementale formalisée depuis 2022, validée par la direction. Le bilan carbone scope 1&2 est réalisé annuellement. Points à améliorer : scope 3 non mesuré…"
+          placeholder="Ex : Nous disposons d'une politique environnementale formalisée depuis 2022, validée par la direction…"
           className={`${inputCls()} resize-y`}
+        />
+        {/* Module Notes & documents — attaché au commentaire */}
+        <GuidedActionNotePanel
+          diagnosticId={diagnosticId}
+          actionKey={critere.id}
+          apiBase="/api/ecovadis"
+          noteTable="ecovadis_notes"
+          readOnly={false}
+          note={allNotes[critere.id] ?? ''}
+          onNoteChange={v => onNoteChange(critere.id, v)}
+          initialSections={allNoteSections[critere.id] ?? []}
+          onSectionsChange={s => onNoteSectionsChange(critere.id, s)}
         />
       </div>
 
@@ -737,39 +750,31 @@ function CriterePanel({
           <button onClick={() => setShowActionForm(v => !v)} className={btnP('text-xs py-1.5')}>+ Action</button>
         </div>
 
+        {/* Formulaire nouvelle action */}
         {showActionForm && (
           <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3 space-y-2 border border-gray-200 dark:border-gray-700">
-            <div>
-              <label className={labelCls()}>Titre de l&apos;action *</label>
+            <div><label className={labelCls()}>Titre *</label>
               <input className={inputCls()} value={actionForm.titre} onChange={e => setActionForm(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réaliser le bilan carbone scope 3" />
             </div>
-            <div>
-              <label className={labelCls()}>Description</label>
-              <textarea className={`${inputCls()} resize-none`} rows={2} value={actionForm.description} onChange={e => setActionForm(f => ({ ...f, description: e.target.value }))} placeholder="Détails, objectifs…" />
+            <div><label className={labelCls()}>Description</label>
+              <textarea className={`${inputCls()} resize-none`} rows={2} value={actionForm.description} onChange={e => setActionForm(f => ({ ...f, description: e.target.value }))} />
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className={labelCls()}>Priorité</label>
+              <div><label className={labelCls()}>Priorité</label>
                 <select className={inputCls()} value={actionForm.priorite} onChange={e => setActionForm(f => ({ ...f, priorite: e.target.value }))}>
-                  <option value="haute">🔴 Haute</option>
-                  <option value="moyenne">🟡 Moyenne</option>
-                  <option value="basse">🟢 Basse</option>
+                  <option value="haute">🔴 Haute</option><option value="moyenne">🟡 Moyenne</option><option value="basse">🟢 Basse</option>
                 </select>
               </div>
-              <div>
-                <label className={labelCls()}>Échéance</label>
+              <div><label className={labelCls()}>Échéance</label>
                 <input type="date" className={inputCls()} value={actionForm.echeance} onChange={e => setActionForm(f => ({ ...f, echeance: e.target.value }))} />
               </div>
-              <div>
-                <label className={labelCls()}>Responsable</label>
+              <div><label className={labelCls()}>Responsable</label>
                 <input className={inputCls()} value={actionForm.responsable} onChange={e => setActionForm(f => ({ ...f, responsable: e.target.value }))} placeholder="Prénom Nom" />
               </div>
             </div>
             <div className="flex gap-2 justify-end">
               <button className={btnS()} onClick={() => setShowActionForm(false)}>Annuler</button>
-              <button className={btnP()} onClick={addAction} disabled={savingAction || !actionForm.titre.trim()}>
-                {savingAction ? '…' : '✓ Créer'}
-              </button>
+              <button className={btnP()} onClick={addAction} disabled={savingAction || !actionForm.titre.trim()}>{savingAction ? '…' : '✓ Créer'}</button>
             </div>
           </div>
         )}
@@ -778,40 +783,102 @@ function CriterePanel({
           <p className="text-xs text-gray-400 text-center py-3">Aucune action — créez des points d&apos;amélioration concrets</p>
         )}
 
-        <div className="space-y-2">
-          {critereActions.map(a => (
-            <div key={a.id} className="flex items-start gap-2 p-2.5 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-100 dark:border-gray-700">
-              <button onClick={() => toggleActionStatut(a)} title="Changer statut"
-                className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${STATUT_COLORS[a.statut]}`}>
-                {STATUT_LABELS[a.statut]}
-              </button>
-              <div className="flex-1 min-w-0">
-                <div className={`text-xs font-medium ${a.statut === 'termine' ? 'line-through text-gray-400' : 'text-gray-900 dark:text-white'}`}>{a.titre}</div>
-                {a.description && <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">{a.description}</div>}
-                <div className="flex items-center gap-2 mt-1">
-                  <span className={`text-[9px] px-1 py-0.5 rounded ${PRIORITE_COLORS[a.priorite]}`}>{PRIORITE_LABELS[a.priorite]}</span>
-                  {a.echeance && <span className="text-[9px] text-gray-400">📅 {a.echeance}</span>}
-                  {a.responsable && <span className="text-[9px] text-gray-400">👤 {a.responsable}</span>}
+        <div className="space-y-3">
+          {critereActions.map(a => {
+            const actionNoteKey = `${critere.id}_action_${a.id}`
+            const isEditing = editingActionId === a.id
+            const isExpanded = expandedActionNoteId === a.id
+            return (
+              <div key={a.id} className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                {/* Ligne d'action */}
+                {isEditing ? (
+                  /* Mode édition inline */
+                  <div className="p-3 space-y-2 bg-gray-50 dark:bg-gray-900/50">
+                    <div><label className={labelCls()}>Titre *</label>
+                      <input className={inputCls()} value={editData.titre ?? a.titre} onChange={e => setEditData(d => ({ ...d, titre: e.target.value }))} />
+                    </div>
+                    <div><label className={labelCls()}>Description</label>
+                      <textarea className={`${inputCls()} resize-none`} rows={2} value={editData.description ?? a.description ?? ''} onChange={e => setEditData(d => ({ ...d, description: e.target.value }))} />
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div><label className={labelCls()}>Priorité</label>
+                        <select className={inputCls()} value={editData.priorite ?? a.priorite} onChange={e => setEditData(d => ({ ...d, priorite: e.target.value as Action['priorite'] }))}>
+                          <option value="haute">🔴 Haute</option><option value="moyenne">🟡 Moyenne</option><option value="basse">🟢 Basse</option>
+                        </select>
+                      </div>
+                      <div><label className={labelCls()}>Statut</label>
+                        <select className={inputCls()} value={editData.statut ?? a.statut} onChange={e => setEditData(d => ({ ...d, statut: e.target.value as Action['statut'] }))}>
+                          <option value="a_faire">À faire</option><option value="en_cours">En cours</option><option value="termine">Terminé</option>
+                        </select>
+                      </div>
+                      <div><label className={labelCls()}>Échéance</label>
+                        <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
+                      </div>
+                      <div><label className={labelCls()}>Responsable</label>
+                        <input className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button className={btnS('text-xs py-1')} onClick={() => setEditingActionId(null)}>Annuler</button>
+                      <button className={btnP('text-xs py-1')} onClick={() => saveEdit(a.id)} disabled={savingEdit}>{savingEdit ? '…' : '✓ Sauvegarder'}</button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Mode affichage */
+                  <div className="flex items-start gap-2 p-2.5 bg-gray-50 dark:bg-gray-900/30">
+                    <button onClick={() => toggleActionStatut(a)} title="Changer statut"
+                      className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${STATUT_COLORS[a.statut]}`}>
+                      {STATUT_LABELS[a.statut]}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-xs font-medium ${a.statut === 'termine' ? 'line-through text-gray-400' : 'text-gray-900 dark:text-white'}`}>{a.titre}</div>
+                      {a.description && <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">{a.description}</div>}
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-[9px] px-1 py-0.5 rounded ${PRIORITE_COLORS[a.priorite]}`}>{PRIORITE_LABELS[a.priorite]}</span>
+                        {a.echeance && <span className="text-[9px] text-gray-400">📅 {a.echeance}</span>}
+                        {a.responsable && <span className="text-[9px] text-gray-400">👤 {a.responsable}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => { setEditingActionId(a.id); setEditData({}) }}
+                        className="text-gray-400 hover:text-blue-500 text-xs px-1 py-0.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Modifier">✏️</button>
+                      <button onClick={() => deleteAction(a.id)} className="text-gray-300 hover:text-red-400 text-xs px-1">✕</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Notes & documents par action */}
+                <div className="border-t border-gray-100 dark:border-gray-700/50">
+                  <button
+                    onClick={() => setExpandedActionNoteId(isExpanded ? null : a.id)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                    <span>📄 Notes & documents</span>
+                    {(allNotes[actionNoteKey] || (allNoteSections[actionNoteKey] ?? []).length > 0) && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+                    )}
+                    <span className="ml-auto">{isExpanded ? '▾' : '›'}</span>
+                  </button>
+                  {isExpanded && (
+                    <div className="px-2 pb-2">
+                      <GuidedActionNotePanel
+                        diagnosticId={diagnosticId}
+                        actionKey={actionNoteKey}
+                        apiBase="/api/ecovadis"
+                        noteTable="ecovadis_notes"
+                        readOnly={false}
+                        note={allNotes[actionNoteKey] ?? ''}
+                        onNoteChange={v => onNoteChange(actionNoteKey, v)}
+                        initialSections={allNoteSections[actionNoteKey] ?? []}
+                        onSectionsChange={s => onNoteSectionsChange(actionNoteKey, s)}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
-              <button onClick={() => deleteAction(a.id)} className="text-gray-300 hover:text-red-400 text-xs flex-shrink-0">✕</button>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
-
-      {/* Notes & documents — même module que les autres apps RSE */}
-      <GuidedActionNotePanel
-        diagnosticId={diagnosticId}
-        actionKey={critere.id}
-        apiBase="/api/ecovadis"
-        noteTable="ecovadis_notes"
-        readOnly={false}
-        note={noteContent}
-        onNoteChange={v => onNoteChange(critere.id, v)}
-        initialSections={noteSections}
-        onSectionsChange={s => onNoteSectionsChange(critere.id, s)}
-      />
     </div>
   )
 }
@@ -822,15 +889,15 @@ interface DiagViewProps {
   diagnostic: DiagnosticData
   reponses: Record<string, Reponse>
   actions: Action[]
-  notes: Record<string, string>
-  noteSections: Record<string, NoteSection[]>
+  allNotes: Record<string, string>
+  allNoteSections: Record<string, NoteSection[]>
   onReponseChange: (critere_id: string, niveau: number, commentaire: string) => void
   onActionsChange: (a: Action[]) => void
-  onNoteChange: (critere_id: string, v: string) => void
-  onNoteSectionsChange: (critere_id: string, s: NoteSection[]) => void
+  onNoteChange: (key: string, v: string) => void
+  onNoteSectionsChange: (key: string, s: NoteSection[]) => void
 }
 
-function DiagnosticView({ diagnostic, reponses, actions, notes, noteSections, onReponseChange, onActionsChange, onNoteChange, onNoteSectionsChange }: DiagViewProps) {
+function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSections, onReponseChange, onActionsChange, onNoteChange, onNoteSectionsChange }: DiagViewProps) {
   const [activeTheme, setActiveTheme] = useState(ECOVADIS_THEMES[0].id)
   const [activeCritere, setActiveCritere] = useState<string | null>(ECOVADIS_THEMES[0].criteres[0].id)
 
@@ -942,8 +1009,8 @@ function DiagnosticView({ diagnostic, reponses, actions, notes, noteSections, on
                 reponse={reponses[activeCritere] ?? null}
                 actions={actions}
                 diagnosticId={diagnostic.id}
-                noteContent={notes[activeCritere] ?? ''}
-                noteSections={noteSections[activeCritere] ?? []}
+                allNotes={allNotes}
+                allNoteSections={allNoteSections}
                 onReponseChange={onReponseChange}
                 onActionsChange={onActionsChange}
                 onNoteChange={onNoteChange}
@@ -1285,8 +1352,8 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
           diagnostic={diagnostic}
           reponses={reponses}
           actions={actions}
-          notes={notes}
-          noteSections={noteSections}
+          allNotes={notes}
+          allNoteSections={noteSections}
           onReponseChange={handleReponseChange}
           onActionsChange={setActions}
           onNoteChange={handleNoteChange}
