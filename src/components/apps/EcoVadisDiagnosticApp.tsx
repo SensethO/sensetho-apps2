@@ -170,19 +170,19 @@ function PresentationView() {
           <span className="text-4xl">🏆</span>
           <div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">EcoVadis — Diagnostic RSE</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Référence mondiale d'évaluation des pratiques RSE des entreprises</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Référence mondiale d&apos;évaluation des pratiques RSE des entreprises</p>
           </div>
         </div>
         <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-          EcoVadis évalue chaque année des milliers d'entreprises sur leurs pratiques de responsabilité sociale et environnementale.
+          EcoVadis évalue chaque année des milliers d&apos;entreprises sur leurs pratiques de responsabilité sociale et environnementale.
           Un questionnaire détaillé couvre <strong>4 thèmes</strong>, vous obtenez un score de 0 à 100 et un badge (Bronze, Silver, Gold, Platinum).
-          Cette application vous aide à préparer votre évaluation, identifier vos points faibles, construire un plan d'actions et centraliser vos preuves documentaires.
+          Cette application vous aide à préparer votre évaluation, identifier vos points faibles, construire un plan d&apos;actions et centraliser vos preuves documentaires.
         </p>
       </div>
 
       {/* Thèmes et poids */}
       <div>
-        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Les 4 thèmes d'évaluation</h3>
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Les 4 thèmes d&apos;évaluation</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {ECOVADIS_THEMES.map(t => {
             const clr = THEME_COLORS[t.id]
@@ -489,7 +489,7 @@ function CriterePanel({
       {/* Commentaire */}
       <div className={card('p-4 space-y-2')}>
         <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">📝 Commentaire & contexte</label>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Décrivez vos pratiques actuelles, les preuves existantes et les points d'amélioration identifiés.</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Décrivez vos pratiques actuelles, les preuves existantes et les points d&apos;amélioration identifiés.</p>
         <textarea
           value={commentaire}
           onChange={e => handleCommentaireChange(e.target.value)}
@@ -499,11 +499,11 @@ function CriterePanel({
         />
       </div>
 
-      {/* Actions d'amélioration */}
+      {/* Actions d&apos;amélioration */}
       <div className={card('p-4 space-y-3')}>
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            🎯 Actions d'amélioration
+            🎯 Actions d&apos;amélioration
             {critereActions.length > 0 && (
               <span className="ml-2 text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded-full font-medium">
                 {critereActions.filter(a => a.statut === 'termine').length}/{critereActions.length}
@@ -516,7 +516,7 @@ function CriterePanel({
         {showActionForm && (
           <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3 space-y-2 border border-gray-200 dark:border-gray-700">
             <div>
-              <label className={labelCls()}>Titre de l'action *</label>
+              <label className={labelCls()}>Titre de l&apos;action *</label>
               <input className={inputCls()} value={actionForm.titre} onChange={e => setActionForm(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réaliser le bilan carbone scope 3" />
             </div>
             <div>
@@ -551,7 +551,7 @@ function CriterePanel({
         )}
 
         {critereActions.length === 0 && !showActionForm && (
-          <p className="text-xs text-gray-400 text-center py-3">Aucune action — créez des points d'amélioration concrets</p>
+          <p className="text-xs text-gray-400 text-center py-3">Aucune action — créez des points d&apos;amélioration concrets</p>
         )}
 
         <div className="space-y-2">
@@ -767,7 +767,7 @@ function DiagnosticView({ diagnostic, reponses, actions, documents, onReponseCha
             )
           })() : (
             <div className={card('p-8 text-center')}>
-              <p className="text-gray-400 text-sm">Sélectionnez un critère pour commencer l'évaluation</p>
+              <p className="text-gray-400 text-sm">Sélectionnez un critère pour commencer l&apos;évaluation</p>
             </div>
           )}
         </div>

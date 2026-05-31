@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       annexeIndex?: number
     }
 
-    const { critere_id, attachmentId, spItemId, name, mime, size, type_doc, description, annexeIndex } = body
+    const { critere_id, attachmentId, spItemId, name, size, type_doc, description, annexeIndex } = body
 
     if (!spItemId) return NextResponse.json({ error: 'spItemId requis' }, { status: 400 })
     if (!name) return NextResponse.json({ error: 'name requis' }, { status: 400 })
