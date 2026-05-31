@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/components/providers/ThemeProvider'
+import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
 import type { Profile, Theme } from '@/types'
 
@@ -64,7 +65,10 @@ export default function AccountSettings({ profile, forced = false }: { profile: 
       if (forced) {
         // Déconnecter proprement pour obtenir une session fraîche avec le nouveau MDP
         setPwdMsg('Mot de passe modifié ✓ — Reconnexion en cours…')
-        setTimeout(() => router.push('/auth/signout'), 1500)
+        setTimeout(async () => {
+          await createClient().auth.signOut()
+          window.location.href = '/auth/login'
+        }, 1500)
       } else {
         setPwdMsg('Mot de passe modifié avec succès.')
       }
