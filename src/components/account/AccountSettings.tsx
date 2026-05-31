@@ -60,9 +60,14 @@ export default function AccountSettings({ profile, forced = false }: { profile: 
     })
     setPwdSaving(false)
     if (res.ok) {
-      setPwdMsg('Mot de passe modifié avec succès.')
       setNewPwd(''); setConfirmPwd('')
-      if (forced) setTimeout(() => router.push('/dashboard'), 1200)
+      if (forced) {
+        // Déconnecter proprement pour obtenir une session fraîche avec le nouveau MDP
+        setPwdMsg('Mot de passe modifié ✓ — Reconnexion en cours…')
+        setTimeout(() => router.push('/auth/signout'), 1500)
+      } else {
+        setPwdMsg('Mot de passe modifié avec succès.')
+      }
     } else {
       const d = await res.json()
       setPwdError(d.error ?? 'Erreur lors du changement.')
