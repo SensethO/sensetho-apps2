@@ -1,5 +1,3 @@
-// @ts-nocheck
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * GET /api/ecovadis/[id]/export-excel
  * Génère un fichier Excel structuré du Diagnostic EcoVadis RSE.
