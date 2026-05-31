@@ -2540,7 +2540,6 @@ function ProductionTab({
   commodity,
   data,
   loading,
-  onRefresh,
 }: {
   commodity: 'cacao' | 'cafe'
   data: {
@@ -2551,7 +2550,6 @@ function ProductionTab({
     source: string
   } | null
   loading: boolean
-  onRefresh: () => void
 }) {
   const icon = commodity === 'cacao' ? '🍫' : '☕'
   const colorClass = commodity === 'cacao'
@@ -3330,7 +3328,6 @@ function AcheteurView({ isAdmin = false, userId }: { isAdmin?: boolean; userId: 
           commodity="cafe"
           data={cafeData}
           loading={cafeLoading}
-          onRefresh={loadCafe}
         />
       )}
 
@@ -3340,7 +3337,6 @@ function AcheteurView({ isAdmin = false, userId }: { isAdmin?: boolean; userId: 
           commodity="cacao"
           data={cacaoData}
           loading={cacaoLoading}
-          onRefresh={loadCacao}
         />
       )}
 
