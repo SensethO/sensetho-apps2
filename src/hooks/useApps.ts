@@ -13,6 +13,9 @@ let _cachedCategories: AppCategory[] = []
 let _lastFetchMs = 0
 const CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutes
 
+/** Retourne les catégories actuellement en cache (pour initialiser le Sidebar) */
+export function getCachedAppCategories() { return _cachedCategories }
+
 /** Notifie tous les onglets + le même onglet qu'il faut recharger le menu */
 export function broadcastAppsUpdate() {
   _cachedCategories = []           // invalider le cache

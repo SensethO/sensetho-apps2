@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
 import { useFavorites } from '@/hooks/useFavorites'
+import { getCachedAppCategories } from '@/hooks/useApps'
 import type { AppCategory, Profile } from '@/types'
 
 interface SidebarProps {
@@ -25,11 +26,16 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
   const initials = ((profile?.full_name ?? profile?.email ?? 'U')[0]).toUpperCase()
   const { favoriteIds, toggleFavorite, isFavorite } = useFavorites(profile?.id ?? null)
 
-  // Toutes les catégories ouvertes par défaut — pas de persistance localStorage
-  // (évite les sections fermées après navigation entre apps)
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>({})
+  // Initialisation synchrone depuis le cache module-level de useApps
+  // → à chaque remontage du Sidebar (navigation entre pages), les catégories
+  //   sont déjà disponibles immédiatement dans le cache, sans flash de fermeture
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {}
+    getCachedAppCategories().forEach(c => { initial[c.id] = true })
+    return initial
+  })
 
-  // Ouvre toutes les nouvelles catégories dès qu'elles chargent
+  // Ouvre les nouvelles catégories dès qu'elles arrivent (premier chargement ou nouvelles)
   useEffect(() => {
     setOpenCats(prev => {
       const next = { ...prev }
