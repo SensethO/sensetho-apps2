@@ -1,0 +1,86 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createRouteClient as createUserClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+export const dynamic = 'force-dynamic'
+
+async function canAccess(userId: string, diagnosticId: string): Promise<boolean> {
+  const admin = createAdminClient()
+  const { data: profile } = await admin.from('profiles').select('role').eq('id', userId).single()
+  if (profile?.role === 'admin') return true
+  const { data } = await admin
+    .from('ecovadis_diagnostics')
+    .select('user_id')
+    .eq('id', diagnosticId)
+    .single()
+  return data?.user_id === userId
+}
+
+/** GET /api/ecovadis/[id] — détail complet avec réponses, actions, documents */
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = createUserClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!await canAccess(user.id, params.id)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const admin = createAdminClient()
+    const [diagRes, repRes, actRes, docRes] = await Promise.all([
+      admin.from('ecovadis_diagnostics').select('*').eq('id', params.id).single(),
+      admin.from('ecovadis_reponses').select('*').eq('diagnostic_id', params.id),
+      admin.from('ecovadis_actions').select('*').eq('diagnostic_id', params.id).order('created_at'),
+      admin.from('ecovadis_documents').select('*').eq('diagnostic_id', params.id).order('annexe_index'),
+    ])
+
+    return NextResponse.json({
+      data: {
+        diagnostic: diagRes.data,
+        reponses:   repRes.data ?? [],
+        actions:    actRes.data ?? [],
+        documents:  docRes.data ?? [],
+      }
+    })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+}
+
+/** PATCH /api/ecovadis/[id] — mise à jour score_global et statut */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = createUserClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!await canAccess(user.id, params.id)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const body = await req.json()
+    const allowed = ['score_global', 'statut']
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    for (const key of allowed) {
+      if (key in body) patch[key] = body[key]
+    }
+
+    const admin = createAdminClient()
+    const { data, error } = await admin
+      .from('ecovadis_diagnostics')
+      .update(patch)
+      .eq('id', params.id)
+      .select()
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ data })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+}
