@@ -519,7 +519,7 @@ function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadCha
   const [mobilePage, setMobilePage] = useState<'list' | 'thread'>('list')
 
   const loadConversations = useCallback(() => {
-    fetch(`/api/agri/crm/conversations?mode=acheteur&plantation_id=${plantationId}`)
+    fetch('/api/agri/crm/conversations?mode=acheteur')
       .then(r => r.json())
       .then(j => {
         const convs: ConvAcheteur[] = j.conversations ?? []
@@ -533,7 +533,7 @@ function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadCha
       })
       .finally(() => setLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plantationId, onUnreadChange])
+  }, [onUnreadChange])
 
   useEffect(() => {
     loadConversations()

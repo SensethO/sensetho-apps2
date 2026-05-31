@@ -17,24 +17,20 @@ export async function GET(req: Request) {
       const { data: profile } = await svc.from('profiles').select('role').eq('id', user.id).single()
       const isAdmin = profile?.role === 'admin'
 
-      // plantation_id optionnel — restreint à cette plantation uniquement si fourni
-      const plantationIdFilter = searchParams.get('plantation_id')
-
       let plantationIds: string[]
 
       if (isAdmin) {
-        // Admin : toutes les plantations (ou juste celle filtrée)
-        const query = plantationIdFilter
-          ? svc.from('plantations').select('id').eq('id', plantationIdFilter)
-          : svc.from('plantations').select('id')
-        const { data: allPlantations } = await query
+        // Admin : toutes les plantations
+        const { data: allPlantations } = await svc
+          .from('plantations')
+          .select('id')
         plantationIds = (allPlantations ?? []).map((p: { id: string }) => p.id)
       } else {
         // 1. Toutes les plantations accessibles à cet acheteur
-        const accessQuery = plantationIdFilter
-          ? svc.from('acces_acheteurs').select('plantation_id').eq('acheteur_user_id', user.id).eq('plantation_id', plantationIdFilter)
-          : svc.from('acces_acheteurs').select('plantation_id').eq('acheteur_user_id', user.id)
-        const { data: accesses } = await accessQuery
+        const { data: accesses } = await svc
+          .from('acces_acheteurs')
+          .select('plantation_id')
+          .eq('acheteur_user_id', user.id)
         plantationIds = (accesses ?? []).map((a: { plantation_id: string }) => a.plantation_id)
       }
 

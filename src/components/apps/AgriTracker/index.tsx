@@ -2564,8 +2564,9 @@ function ProductionTab({
         <h3 className="font-semibold text-gray-900 dark:text-white">
           {icon} Production mondiale — {commodity === 'cacao' ? 'Cacao (fèves)' : 'Café (vert)'}
         </h3>
-        <button onClick={onRefresh} disabled={loading} className={btnSecondary('text-xs py-1.5 px-3')}>
-          {loading ? '…' : '🔄 Actualiser'}
+        {/* Bouton Actualiser désactivé — données chargées une fois par session */}
+        <button disabled className={btnSecondary('text-xs py-1.5 px-3 opacity-40 cursor-not-allowed')}>
+          🔄 Actualiser
         </button>
       </div>
 
@@ -3396,8 +3397,9 @@ function AcheteurView({ isAdmin = false, userId }: { isAdmin?: boolean; userId: 
               <h3 className="font-semibold text-gray-900 dark:text-white">📈 Cours de Londres</h3>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">ICE Futures Europe · Clôture J-1 · Référence Afrique</p>
             </div>
-            <button onClick={loadCours} disabled={coursLoading} className={btnSecondary('text-xs py-1.5 px-3')}>
-              {coursLoading ? '…' : '🔄 Actualiser'}
+            {/* Bouton Actualiser désactivé — données chargées une fois par session */}
+            <button disabled className={btnSecondary('text-xs py-1.5 px-3 opacity-40 cursor-not-allowed')}>
+              🔄 Actualiser
             </button>
           </div>
           {coursError && <p className="text-sm text-red-500">{coursError}</p>}
