@@ -1,6 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, verticalListSortingStrategy,
+  sortableKeyboardCoordinates, useSortable, arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import DOMPurify from 'dompurify'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -20,6 +29,7 @@ export interface AttachmentMeta {
   path: string
   mime: string
   size: number
+  deleted_at?: string | null
 }
 
 export interface NoteSection {
@@ -197,7 +207,19 @@ function fmtSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
 }
 
-// ─── AttachmentItem ────────────────────────────────────────────────────────────
+// ─── getSignedUrl ──────────────────────────────────────────────────────────────
+
+export async function getSignedUrl(
+  apiBase: string, sessionId: string, actionKey: string, path: string
+): Promise<string> {
+  const encodedKey = encodeURIComponent(actionKey)
+  const res = await fetch(
+    `${apiBase}/${sessionId}/action-notes/${encodedKey}/signed-url?path=${encodeURIComponent(path)}`
+  )
+  if (!res.ok) throw new Error('Impossible de générer le lien')
+  const { url } = await res.json()
+  return url
+}
 
 // ─── DownloadAllButton ─────────────────────────────────────────────────────────
 
@@ -252,17 +274,7 @@ function DownloadAllButton({
   )
 }
 
-export async function getSignedUrl(
-  apiBase: string, sessionId: string, actionKey: string, path: string
-): Promise<string> {
-  const encodedKey = encodeURIComponent(actionKey)
-  const res = await fetch(
-    `${apiBase}/${sessionId}/action-notes/${encodedKey}/signed-url?path=${encodeURIComponent(path)}`
-  )
-  if (!res.ok) throw new Error('Impossible de générer le lien')
-  const { url } = await res.json()
-  return url
-}
+// ─── AttachmentItem ────────────────────────────────────────────────────────────
 
 function AttachmentItem({
   att,
@@ -288,19 +300,17 @@ function AttachmentItem({
   const [renaming, setRenaming] = useState(false)
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const [thumbUrl, setThumbUrl]   = useState<string | null>(null)
-  // Lecteur vidéo inline
+  const [pdfThumb, setPdfThumb]   = useState<string | null>(null)
   const [videoUrl, setVideoUrl]         = useState<string | null>(null)
   const [videoOpen, setVideoOpen]       = useState(false)
   const [videoLoading, setVideoLoading] = useState(false)
 
-  // Décomposer le nom : base + extension (ex: "mondossier" + ".pdf")
   const lastDot = att.name.lastIndexOf('.')
   const fullBase = lastDot > 0 ? att.name.slice(0, lastDot) : att.name
   const ext      = lastDot > 0 ? att.name.slice(lastDot) : ''
-  // Détecter préfixe A-code : "A123_..." → prefix="A123_", body=reste
   const aPrefixMatch = fullBase.match(/^(A\d+_)(.*)$/)
-  const aCodePrefix = aPrefixMatch ? aPrefixMatch[1] : ''  // ex: "A123_"
-  const baseName    = aPrefixMatch ? aPrefixMatch[2] : fullBase  // partie éditable
+  const aCodePrefix = aPrefixMatch ? aPrefixMatch[1] : ''
+  const baseName    = aPrefixMatch ? aPrefixMatch[2] : fullBase
 
   const [editValue, setEditValue] = useState(baseName)
 
@@ -310,7 +320,10 @@ function AttachmentItem({
   const isWord   = att.mime.includes('word')
   const isExcel  = att.mime.includes('excel') || att.mime.includes('sheet')
 
-  // Lazy-load miniature pour les images (URL signée SharePoint = image directe)
+  // Déduit l'app key depuis apiBase (ex: /api/iso26000/sessions → iso26000)
+  const appKey = apiBase.replace('/api/', '').split('/')[0] ?? 'iso26000'
+
+  // Miniature image via URL signée
   useEffect(() => {
     if (!isImage) return
     let cancelled = false
@@ -320,18 +333,16 @@ function AttachmentItem({
     return () => { cancelled = true }
   }, [att.path, sessionId, actionKey, apiBase, isImage])
 
-  // Lazy-load miniature pour les vidéos via Microsoft Graph thumbnails API
+  // Miniature PDF via Microsoft Graph thumbnails
   useEffect(() => {
-    if (!isVideo) return
+    if (!isPdf) return
     let cancelled = false
-    fetch(`/api/ms/sharepoint/thumbnail?path=${encodeURIComponent(att.path)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((j: { url?: string | null } | null) => {
-        if (!cancelled && j?.url) setThumbUrl(j.url)
-      })
+    fetch(`/api/sharepoint/thumbnail?item_id=${encodeURIComponent(att.path)}&app=${encodeURIComponent(appKey)}`)
+      .then(r => r.json())
+      .then((d: { url?: string | null }) => { if (!cancelled && d.url) setPdfThumb(d.url) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [att.path, isVideo])
+  }, [att.path, isPdf, appKey])
 
   async function openViewer() {
     setLoading('open')
@@ -340,7 +351,6 @@ function AttachmentItem({
     finally { setLoading(null) }
   }
 
-  // Ouvre le lecteur vidéo inline (streaming direct SharePoint)
   async function openVideoPlayer() {
     if (videoOpen) { setVideoOpen(false); return }
     if (videoUrl) { setVideoOpen(true); return }
@@ -361,28 +371,18 @@ function AttachmentItem({
     try {
       const url = await getSignedUrl(apiBase, sessionId, actionKey, att.path)
       const a = document.createElement('a')
-      a.href = url
-      a.download = att.name
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Erreur')
-    } finally {
-      setLoading(null)
-    }
+      a.href = url; a.download = att.name; a.rel = 'noopener'
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    } catch (e) { alert(e instanceof Error ? e.message : 'Erreur') }
+    finally { setLoading(null) }
   }
 
-  function startEdit() {
-    setEditValue(baseName)
-    setEditing(true)
-  }
+  function startEdit() { setEditValue(baseName); setEditing(true) }
 
   async function confirmRename() {
     const trimmed = editValue.trim()
     if (!trimmed) return
-    const newName = aCodePrefix + trimmed + ext  // préfixe A-code + nouveau nom + extension
+    const newName = aCodePrefix + trimmed + ext
     if (newName === att.name) { setEditing(false); return }
     setRenaming(true)
     try {
@@ -405,61 +405,37 @@ function AttachmentItem({
     }
   }
 
-  // Icône selon le type de fichier
-  function FileIcon() {
-    // Image avec miniature
-    if (isImage && thumbUrl) {
-      return (
-        <div className="shrink-0 w-10 h-12 rounded overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer" onClick={openViewer}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
-        </div>
-      )
-    }
-    // Vidéo : vignette avec overlay play
-    if (isVideo) {
-      return (
-        <div
-          className="shrink-0 w-10 h-12 rounded overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer relative bg-gray-900 flex items-center justify-center"
-          onClick={openVideoPlayer}
-          title={videoOpen ? 'Fermer le lecteur' : 'Lire la vidéo'}
-        >
-          {thumbUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={thumbUrl} alt="" className="w-full h-full object-cover opacity-70" />
-          ) : (
-            <span className="text-orange-400 text-base">🎬</span>
-          )}
-          {/* Overlay play/pause */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-5 h-5 rounded-full bg-black/50 border border-white/60 flex items-center justify-center">
-              {videoLoading ? (
-                <span className="text-white text-[7px]">…</span>
-              ) : videoOpen ? (
-                <span className="text-white text-[8px]">■</span>
-              ) : (
-                <span className="text-white text-[8px] ml-0.5">▶</span>
-              )}
-            </div>
-          </div>
-        </div>
-      )
-    }
-    const cfg = isPdf   ? { bg: 'bg-red-100 dark:bg-red-900/40',     text: 'text-red-600 dark:text-red-400',    label: 'PDF' }
-              : isWord  ? { bg: 'bg-blue-100 dark:bg-blue-900/40',    text: 'text-blue-600 dark:text-blue-400',  label: 'DOC' }
-              : isExcel ? { bg: 'bg-green-100 dark:bg-green-900/40',  text: 'text-green-600 dark:text-green-400',label: 'XLS' }
-              : isImage ? { bg: 'bg-purple-100 dark:bg-purple-900/40',text: 'text-purple-600 dark:text-purple-400',label:'IMG' }
-              :           { bg: 'bg-gray-100 dark:bg-gray-700',        text: 'text-gray-500 dark:text-gray-400',  label: '···' }
-    return (
-      <div
-        className={`shrink-0 w-10 h-12 rounded flex flex-col items-center justify-center cursor-pointer border border-gray-200 dark:border-gray-700 ${cfg.bg}`}
-        onClick={openViewer}
-        title="Cliquer pour visualiser"
-      >
-        <span className={`text-[10px] font-bold ${cfg.text}`}>{cfg.label}</span>
-      </div>
-    )
-  }
+  // ── Thumbnail Preview ──────────────────────────────────────────────────────
+  const thumbContent = isImage && thumbUrl ? (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
+  ) : isPdf && pdfThumb ? (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img src={pdfThumb} alt="Aperçu PDF" className="w-full h-full object-contain bg-white p-1" />
+  ) : isVideo ? (
+    <div className="w-full h-full bg-gray-900 flex items-center justify-center">
+      <span className="text-3xl">🎬</span>
+    </div>
+  ) : isPdf ? (
+    <div className="w-full h-full bg-red-50 dark:bg-red-900/20 flex flex-col items-center justify-center gap-1">
+      <span className="text-2xl">📄</span>
+      <span className="text-[9px] font-bold text-red-600">PDF</span>
+    </div>
+  ) : isWord ? (
+    <div className="w-full h-full bg-blue-50 dark:bg-blue-900/20 flex flex-col items-center justify-center gap-1">
+      <span className="text-2xl">📝</span>
+      <span className="text-[9px] font-bold text-blue-600">DOC</span>
+    </div>
+  ) : isExcel ? (
+    <div className="w-full h-full bg-green-50 dark:bg-green-900/20 flex flex-col items-center justify-center gap-1">
+      <span className="text-2xl">📊</span>
+      <span className="text-[9px] font-bold text-green-600">XLS</span>
+    </div>
+  ) : (
+    <div className="w-full h-full bg-gray-50 dark:bg-gray-700 flex flex-col items-center justify-center gap-1">
+      <span className="text-2xl">📎</span>
+    </div>
+  )
 
   return (
     <>
@@ -467,146 +443,111 @@ function AttachmentItem({
         <FileViewerModal url={viewerUrl} name={att.name} mime={att.mime} onClose={() => setViewerUrl(null)} />
       )}
 
-      <div className="flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 group overflow-hidden">
-        {/* Ligne principale : icône + nom + actions */}
-        <div className="flex items-start gap-2 p-2">
-          {/* Icon */}
-          <FileIcon />
-
-          {/* Name + size */}
-          <div className="flex-1 min-w-0">
-            {editing ? (
-              /* ── Mode renommage ─────────────────────────────────────────────── */
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1 flex-wrap">
-                  {/* Préfixe fixe : code de référence */}
-                  {annexeRef && (
-                    <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-700">
-                      {annexeRef}-
-                    </span>
-                  )}
-                  {/* Préfixe A-code verrouillé */}
-                  <span className="flex items-center gap-0.5 min-w-0 flex-1">
-                    {aCodePrefix && <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 select-none">{aCodePrefix}</span>}
-                    {/* Partie modifiable */}
-                    <input
-                      autoFocus
-                      value={editValue}
-                      onChange={e => setEditValue(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') confirmRename()
-                        if (e.key === 'Escape') setEditing(false)
-                      }}
-                      className="flex-1 min-w-0 text-sm bg-transparent border-b border-indigo-400 outline-none text-gray-900 dark:text-white"
-                    />
-                    {/* Extension fixe */}
-                    {ext && <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 select-none">{ext}</span>}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={confirmRename}
-                    disabled={renaming || !editValue.trim()}
-                    className="text-xs px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition"
-                  >
-                    {renaming ? '…' : '✓ OK'}
-                  </button>
-                  <button
-                    onClick={() => setEditing(false)}
-                    disabled={renaming}
-                    className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 transition"
-                  >
-                    Annuler
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* ── Mode affichage ─────────────────────────────────────────────── */
-              <div>
-                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  {annexeRef && (
-                    <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-700">
-                      {annexeRef}
-                    </span>
-                  )}
-                  <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{att.name}</p>
-                  {!readOnly && onRename && (
-                    <button
-                      onClick={startEdit}
-                      title="Renommer le fichier"
-                      className="shrink-0 text-gray-300 dark:text-gray-600 hover:text-indigo-500 dark:hover:text-indigo-400 transition opacity-0 group-hover:opacity-100"
-                    >
-                      ✏️
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-gray-400">{fmtSize(att.size)}</p>
-              </div>
-            )}
+      <div className="flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden hover:shadow-md transition-shadow group">
+        {/* Thumbnail zone */}
+        <div
+          className="relative w-full aspect-[4/3] cursor-pointer overflow-hidden bg-gray-100 dark:bg-gray-900"
+          onClick={isVideo ? openVideoPlayer : openViewer}
+          title={isVideo ? 'Lire la vidéo' : 'Visualiser'}
+        >
+          {thumbContent}
+          {/* Overlay au hover */}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <span className="text-white text-xs bg-black/50 px-2 py-1 rounded-lg">
+              {isVideo ? (videoLoading ? '…' : videoOpen ? '⏹ Fermer' : '▶ Lire') : '↗ Voir'}
+            </span>
           </div>
+          {annexeRef && (
+            <span className="absolute top-1 left-1 text-[9px] font-bold bg-cyan-600 text-white px-1.5 py-0.5 rounded">
+              {annexeRef}
+            </span>
+          )}
+        </div>
 
-          {/* Actions (masquées en mode édition) */}
-          {!editing && (
-            <div className="flex items-center gap-1 shrink-0">
-              {isVideo ? (
-                <button
-                  onClick={openVideoPlayer}
-                  disabled={videoLoading}
-                  title={videoOpen ? 'Fermer le lecteur' : 'Lire la vidéo'}
-                  className="text-xs px-2 py-1 rounded bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-800/30 text-orange-600 dark:text-orange-400 transition disabled:opacity-50"
-                >
-                  {videoLoading ? '…' : videoOpen ? '⏹ Fermer' : '▶ Lire'}
+        {/* Video player inline */}
+        {isVideo && videoOpen && videoUrl && (
+          <div className="border-t border-gray-100 dark:border-gray-700 bg-black">
+            <video src={videoUrl} controls autoPlay preload="metadata" className="w-full max-h-48"
+              onError={() => { setVideoOpen(false); setVideoUrl(null) }}
+            />
+          </div>
+        )}
+
+        {/* File info + rename */}
+        <div className="px-2 py-1.5 flex-1">
+          {editing ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-0.5">
+                {aCodePrefix && <span className="text-[9px] text-gray-400 shrink-0">{aCodePrefix}</span>}
+                <input autoFocus value={editValue}
+                  onChange={e => setEditValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') setEditing(false) }}
+                  className="flex-1 min-w-0 text-xs bg-transparent border-b border-indigo-400 outline-none text-gray-900 dark:text-white" />
+                {ext && <span className="text-[9px] text-gray-400 shrink-0">{ext}</span>}
+              </div>
+              <div className="flex gap-1 mt-1">
+                <button onClick={confirmRename} disabled={renaming || !editValue.trim()}
+                  className="text-[10px] px-2 py-0.5 rounded bg-indigo-600 text-white disabled:opacity-50">
+                  {renaming ? '…' : '✓'}
                 </button>
-              ) : (
-                <button
-                  onClick={openViewer}
-                  disabled={!!loading}
-                  title="Ouvrir dans le visualiseur"
-                  className="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 transition disabled:opacity-50"
-                >
-                  {loading === 'open' ? '…' : '↗ Ouvrir'}
+                <button onClick={() => setEditing(false)}
+                  className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                  ✕
                 </button>
-              )}
-              <button
-                onClick={downloadFile}
-                disabled={!!loading}
-                title="Télécharger le fichier"
-                className="text-xs px-2 py-1 rounded bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-800/40 text-indigo-600 dark:text-indigo-400 transition disabled:opacity-50"
-              >
-                {loading === 'download' ? '…' : '⬇'}
-              </button>
-              {!readOnly && (
-                <button
-                  onClick={onDelete}
-                  title="Supprimer"
-                  className="text-xs px-1.5 py-1 rounded text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
-                >
-                  ×
-                </button>
-              )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate leading-tight">{att.name}</p>
+              <p className="text-[10px] text-gray-400">{fmtSize(att.size)}</p>
             </div>
           )}
         </div>
 
-        {/* Lecteur vidéo inline — streaming direct depuis SharePoint */}
-        {isVideo && videoOpen && videoUrl && (
-          <div className="border-t border-gray-100 dark:border-gray-700 bg-black">
-            <video
-              src={videoUrl}
-              controls
-              autoPlay
-              preload="metadata"
-              className="w-full max-h-72 block"
-              style={{ display: 'block' }}
-              onError={() => {
-                setVideoOpen(false)
-                setVideoUrl(null)
-              }}
-            />
+        {/* 4 boutons d'action */}
+        {!editing && (
+          <div className="flex border-t border-gray-100 dark:border-gray-700 divide-x divide-gray-100 dark:divide-gray-700">
+            <button onClick={isVideo ? openVideoPlayer : openViewer} disabled={!!loading || videoLoading}
+              title={isVideo ? (videoOpen ? 'Fermer' : 'Lire') : 'Visualiser'}
+              className="flex-1 py-1.5 flex items-center justify-center text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 text-sm transition-colors">
+              {loading === 'open' || videoLoading ? '⟳' : isVideo ? (videoOpen ? '⏹' : '▶') : '👁️'}
+            </button>
+            <button onClick={downloadFile} disabled={!!loading}
+              title="Télécharger"
+              className="flex-1 py-1.5 flex items-center justify-center text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 text-sm transition-colors">
+              {loading === 'download' ? '⟳' : '⬇️'}
+            </button>
+            {!readOnly && onRename && (
+              <button onClick={startEdit} title="Renommer"
+                className="flex-1 py-1.5 flex items-center justify-center text-gray-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm transition-colors">
+                ✏️
+              </button>
+            )}
+            {!readOnly && (
+              <button onClick={onDelete} title="Supprimer"
+                className="flex-1 py-1.5 flex items-center justify-center text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm transition-colors">
+                🗑️
+              </button>
+            )}
           </div>
         )}
       </div>
     </>
+  )
+}
+
+// ─── SortableSectionWrapper ─────────────────────────────────────────────────────
+
+function SortableSectionWrapper({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  return (
+    <div ref={setNodeRef} style={style} className="relative group/sort">
+      <div {...attributes} {...listeners}
+        className="absolute left-0 top-2 -translate-x-5 hidden group-hover/sort:flex items-center cursor-grab active:cursor-grabbing text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 px-0.5 py-1 rounded transition-colors"
+        title="Réorganiser">⠿</div>
+      {children}
+    </div>
   )
 }
 
@@ -640,8 +581,8 @@ function SectionEditor({
   onAttachmentUploaded?: (folderName?: string) => void
   uploadExtraFormData?: Record<string, string>
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const initialized = useRef(false)
+  void initialized // suppress unused warning
   const sectionRef = useRef(section)
   sectionRef.current = section
 
@@ -665,21 +606,28 @@ function SectionEditor({
     },
   })
 
-  // Handle file upload
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadTab, setUploadTab] = useState<'file' | 'folder'>('file')
+  const [showTrash, setShowTrash] = useState(false)
+  const fileInputRef   = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
   async function handleFileSelect(files: FileList | null) {
     if (!files?.length) return
+    const fileArr = Array.from(files)
     setUploading(true)
     setUploadError(null)
+    setUploadProgress(0)
     try {
-      for (const file of Array.from(files)) {
+      for (let fi = 0; fi < fileArr.length; fi++) {
+        const file = fileArr[fi]
         const encodedKey = encodeURIComponent(actionKey)
         const mime = file.type || 'application/octet-stream'
+        setUploadProgress(Math.round((fi / fileArr.length) * 80))
 
-        // ── Étape 1 : obtenir la session d'upload SharePoint (JSON léger, jamais le fichier) ──
+        // ── Étape 1 : obtenir la session d'upload SharePoint ──
         const sessionRes = await fetch(
           `${apiBase}/${sessionId}/action-notes/${encodedKey}/upload-session`,
           {
@@ -705,23 +653,31 @@ function SectionEditor({
           uploadUrl: string; attachmentId: string; finalName: string; confirmUrl?: string
         }
 
-        // ── Étape 2 : PUT direct vers SharePoint — le fichier ne passe JAMAIS par Vercel ──
-        const uploadRes = await fetch(uploadUrl, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': mime,
-            'Content-Length': String(file.size),
-            'Content-Range': `bytes 0-${file.size - 1}/${file.size}`,
-          },
-          body: file,
+        // ── Étape 2 : PUT direct vers SharePoint via XHR pour la progression ──
+        const spItemId = await new Promise<string>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round(80 + (e.loaded / e.total) * 18)
+              setUploadProgress(pct)
+            }
+          }
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try { resolve((JSON.parse(xhr.responseText) as { id: string }).id) }
+              catch { reject(new Error('Réponse SP invalide')) }
+            } else reject(new Error(`Erreur upload SP ${xhr.status}`))
+          }
+          xhr.onerror = () => reject(new Error('Erreur réseau upload'))
+          xhr.open('PUT', uploadUrl)
+          xhr.setRequestHeader('Content-Type', mime)
+          xhr.setRequestHeader('Content-Range', `bytes 0-${file.size - 1}/${file.size}`)
+          xhr.send(file)
         })
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text().catch(() => '')
-          throw new Error(`Erreur upload SharePoint ${uploadRes.status}: ${errText.slice(0, 120)}`)
-        }
-        const spItem = await uploadRes.json() as { id: string }
 
-        // ── Étape 3 (optionnelle) : confirmer l'enregistrement DB (annexeRef pour GRI/CSRD/ISO26000) ──
+        setUploadProgress(98)
+
+        // ── Étape 3 (optionnelle) : confirmer l'enregistrement DB ──
         let folderName: string | undefined
         if (confirmUrl) {
           try {
@@ -730,7 +686,7 @@ function SectionEditor({
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 attachmentId,
-                spItemId: spItem.id,
+                spItemId,
                 sectionId: section.id,
                 annexeRef: sessionJson.annexeRef,
                 filename: file.name,
@@ -746,7 +702,7 @@ function SectionEditor({
         const att: AttachmentMeta = {
           id:   attachmentId,
           name: finalName,
-          path: spItem.id,
+          path: spItemId,
           mime,
           size: file.size,
         }
@@ -755,11 +711,12 @@ function SectionEditor({
           attachments: [...sectionRef.current.attachments, att],
         })
         onAttachmentUploaded?.(folderName)
+        setUploadProgress(100)
       }
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : 'Erreur upload')
     } finally {
-      setUploading(false)
+      setTimeout(() => { setUploading(false); setUploadProgress(0) }, 500)
     }
   }
 
@@ -778,6 +735,18 @@ function SectionEditor({
       // Silently fail — file may already be gone
     }
   }
+
+  async function restoreAttachment(att: AttachmentMeta) {
+    onChange({
+      ...sectionRef.current,
+      attachments: sectionRef.current.attachments.map(a =>
+        a.id === att.id ? { ...a, deleted_at: null } : a
+      ),
+    })
+  }
+
+  const activeAttachments = section.attachments.filter(a => !a.deleted_at)
+  const trashAttachments  = section.attachments.filter(a => !!a.deleted_at)
 
   const [isDragOver, setIsDragOver] = useState(false)
 
@@ -840,77 +809,134 @@ function SectionEditor({
         </div>
       </div>
 
-      {/* Attachments */}
-      <div className="p-3 space-y-2">
-        {section.attachments.length > 0 && (
-          <div className="space-y-1.5">
-            {section.attachments.length >= 2 && (
-              <DownloadAllButton
-                attachments={section.attachments}
-                sessionId={sessionId}
-                actionKey={actionKey}
-                apiBase={apiBase}
-              />
-            )}
-            {section.attachments.map(att => (
-              <AttachmentItem
-                key={att.id}
-                att={att}
-                sessionId={sessionId}
-                actionKey={actionKey}
-                apiBase={apiBase}
-                annexeRef={annexeRefs?.get(att.id)}
-                onDelete={() => deleteAttachment(att)}
-                onRename={!readOnly ? (newName) => {
-                  onChange({
-                    ...sectionRef.current,
-                    attachments: sectionRef.current.attachments.map(a =>
-                      a.id === att.id ? { ...a, name: newName } : a
-                    ),
-                  })
-                } : undefined}
-                readOnly={readOnly}
-              />
-            ))}
+      {/* Attachements — grille de cartes */}
+      <div className="p-3 space-y-3">
+        {/* Fichiers actifs */}
+        {activeAttachments.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              {activeAttachments.length >= 2 && (
+                <DownloadAllButton
+                  attachments={activeAttachments}
+                  sessionId={sessionId}
+                  actionKey={actionKey}
+                  apiBase={apiBase}
+                />
+              )}
+              <span className="text-[10px] text-gray-400 ml-auto">{activeAttachments.length} fichier{activeAttachments.length > 1 ? 's' : ''}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {activeAttachments.map(att => (
+                <AttachmentItem
+                  key={att.id}
+                  att={att}
+                  sessionId={sessionId}
+                  actionKey={actionKey}
+                  apiBase={apiBase}
+                  annexeRef={annexeRefs?.get(att.id)}
+                  onDelete={() => deleteAttachment(att)}
+                  onRename={!readOnly ? (newName) => {
+                    onChange({
+                      ...sectionRef.current,
+                      attachments: sectionRef.current.attachments.map(a =>
+                        a.id === att.id ? { ...a, name: newName } : a
+                      ),
+                    })
+                  } : undefined}
+                  readOnly={readOnly}
+                />
+              ))}
+            </div>
           </div>
         )}
 
-        {!readOnly && (
-          <div
-            className={`relative border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer ${
-              isDragOver
-                ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/10'
-                : 'border-gray-200 dark:border-gray-600 hover:border-indigo-300 dark:hover:border-indigo-600'
-            } ${uploading ? 'opacity-60 pointer-events-none' : ''}`}
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
-            onDragLeave={() => setIsDragOver(false)}
-            onDrop={e => {
-              e.preventDefault()
-              setIsDragOver(false)
-              handleFileSelect(e.dataTransfer.files)
-            }}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              multiple
-              accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.avi,.webm,.mkv,.3gp"
-              onChange={e => handleFileSelect(e.target.files)}
-            />
-            {uploading ? (
-              <p className="text-xs text-gray-500 dark:text-gray-300">Envoi en cours…</p>
-            ) : (
-              <p className="text-xs text-gray-400 dark:text-gray-300">
-                📎 Glisser-déposer ou <span className="text-indigo-500 dark:text-indigo-400 underline">cliquer</span> pour ajouter un fichier (PDF, image, vidéo)
-              </p>
+        {/* Corbeille */}
+        {trashAttachments.length > 0 && (
+          <div>
+            <button onClick={() => setShowTrash(v => !v)}
+              className="flex items-center gap-1.5 text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">
+              🗑️ Corbeille ({trashAttachments.length}) {showTrash ? '▾' : '›'}
+            </button>
+            {showTrash && (
+              <div className="mt-1.5 space-y-1 pl-2 border-l-2 border-gray-200 dark:border-gray-700">
+                {trashAttachments.map(att => (
+                  <div key={att.id} className="flex items-center gap-2 text-[10px] text-gray-400">
+                    <span className="truncate flex-1 line-through">{att.name}</span>
+                    <button onClick={() => restoreAttachment(att)}
+                      className="text-emerald-500 hover:text-emerald-700 shrink-0">↩ Restaurer</button>
+                    <button onClick={() => deleteAttachment(att)}
+                      className="text-red-400 hover:text-red-600 shrink-0">✕</button>
+                  </div>
+                ))}
+              </div>
             )}
+          </div>
+        )}
+
+        {/* Zone upload */}
+        {!readOnly && (
+          <div>
+            {/* Onglets Fichier | Dossier */}
+            <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden mb-2 text-[10px]">
+              <button onClick={() => setUploadTab('file')}
+                className={`flex-1 py-1 transition ${uploadTab === 'file' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                📎 Fichier
+              </button>
+              <button onClick={() => setUploadTab('folder')}
+                className={`flex-1 py-1 transition ${uploadTab === 'folder' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                📁 Dossier
+              </button>
+            </div>
+
+            <div
+              className={`relative border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer ${
+                isDragOver
+                  ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/10'
+                  : 'border-gray-200 dark:border-gray-600 hover:border-indigo-300 dark:hover:border-indigo-600'
+              } ${uploading ? 'opacity-80 pointer-events-none' : ''}`}
+              onClick={() => uploadTab === 'folder' ? folderInputRef.current?.click() : fileInputRef.current?.click()}
+              onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={e => {
+                e.preventDefault()
+                setIsDragOver(false)
+                handleFileSelect(e.dataTransfer.files)
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.avi,.webm,.mkv,.3gp,.doc,.docx,.xls,.xlsx"
+                onChange={e => handleFileSelect(e.target.files)}
+              />
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <input ref={folderInputRef} type="file" className="hidden" multiple
+                {...{ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>}
+                onChange={e => handleFileSelect(e.target.files)} />
+
+              {uploading ? (
+                <div className="space-y-1.5">
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                    <div className="h-1.5 bg-indigo-500 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                  <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">{uploadProgress}% — Envoi en cours…</p>
+                </div>
+              ) : (
+                <p className="text-[10px] text-gray-400 dark:text-gray-300">
+                  {uploadTab === 'folder'
+                    ? '📁 Cliquer pour sélectionner un dossier'
+                    : '📎 Glisser-déposer ou cliquer pour ajouter'
+                  }
+                </p>
+              )}
+            </div>
           </div>
         )}
 
         {uploadError && (
-          <p className="text-xs text-red-500">{uploadError}</p>
+          <p className="text-[10px] text-red-500">{uploadError}</p>
         )}
       </div>
     </div>
@@ -1054,7 +1080,7 @@ export default function ActionNotePanel({
         saveTimerRef.current = null
       }
     }, 800)
-  }, [sessionId, actionKey, readOnly, onSaved])
+  }, [sessionId, actionKey, readOnly, onSaved]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateSection(index: number, updated: NoteSection) {
     setSections(prev => {
@@ -1082,6 +1108,25 @@ export default function ActionNotePanel({
     })
   }
 
+  // ── DnD sensors ───────────────────────────────────────────────────────────────
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setSections(prev => {
+      const from = prev.findIndex(s => s.id === active.id)
+      const to   = prev.findIndex(s => s.id === over.id)
+      if (from < 0 || to < 0) return prev
+      const next = arrayMove(prev, from, to)
+      scheduleSave(next)
+      return next
+    })
+  }
+
   if (loading) {
     return (
       <div className="mt-2 p-4 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
@@ -1102,7 +1147,7 @@ export default function ActionNotePanel({
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          Notes & documents
+          Notes &amp; documents
         </span>
         <div className="flex items-center gap-2">
           <span className={`text-xs ${
@@ -1125,25 +1170,30 @@ export default function ActionNotePanel({
         </div>
       </button>
 
-      {/* Sections */}
+      {/* Sections avec DnD */}
       {!collapsed && <div className="p-3 space-y-3">
-        {sections.map((section, i) => (
-          <SectionEditor
-            key={`${section.id}-v${editorVersion}`}
-            section={section}
-            index={i}
-            total={sections.length}
-            sessionId={sessionId}
-            actionKey={actionKey}
-            apiBase={apiBase}
-            annexeRefs={annexeRefs}
-            onChange={updated => updateSection(i, updated)}
-            onDelete={() => deleteSection(i)}
-            readOnly={readOnly}
-            onAttachmentUploaded={onAttachmentUploaded}
-            uploadExtraFormData={uploadExtraFormData}
-          />
-        ))}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
+            {sections.map((section, i) => (
+              <SortableSectionWrapper key={`${section.id}-v${editorVersion}`} id={section.id}>
+                <SectionEditor
+                  section={section}
+                  index={i}
+                  total={sections.length}
+                  sessionId={sessionId}
+                  actionKey={actionKey}
+                  apiBase={apiBase}
+                  annexeRefs={annexeRefs}
+                  onChange={updated => updateSection(i, updated)}
+                  onDelete={() => deleteSection(i)}
+                  readOnly={readOnly}
+                  onAttachmentUploaded={onAttachmentUploaded}
+                  uploadExtraFormData={uploadExtraFormData}
+                />
+              </SortableSectionWrapper>
+            ))}
+          </SortableContext>
+        </DndContext>
 
         {/* Add section */}
         {!readOnly && (
