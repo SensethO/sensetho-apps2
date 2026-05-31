@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import ActionNotePanel from '@/components/apps/ActionNotePanel'
 const AgriCRM = dynamic(() => import('./CRM'), { ssr: false, loading: () => <div className="py-8 text-center text-gray-400 text-sm animate-pulse">Chargement CRM…</div> })
+const MessagesTabAcheteur = dynamic(() => import('./CRM').then(m => ({ default: m.MessagesTabAcheteur })), { ssr: false, loading: () => <div className="py-8 text-center text-gray-400 text-sm animate-pulse">Chargement…</div> })
 
 // Carte Leaflet — import dynamique (SSR impossible : Leaflet nécessite window)
 const ChampsMap = dynamic(

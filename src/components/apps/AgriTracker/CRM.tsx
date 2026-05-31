@@ -510,7 +510,7 @@ function convKey(c: ConvAcheteur): string {
   return `${c.plantation_id}__${c.acheteur_user_id ?? ''}`
 }
 
-function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadChange }: {
+export function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUnreadChange }: {
   plantationId: string; currentUserId: string; isAdmin?: boolean; onUnreadChange?: (n: number) => void
 }) {
   const [conversations, setConversations] = useState<ConvAcheteur[]>([])
