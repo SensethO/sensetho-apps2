@@ -62,15 +62,20 @@ export const ECOVADIS_THEMES = [
       { id: 'ach-reporting',  label: 'Reporting Achats',                  description: 'Publication d\'indicateurs achats responsables, % fournisseurs évalués.' },
     ],
   },
-] as const
+]
 
-export const NIVEAUX = [
+export interface EcoVadisNiveau {
+  value: number; label: string; shortLabel: string; description: string
+  color: string; bg: string; text: string; pct: number
+}
+
+export const NIVEAUX: EcoVadisNiveau[] = [
   { value: 0, label: 'NC',         shortLabel: 'NC',  description: 'Non communiqué ou absent',              color: '#9ca3af', bg: 'bg-gray-100 dark:bg-gray-800',   text: 'text-gray-600 dark:text-gray-400', pct: 0    },
   { value: 1, label: 'Basique',    shortLabel: '1',   description: 'Éléments de base en place',             color: '#ef4444', bg: 'bg-red-50 dark:bg-red-900/20',   text: 'text-red-600 dark:text-red-400',   pct: 0.25 },
   { value: 2, label: 'Avancé',     shortLabel: '2',   description: 'Système formalisé et déployé',          color: '#f59e0b', bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-600 dark:text-amber-400', pct: 0.50 },
   { value: 3, label: 'Pro-actif',  shortLabel: '3',   description: 'Démarche proactive, mesurée & améliorée', color: '#3b82f6', bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400', pct: 0.75 },
   { value: 4, label: 'Leader',     shortLabel: '4',   description: 'Excellence, certifié ou primé',         color: '#16a34a', bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-400', pct: 1.00 },
-] as const
+]
 
 const BADGE_LEVELS = [
   { label: 'Platinum', min: 75, color: '#6366f1', icon: '💎' },
@@ -259,11 +264,16 @@ function PresentationView() {
   )
 }
 
+// ─── Types thème/critère simples pour éviter les complexités TypeScript ──────
+
+interface EcoTheme { id: string; label: string; icon: string; poids: number; colorCls: string; criteres: EcoCritere[] }
+interface EcoCritere { id: string; label: string; description: string }
+
 // ─── Panneau critère (Diagnostic) ─────────────────────────────────────────────
 
 interface CriterePanelProps {
-  theme: typeof ECOVADIS_THEMES[number]
-  critere: typeof ECOVADIS_THEMES[number]['criteres'][number]
+  theme: EcoTheme
+  critere: EcoCritere
   reponse: Reponse | null
   actions: Action[]
   documents: EcoDoc[]
