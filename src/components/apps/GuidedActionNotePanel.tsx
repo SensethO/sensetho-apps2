@@ -823,9 +823,9 @@ function SectionEditor({
               <input ref={fileInputRef} type="file" className="hidden" multiple
                 accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.avi,.webm,.mkv,.3gp,.doc,.docx,.xls,.xlsx"
                 onChange={e => handleFileSelect(e.target.files)} />
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <input ref={folderInputRef} type="file" className="hidden" multiple
-                /* @ts-ignore -- webkitdirectory is valid in browsers */
-                webkitdirectory=""
+                {...{ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>}
                 onChange={e => handleFileSelect(e.target.files)} />
 
               {uploading ? (
