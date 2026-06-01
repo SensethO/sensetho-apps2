@@ -175,9 +175,24 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
     )
   }
 
-  const savedElements = board?.document?.elements ?? []
-  const savedAppState = board?.document?.appState ?? {}
-  const savedFiles    = board?.document?.files ?? {}
+  // Extraire les données Excalidraw du board — canvas vide si format incompatible
+  // (évite le crash quand d'anciens boards avaient un format tldraw)
+  const isValidExcalidrawDoc = (() => {
+    try {
+      const doc = board?.document
+      if (!doc || !Array.isArray(doc.elements)) return false
+      // Vérifier que les éléments ont bien la structure Excalidraw (id + type string)
+      return doc.elements.every((e: unknown) =>
+        e !== null && typeof e === 'object' &&
+        typeof (e as Record<string, unknown>).id === 'string' &&
+        typeof (e as Record<string, unknown>).type === 'string'
+      )
+    } catch { return false }
+  })()
+
+  const savedElements = isValidExcalidrawDoc ? (board?.document?.elements ?? []) : []
+  const savedAppState = isValidExcalidrawDoc ? (board?.document?.appState ?? {}) : {}
+  const savedFiles    = isValidExcalidrawDoc ? (board?.document?.files ?? {}) : {}
 
   return (
     <div className="flex flex-col" style={{ height: '100vh' }}>
