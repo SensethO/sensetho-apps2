@@ -19,7 +19,7 @@ import Underline from '@tiptap/extension-underline'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import FileViewerModal from '@/components/ui/FileViewerModal'
-import { createClient } from '@/lib/supabase/client'
+// createClient supprimé — Realtime désactivé temporairement (plan Free)
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 

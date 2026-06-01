@@ -18,7 +18,7 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import Underline from '@tiptap/extension-underline'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
-import { createClient as createSupabaseClient } from '@/lib/supabase/client'
+// createSupabaseClient supprimé — Realtime désactivé temporairement (plan Free)
 import FileViewerModal from '@/components/ui/FileViewerModal'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -988,7 +988,7 @@ export default function ActionNotePanel({
   const [collapsed, setCollapsed] = useState(true)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'synced' | 'error'>('idle')
   // editorVersion: incrementing forces SectionEditor remount (replaces Tiptap content with remote data)
-  const [editorVersion, setEditorVersion] = useState(0)
+  const [editorVersion] = useState(0) // setEditorVersion supprimé (Realtime désactivé)
   const saveTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingSaveRef = useRef(false)  // true during debounce + fetch → blocks remote sync
   const sectionsRef   = useRef(sections)
