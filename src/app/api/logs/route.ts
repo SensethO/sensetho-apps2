@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
       user_email = profile?.email ?? user.email ?? null
     }
 
-    await admin.from('app_logs').insert({
+    const { data: inserted } = await admin.from('app_logs').insert({
       path:             body.path,
       is_authenticated: !!user,
       user_id:          user?.id ?? null,
@@ -103,9 +103,10 @@ export async function POST(req: NextRequest) {
       ip:               ip !== 'unknown' ? ip : null,
       referrer:         body.referrer || null,
       session_id:       body.sessionId ?? null,
-    })
+    }).select('id').single()
 
-    return NextResponse.json({ ok: true })
+    // Retourner l'ID pour permettre la mise à jour de la durée plus tard
+    return NextResponse.json({ ok: true, id: inserted?.id ?? null })
   } catch {
     // Log silencieux — ne jamais bloquer l'utilisateur
     return NextResponse.json({ ok: true })

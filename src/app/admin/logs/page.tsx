@@ -19,6 +19,7 @@ interface Log {
   ip: string | null
   referrer: string | null
   session_id: string | null
+  duration_seconds: number | null
 }
 
 const DEVICE_ICONS: Record<string, string> = {
@@ -29,6 +30,21 @@ const DEVICE_COLORS: Record<string, string> = {
   mobile:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
   tablet:  'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
   bot:     'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+}
+
+function formatDuration(s: number | null): string {
+  if (s === null || s === undefined) return '—'
+  if (s < 60)   return `${s}s`
+  if (s < 3600) return `${Math.floor(s / 60)}min ${s % 60}s`
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}min`
+}
+
+function durationColor(s: number | null): string {
+  if (s === null) return 'text-gray-300 dark:text-gray-600'
+  if (s < 10)    return 'text-gray-400 dark:text-gray-500'      // Rebond
+  if (s < 60)    return 'text-amber-600 dark:text-amber-400'    // Court
+  if (s < 300)   return 'text-emerald-600 dark:text-emerald-400' // Moyen
+  return 'text-blue-600 dark:text-blue-400'                      // Long
 }
 
 function timeAgo(dateStr: string) {
@@ -197,7 +213,7 @@ export default function LogsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
-                    {['Horodatage', 'Utilisateur', 'Page', 'Appareil', 'Navigateur', 'OS', 'Écran', 'IP'].map(h => (
+                    {['Horodatage', 'Durée', 'Utilisateur', 'Page', 'Appareil', 'Navigateur', 'OS', 'Écran', 'IP'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide"
                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                     ))}
@@ -214,6 +230,16 @@ export default function LogsPage() {
                         <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
                           {new Date(log.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </div>
+                      </td>
+
+                      {/* Durée */}
+                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                        <span className={`text-xs font-mono font-semibold ${durationColor(log.duration_seconds)}`}>
+                          {formatDuration(log.duration_seconds)}
+                        </span>
+                        {log.duration_seconds !== null && log.duration_seconds < 10 && (
+                          <div className="text-[9px] text-amber-500 mt-0.5">rebond</div>
+                        )}
                       </td>
 
                       {/* Utilisateur */}
