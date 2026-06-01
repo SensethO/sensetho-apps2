@@ -36,7 +36,7 @@ function timeAgo(dateStr: string): string {
 
 export default function BoardsApp() {
   const router  = useRouter()
-  const { profile } = useAuth()
+  useAuth() // pour déclencher l'auth context
   const [owned,   setOwned]   = useState<BoardMeta[]>([])
   const [shared,  setShared]  = useState<BoardMeta[]>([])
   const [loading, setLoading] = useState(true)
