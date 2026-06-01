@@ -410,16 +410,23 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
           </div>
 
           {/* ── Intégrer PDF ── */}
-          <div>
+          <div
+            onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
+            onDrop={async e => {
+              e.preventDefault(); e.stopPropagation()
+              const file = Array.from(e.dataTransfer.files).find(f => f.type === 'application/pdf')
+              if (file) await handlePdfFile(file)
+            }}
+          >
             <input ref={pdfInputRef} type="file" accept="application/pdf"
               className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handlePdfFile(f) }} />
             <button
               onClick={() => pdfInputRef.current?.click()}
               disabled={addingPdf}
-              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors hover:border-red-400 disabled:opacity-50"
-              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
-              title="Intégrer un PDF (page 1 rendue en image)">
-              {addingPdf ? <span className="animate-spin">⟳</span> : '📄'} PDF
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors disabled:opacity-50"
+              style={{ borderColor: '#dc2626', color: '#dc2626', backgroundColor: addingPdf ? '#fee2e2' : 'transparent' }}
+              title="Intégrer un PDF — cliquer pour choisir, ou glisser-déposer un PDF ici">
+              {addingPdf ? <><span className="animate-spin inline-block">⟳</span> Conversion…</> : <>📄 PDF</>}
             </button>
           </div>
 
@@ -477,6 +484,19 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
       <div className="flex-1 relative overflow-hidden">
         {board !== null && (
           <Excalidraw
+            // Intercepter les fichiers droppés sur le canvas
+            onDrop={async (event) => {
+              const files = Array.from(event.dataTransfer?.files ?? [])
+              const pdfs  = files.filter(f => f.type === 'application/pdf')
+              if (pdfs.length > 0) {
+                event.preventDefault()
+                for (const pdf of pdfs) {
+                  await handlePdfFile(pdf)
+                }
+                return true // empêche Excalidraw de traiter le drop
+              }
+              return false
+            }}
             excalidrawAPI={api => {
               excalidrawApiRef.current = api
               // Forcer la fermeture du panneau bibliothèque après montage
