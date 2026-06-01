@@ -110,92 +110,81 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
     excalidrawApiRef.current?.updateScene({ appState: { viewBackgroundColor: color } } as any)
   }
 
-  // ── Intégration PDF : rendre page 1 via PDF.js → insérer comme image Excalidraw ──
+  // ── Intégration PDF via PDF.js CDN ──
+  // PDF.js est chargé depuis CDN au moment de l'appel (pas bundlé — évite les conflits webpack)
+  async function loadPdfJs(): Promise<any> {
+    if ((window as any).pdfjsLib) return (window as any).pdfjsLib
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+      script.onload = () => {
+        const lib = (window as any).pdfjsLib
+        lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+        resolve(lib)
+      }
+      script.onerror = () => reject(new Error('Impossible de charger PDF.js'))
+      document.head.appendChild(script)
+    })
+  }
+
   async function handlePdfFile(file: File) {
     if (!excalidrawApiRef.current || !file) return
     setAddingPdf(true)
     try {
-      // 1. Charger PDF.js dynamiquement (pas de SSR)
-      const pdfjsLib = await import('pdfjs-dist')
-      // Worker en CDN pour éviter les problèmes de bundling
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+      // 1. Charger PDF.js depuis CDN
+      const pdfjsLib = await loadPdfJs()
 
-      // 2. Lire le fichier
+      // 2. Lire et rendre la page 1
       const arrayBuffer = await file.arrayBuffer()
       const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-      const page = await pdfDoc.getPage(1)
-
-      // 3. Rendre la page sur un canvas (résolution ×2 pour la qualité)
-      const scale = 2
+      const page   = await pdfDoc.getPage(1)
+      const scale  = 2 // haute résolution
       const viewport = page.getViewport({ scale })
       const canvas = document.createElement('canvas')
       canvas.width  = viewport.width
       canvas.height = viewport.height
-      const ctx = canvas.getContext('2d')!
-      await page.render({ canvasContext: ctx, viewport }).promise
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
 
-      // 4. Convertir en PNG data URL
-      const dataUrl = canvas.toDataURL('image/png')
+      // 3. Réduire à max 900px de large
+      const maxW = 900
+      const ratio = Math.min(1, maxW / canvas.width)
+      const finalCanvas = document.createElement('canvas')
+      finalCanvas.width  = Math.round(canvas.width  * ratio)
+      finalCanvas.height = Math.round(canvas.height * ratio)
+      finalCanvas.getContext('2d')!.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height)
+      const dataURL = finalCanvas.toDataURL('image/png')
 
-      // 5. Créer un fichier Excalidraw et l'insérer sur le canvas
-      const { addFilesToCanvas } = await import('@excalidraw/excalidraw')
-      const fileId = `pdf_${Date.now()}` as any
-      const appState = excalidrawApiRef.current.getAppState()
+      // 4. Insérer comme image sur le canvas Excalidraw
+      const api      = excalidrawApiRef.current
+      const appState = api.getAppState()
       const zoom = appState.zoom.value
       const cx = (-appState.scrollX + window.innerWidth  / 2) / zoom
       const cy = (-appState.scrollY + window.innerHeight / 2) / zoom
+      const w  = finalCanvas.width  / scale
+      const h  = finalCanvas.height / scale
+      const id = `pdf_${Date.now()}` as any
+      const seed = Math.floor(Math.random() * 2 ** 30)
 
-      // Créer l'image à partir du data URL
-      const img = new Image()
-      img.src = dataUrl
-      await new Promise<void>(resolve => { img.onload = () => resolve() })
+      api.updateScene({
+        elements: [...api.getSceneElements(), {
+          id, type: 'image', x: cx - w / 2, y: cy - h / 2,
+          width: w, height: h, angle: 0,
+          strokeColor: 'transparent', backgroundColor: 'transparent',
+          fillStyle: 'solid', strokeWidth: 1, strokeStyle: 'solid',
+          roughness: 0, opacity: 100, seed, version: 1, versionNonce: seed + 1,
+          isDeleted: false, groupIds: [], frameId: null, link: null, locked: false,
+          updated: Date.now(), boundElements: null, customData: null,
+          status: 'saved', fileId: id,
+        } as any],
+        files: {
+          ...api.getFiles(),
+          [id]: { id, dataURL: dataURL as any, mimeType: 'image/png', created: Date.now() },
+        } as any,
+      })
 
-      // Réduire à max 800px de large pour ne pas surcharger le canvas
-      const maxW = 800
-      const ratio = Math.min(1, maxW / img.width)
-      const w = img.width  * ratio
-      const h = img.height * ratio
-
-      // Copier le canvas avec les bonnes dimensions
-      const finalCanvas = document.createElement('canvas')
-      finalCanvas.width  = img.width  * ratio * scale
-      finalCanvas.height = img.height * ratio * scale
-      const finalCtx = finalCanvas.getContext('2d')!
-      finalCtx.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height)
-      const finalDataUrl = finalCanvas.toDataURL('image/png')
-
-      // Insérer via addFilesToCanvas si disponible, sinon via updateScene
-      try {
-        await addFilesToCanvas(excalidrawApiRef.current, [
-          new File([await (await fetch(finalDataUrl)).blob()], file.name.replace('.pdf', '.png'), { type: 'image/png' }),
-        ])
-      } catch {
-        // Fallback : insérer manuellement un rectangle image
-        const id = crypto.randomUUID()
-        const seed = Math.floor(Math.random() * 2 ** 30)
-        const elements = excalidrawApiRef.current.getSceneElements()
-        excalidrawApiRef.current.updateScene({
-          elements: [...elements, {
-            id, type: 'image', x: cx - w / 2, y: cy - h / 2,
-            width: w, height: h, angle: 0,
-            strokeColor: 'transparent', backgroundColor: 'transparent',
-            fillStyle: 'solid', strokeWidth: 1, strokeStyle: 'solid',
-            roughness: 0, opacity: 100, seed, version: 1,
-            versionNonce: seed + 1, isDeleted: false, groupIds: [],
-            frameId: null, link: null, locked: false, updated: Date.now(),
-            boundElements: null, customData: null,
-            status: 'saved', fileId: id as any,
-          } as any],
-          files: {
-            ...excalidrawApiRef.current.getFiles(),
-            [id]: { id: id as any, dataURL: finalDataUrl as any, mimeType: 'image/png', created: Date.now() },
-          } as any,
-        })
-      }
-
-      alert(`✅ PDF "${file.name}" intégré (page 1 sur ${pdfDoc.numPages})`)
+      alert(`✅ PDF intégré — ${file.name} (page 1/${pdfDoc.numPages})`)
     } catch (e) {
-      alert('Erreur lors de l\'intégration du PDF : ' + String(e))
+      alert('Erreur : ' + String(e))
     } finally {
       setAddingPdf(false)
       if (pdfInputRef.current) pdfInputRef.current.value = ''
