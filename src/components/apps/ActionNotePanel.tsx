@@ -1018,39 +1018,11 @@ export default function ActionNotePanel({
     }
   }, [initialSections])
 
-  // ─── Supabase Realtime subscription ──────────────────────────────────────────
-  useEffect(() => {
-    const supabase = createSupabaseClient()
-    const channel = supabase
-      .channel(`action_notes_${sessionId}_${actionKey}`)
-      .on(
-        'postgres_changes',
-        {
-          event:  '*',
-          schema: 'public',
-          table:  realtimeTable,
-          filter: `session_id=eq.${sessionId}`,
-        },
-        (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
-          // Only handle the action we're currently showing
-          const row = (payload.new ?? payload.old) as { action_key?: string; sections?: NoteSection[] } | null
-          if (!row || row.action_key !== actionKey) return
-          // Ignore if we have a local edit in-flight
-          if (pendingSaveRef.current) return
-
-          const remoteSections: NoteSection[] = row.sections ?? []
-          const final = remoteSections.length > 0 ? remoteSections : [newSection()]
-          setSections(final)
-          setEditorVersion(v => v + 1)   // force Tiptap remount with new content
-          onSaved?.(final)
-          setSaveStatus('synced')
-          setTimeout(() => setSaveStatus('idle'), 2500)
-        }
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [sessionId, actionKey, realtimeTable]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ─── Supabase Realtime subscription ─────────────────────────────────────────
+  // TEMPORAIREMENT DÉSACTIVÉ pour réduire la charge Supabase Free tier.
+  // Sera réactivé lors du passage au plan Pro (collaboration temps-réel).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void realtimeTable // référence pour éviter la suppression par le tree-shaker
 
   // Debounced auto-save
   const scheduleSave = useCallback((newSections: NoteSection[]) => {

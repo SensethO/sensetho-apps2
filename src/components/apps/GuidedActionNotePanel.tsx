@@ -932,41 +932,12 @@ export default function GuidedActionNotePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notesRemoteVersion])
 
-  // ─── Supabase Realtime subscription ──────────────────────────────────────────
-  useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`guided_note_${diagnosticId}_${actionKey}`)
-      .on(
-        'postgres_changes',
-        {
-          event:  '*',
-          schema: 'public',
-          table:  noteTable,
-          filter: `diagnostic_id=eq.${diagnosticId}`,
-        },
-        (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
-          const row = (payload.new ?? payload.old) as { action_key?: string; sections?: NoteSection[]; content?: string } | null
-          if (!row || row.action_key !== actionKey) return
-          // Ignorer si une sauvegarde locale est en cours
-          if (pendingSaveRef.current) return
-
-          if (row.sections !== undefined) {
-            const remoteSections = row.sections ?? []
-            const final = remoteSections.length > 0 ? remoteSections : [newSection()]
-            setSections(final)
-            setEditorVersion(v => v + 1)
-            onSectionsChange(final)
-          }
-          if (row.content !== undefined && typeof row.content === 'string') {
-            onNoteChange(row.content)
-          }
-        }
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [diagnosticId, actionKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ─── Supabase Realtime subscription ─────────────────────────────────────────
+  // TEMPORAIREMENT DÉSACTIVÉ pour réduire la charge Supabase Free tier.
+  // Sera réactivé lors du passage au plan Pro (collaboration temps-réel).
+  // La sync se fait via notesRemoteVersion (polling côté parent) à la place.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void noteTable // référence pour éviter la suppression par le tree-shaker
 
   // ─── Debounced auto-save des sections ─────────────────────────────────────────
   const scheduleSave = useCallback((newSections: NoteSection[]) => {
