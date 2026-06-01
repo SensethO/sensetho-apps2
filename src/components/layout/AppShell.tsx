@@ -16,8 +16,10 @@ interface AppShellProps {
 }
 
 export default function AppShell({ children }: AppShellProps) {
-  const { profile, isAdmin, signOut } = useAuth()
-  const { categories } = useApps(isAdmin)
+  const { profile, isAdmin, signOut, loading: authLoading } = useAuth()
+  // authReady = true dès que useAuth a résolu le profil
+  // → useApps ne charge pas avec isAdmin=false pendant la résolution
+  const { categories } = useApps(isAdmin, !authLoading)
   const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
   const agriCrmUnread = useAgriCrmUnread()
 

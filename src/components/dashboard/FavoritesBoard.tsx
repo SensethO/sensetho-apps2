@@ -8,8 +8,8 @@ import { useFavorites } from '@/hooks/useFavorites'
 import { useAgriCrmUnread } from '@/hooks/useAgriCrmUnread'
 
 export default function FavoritesBoard() {
-  const { profile, isAdmin } = useAuth()
-  const { categories } = useApps(isAdmin)
+  const { profile, isAdmin, loading: authLoading } = useAuth()
+  const { categories } = useApps(isAdmin, !authLoading)
   const { favoriteIds, toggleFavorite, isFavorite } = useFavorites(profile?.id ?? null)
   const agriCrmUnread = useAgriCrmUnread()
 

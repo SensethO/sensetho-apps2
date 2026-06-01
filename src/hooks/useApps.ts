@@ -9,36 +9,54 @@ const CHANNEL_NAME = 'apps-updated'
 // ── Cache module-level : survit aux remontages d'AppShell ────────────────────
 // Quand l'utilisateur change de page, AppShell se remonte mais les catégories
 // sont déjà disponibles instantanément sans nouveau fetch réseau.
+// Le cache est invalidé si le statut admin change (évite d'afficher les
+// données non-admin pendant la résolution asynchrone de l'auth).
 let _cachedCategories: AppCategory[] = []
+let _cachedIsAdmin: boolean | null = null  // ← track pour qui le cache est valide
 let _lastFetchMs = 0
-const CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutes
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 /** Retourne les catégories actuellement en cache (pour initialiser le Sidebar) */
 export function getCachedAppCategories() { return _cachedCategories }
 
 /** Notifie tous les onglets + le même onglet qu'il faut recharger le menu */
 export function broadcastAppsUpdate() {
-  _cachedCategories = []           // invalider le cache
+  _cachedCategories = []
+  _cachedIsAdmin = null
   _lastFetchMs = 0
-  // Même onglet
   window.dispatchEvent(new CustomEvent(CHANNEL_NAME))
-  // Autres onglets
   try { new BroadcastChannel(CHANNEL_NAME).postMessage('reload') } catch { /* navigateur sans support */ }
 }
 
-export function useApps(isAdmin: boolean) {
-  // Initialiser avec le cache → sidebar visible immédiatement
+/**
+ * @param isAdmin    Statut admin de l'utilisateur courant
+ * @param authReady  true dès que useAuth a fini de charger le profil
+ *                   → on n'écrase pas le cache avec isAdmin=false pendant le chargement
+ */
+export function useApps(isAdmin: boolean, authReady = true) {
+  // Initialiser avec le cache — sidebar visible sans flash
+  // Si le cache est pour un admin mais l'utilisateur actuel est non-admin, on
+  // affiche quand même le cache et on rechargera une fois authReady=true.
   const [categories, setCategories] = useState<AppCategory[]>(_cachedCategories)
   const [loading, setLoading] = useState(_cachedCategories.length === 0)
 
   const loadApps = useCallback(async () => {
-    // Si le cache est frais, l'utiliser directement (pas de flash, pas de réseau)
+    // Attendre que l'auth soit résolue avant de charger
+    // (évite d'écraser le cache admin avec des données non-admin)
+    if (!authReady) return
+
     const now = Date.now()
-    if (_cachedCategories.length > 0 && now - _lastFetchMs < CACHE_TTL_MS) {
+    // Cache valide pour le même statut admin → réutiliser
+    if (
+      _cachedCategories.length > 0 &&
+      _cachedIsAdmin === isAdmin &&
+      now - _lastFetchMs < CACHE_TTL_MS
+    ) {
       setCategories(_cachedCategories)
       setLoading(false)
       return
     }
+
     const supabase = createClient()
     setLoading(true)
 
@@ -60,7 +78,7 @@ export function useApps(isAdmin: boolean) {
 
     const queries: Promise<unknown>[] = [catQuery, appQuery]
 
-    // Pour les non-admins, on récupère aussi les abonnements actifs de l'utilisateur
+    // Pour les non-admins : filtrer par abonnements actifs
     if (!isAdmin) {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
@@ -83,38 +101,32 @@ export function useApps(isAdmin: boolean) {
     const cats = (catsRaw ?? []) as AppCategory[]
     let apps = (appsRaw ?? []) as App[]
 
-    // Filtrer les apps par abonnement pour les non-admins
     if (!isAdmin && results.length === 3) {
       const subData = (results[2] as { data: { app_id: string }[] | null }).data ?? []
       const subscribedAppIds = new Set(subData.map(s => s.app_id))
       apps = apps.filter(a => a.pricing_type === 'free' || subscribedAppIds.has(a.id))
     }
 
-    // Exclure les catégories vides après filtrage
     const result: AppCategory[] = cats
       .map(cat => ({ ...cat, apps: apps.filter(a => a.category_id === cat.id) }))
       .filter(cat => cat.apps.length > 0)
 
-    // Mettre en cache
+    // Mettre en cache avec le statut admin correspondant
     _cachedCategories = result
+    _cachedIsAdmin = isAdmin
     _lastFetchMs = Date.now()
     setCategories(result)
     setLoading(false)
-  }, [isAdmin])
+  }, [isAdmin, authReady])
 
   useEffect(() => {
     loadApps()
-
-    // Écoute du même onglet (event custom)
     window.addEventListener(CHANNEL_NAME, loadApps)
-
-    // Écoute des autres onglets (BroadcastChannel)
     let bc: BroadcastChannel | null = null
     try {
       bc = new BroadcastChannel(CHANNEL_NAME)
       bc.onmessage = () => loadApps()
     } catch { /* navigateur sans support */ }
-
     return () => {
       window.removeEventListener(CHANNEL_NAME, loadApps)
       bc?.close()
