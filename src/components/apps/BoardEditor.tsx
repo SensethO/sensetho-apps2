@@ -43,19 +43,78 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
   const [title, setTitle]         = useState('')
   const [editingTitle, setEditingTitle] = useState(false)
   const [isDark, setIsDark]       = useState(false)
+  const [bgColor, setBgColor]     = useState('#09090b')
+  const [showStickyPicker, setShowStickyPicker] = useState(false)
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null)
   const saveTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSavingRef  = useRef(false)
 
-  // Détecter le thème dark
+  // Détecter le thème dark initial
   useEffect(() => {
-    setIsDark(document.documentElement.classList.contains('dark'))
-    const obs = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains('dark'))
-    })
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-    return () => obs.disconnect()
+    const dark = document.documentElement.classList.contains('dark')
+    setIsDark(dark)
+    setBgColor(dark ? '#09090b' : '#ffffff')
   }, [])
+
+  // Insérer un post-it coloré au centre du viewport
+  function addStickyNote(color: string) {
+    if (!excalidrawApiRef.current) return
+    const api = excalidrawApiRef.current
+    const appState = api.getAppState()
+    const elements = api.getSceneElements()
+    const zoom = appState.zoom.value
+    const cx = (-appState.scrollX + window.innerWidth  / 2) / zoom
+    const cy = (-appState.scrollY + window.innerHeight / 2) / zoom
+    const id = crypto.randomUUID()
+    const txtId = crypto.randomUUID()
+    const seed = Math.floor(Math.random() * 2 ** 30)
+    const strokeColors: Record<string, string> = {
+      '#fff9c4': '#b8860b', '#ffd6d6': '#c0392b', '#d0f4de': '#1a6b38',
+      '#cce5ff': '#0056b3', '#e8d5f5': '#6f42c1', '#ffe8c0': '#c05621',
+    }
+    const stroke = strokeColors[color] ?? '#1e1e2e'
+    api.updateScene({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      elements: [...elements, {
+        id, type: 'rectangle', x: cx - 110, y: cy - 110,
+        width: 220, height: 220, angle: 0,
+        strokeColor: stroke, backgroundColor: color, fillStyle: 'solid',
+        strokeWidth: 1, strokeStyle: 'solid', roughness: 0, opacity: 100,
+        roundness: { type: 3, value: 12 }, seed, version: 1, versionNonce: seed + 1,
+        isDeleted: false, groupIds: [], frameId: null, link: null, locked: false,
+        updated: Date.now(), boundElements: [{ type: 'text', id: txtId }], customData: null,
+      } as any, {
+        id: txtId, type: 'text', x: cx - 100, y: cy - 100,
+        width: 200, height: 200, angle: 0,
+        strokeColor: stroke, backgroundColor: 'transparent', fillStyle: 'solid',
+        strokeWidth: 1, strokeStyle: 'solid', roughness: 0, opacity: 100,
+        text: '📝 Note', fontSize: 18, fontFamily: 3,
+        textAlign: 'center', verticalAlign: 'middle', containerId: id,
+        originalText: '📝 Note', lineHeight: 1.25, autoResize: true,
+        seed: seed + 2, version: 1, versionNonce: seed + 3,
+        isDeleted: false, groupIds: [], frameId: null, link: null, locked: false,
+        updated: Date.now(), boundElements: null, customData: null,
+      } as any],
+    })
+    setShowStickyPicker(false)
+  }
+
+  // Changer la couleur de fond du canvas
+  function changeBackground(color: string) {
+    setBgColor(color)
+    excalidrawApiRef.current?.updateScene({ appState: { viewBackgroundColor: color } } as Parameters<ExcalidrawImperativeAPI['updateScene']>[0])
+  }
+
+  // Basculer le thème clair/sombre
+  function toggleTheme() {
+    const newDark = !isDark
+    setIsDark(newDark)
+    const newBg = newDark ? '#09090b' : '#ffffff'
+    setBgColor(newBg)
+    excalidrawApiRef.current?.updateScene({
+      appState: { theme: newDark ? 'dark' : 'light', viewBackgroundColor: newBg },
+    } as Parameters<ExcalidrawImperativeAPI['updateScene']>[0])
+  }
 
   // Charger le board depuis l'API
   useEffect(() => {
@@ -230,6 +289,58 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
 
         {/* Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
+
+          {/* ── Post-its colorés ── */}
+          <div className="relative">
+            <button
+              onClick={() => setShowStickyPicker(v => !v)}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors hover:border-yellow-400"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+              title="Ajouter un post-it">
+              📝 Post-it
+            </button>
+            {showStickyPicker && (
+              <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl p-3 z-50 min-w-[160px]"
+                onClick={e => e.stopPropagation()}>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-2">Couleur du post-it</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { color: '#fff9c4', label: 'Jaune' },
+                    { color: '#ffd6d6', label: 'Rose' },
+                    { color: '#d0f4de', label: 'Vert' },
+                    { color: '#cce5ff', label: 'Bleu' },
+                    { color: '#e8d5f5', label: 'Violet' },
+                    { color: '#ffe8c0', label: 'Orange' },
+                  ].map(({ color, label }) => (
+                    <button key={color} onClick={() => addStickyNote(color)}
+                      title={label}
+                      style={{ backgroundColor: color }}
+                      className="w-10 h-10 rounded-xl border-2 border-transparent hover:border-gray-400 dark:hover:border-gray-300 transition-all hover:scale-110 shadow-sm" />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Couleur de fond ── */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-colors"
+            style={{ borderColor: 'var(--border)' }}
+            title="Couleur du fond">
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>🎨</span>
+            <input type="color" value={bgColor}
+              onChange={e => changeBackground(e.target.value)}
+              className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+              title="Couleur du fond du canvas" />
+          </div>
+
+          {/* ── Mode clair/sombre ── */}
+          <button onClick={toggleTheme}
+            className="text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors hover:border-indigo-400"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            title={isDark ? 'Passer en mode clair' : 'Passer en mode sombre'}>
+            {isDark ? '☀️' : '🌙'}
+          </button>
+
           {/* Statut */}
           <div className="text-[11px] flex items-center gap-1.5 hidden sm:flex" style={{ color: 'var(--text-muted)' }}>
             {saveStatus === 'saving' && <><span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />Sauvegarde…</>}
@@ -282,6 +393,7 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
               appState: {
                 ...savedAppState,
                 theme: isDark ? 'dark' : 'light',
+                viewBackgroundColor: bgColor,
                 openSidebar: null,
                 defaultSidebarDockedPreference: false,
               },
