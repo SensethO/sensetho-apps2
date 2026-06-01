@@ -4,12 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import AppShell from '@/components/layout/AppShell'
-import type {
-  ExcalidrawImperativeAPI,
-  AppState,
-  BinaryFiles,
-} from '@excalidraw/excalidraw/types'
-import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
+import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 
 // Excalidraw doit être chargé côté client uniquement (pas de SSR)
 const Excalidraw = dynamic(
@@ -263,9 +258,7 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
               files: savedFiles,
               scrollToContent: true,
             }}
-            onChange={(_elements: readonly ExcalidrawElement[], _appState: AppState, _files: BinaryFiles) => {
-              scheduleSave()
-            }}
+            onChange={() => { scheduleSave() }}
             theme={isDark ? 'dark' : 'light'}
             langCode="fr-FR"
           />
