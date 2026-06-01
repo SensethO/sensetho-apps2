@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!spItemId) return NextResponse.json({ error: 'spItemId requis' }, { status: 400 })
     if (!name) return NextResponse.json({ error: 'name requis' }, { status: 400 })
 
-    const admin = createAdminClient()
+    void createAdminClient() // réservé pour usage futur (RLS bypass si nécessaire)
     const id = attachmentId ?? crypto.randomUUID()
 
     // Upsert dans vigilance_notes avec sp_item_id stocké dans sections JSONB
