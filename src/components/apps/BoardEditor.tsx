@@ -100,9 +100,11 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
   }
 
   // Changer la couleur de fond du canvas
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function changeBackground(color: string) {
     setBgColor(color)
-    excalidrawApiRef.current?.updateScene({ appState: { viewBackgroundColor: color } } as Parameters<ExcalidrawImperativeAPI['updateScene']>[0])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    excalidrawApiRef.current?.updateScene({ appState: { viewBackgroundColor: color } } as any)
   }
 
   // Basculer le thème clair/sombre
@@ -111,9 +113,8 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
     setIsDark(newDark)
     const newBg = newDark ? '#09090b' : '#ffffff'
     setBgColor(newBg)
-    excalidrawApiRef.current?.updateScene({
-      appState: { theme: newDark ? 'dark' : 'light', viewBackgroundColor: newBg },
-    } as Parameters<ExcalidrawImperativeAPI['updateScene']>[0])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    excalidrawApiRef.current?.updateScene({ appState: { theme: newDark ? 'dark' : 'light', viewBackgroundColor: newBg } } as any)
   }
 
   // Charger le board depuis l'API
