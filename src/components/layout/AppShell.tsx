@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useApps } from '@/hooks/useApps'
 import { useAdminNotifications } from '@/hooks/useAdminNotifications'
 import { useAgriCrmUnread } from '@/hooks/useAgriCrmUnread'
+import { usePageLogger } from '@/hooks/usePageLogger'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -22,6 +23,7 @@ export default function AppShell({ children }: AppShellProps) {
   const { categories } = useApps(isAdmin, !authLoading)
   const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
   const agriCrmUnread = useAgriCrmUnread()
+  usePageLogger() // Logger les visites des pages authentifiées
 
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)

@@ -1,10 +1,12 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import type { ReactNode } from 'react'
+import PublicPageTracker from '@/components/layout/PublicPageTracker'
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
+      <PublicPageTracker />
       {/* Header */}
       <header style={{ backgroundColor: '#0e3d4d' }}>
         <div className="mx-auto max-w-5xl px-4 sm:px-6 flex h-16 items-center justify-between">
