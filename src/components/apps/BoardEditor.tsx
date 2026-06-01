@@ -5,7 +5,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import AppShell from '@/components/layout/AppShell'
-import dynamic from 'next/dynamic'
 
 const ShareBoardModal = dynamic(() => import('./ShareBoardModal'), { ssr: false })
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
