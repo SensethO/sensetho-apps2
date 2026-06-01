@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import dynamic from 'next/dynamic'
+
+const ShareBoardModal = dynamic(() => import('./ShareBoardModal'), { ssr: false })
 
 interface BoardMeta {
   id: string
@@ -48,6 +51,7 @@ export default function BoardsApp() {
   const [renamingId, setRenamingId]     = useState<string | null>(null)
   const [renameVal,  setRenameVal]      = useState('')
   const [deletingId, setDeletingId]     = useState<string | null>(null)
+  const [sharingBoard, setSharingBoard] = useState<BoardMeta | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -128,6 +132,15 @@ export default function BoardsApp() {
       </div>
 
       <div className="p-6 space-y-8 max-w-7xl mx-auto">
+        {/* Modal partage */}
+        {sharingBoard && (
+          <ShareBoardModal
+            boardId={sharingBoard.id}
+            boardTitle={sharingBoard.title}
+            onClose={() => setSharingBoard(null)}
+          />
+        )}
+
         {/* Modal nouveau tableau */}
         {showNew && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowNew(false)}>
@@ -205,6 +218,7 @@ export default function BoardsApp() {
                     onRenameCancel={() => setRenamingId(null)}
                     onRenameChange={setRenameVal}
                     onDelete={() => deleteBoard(board.id)}
+                    onShare={() => setSharingBoard(board)}
                   />
                 ))}
               </div>
@@ -232,6 +246,7 @@ export default function BoardsApp() {
                       onRenameCancel={() => {}}
                       onRenameChange={() => {}}
                       onDelete={() => {}}
+                      onShare={() => setSharingBoard(board)}
                     />
                   ))}
                 </div>
@@ -247,13 +262,13 @@ export default function BoardsApp() {
 function BoardCard({
   board, view, isOwner,
   renamingId, renameVal, deletingId,
-  onOpen, onRename, onRenameConfirm, onRenameCancel, onRenameChange, onDelete,
+  onOpen, onRename, onRenameConfirm, onRenameCancel, onRenameChange, onDelete, onShare,
 }: {
   board: BoardMeta; view: 'grid' | 'list'; isOwner: boolean
   renamingId: string | null; renameVal: string; deletingId: string | null
   onOpen: () => void
   onRename: () => void; onRenameConfirm: () => void; onRenameCancel: () => void
-  onRenameChange: (v: string) => void; onDelete: () => void
+  onRenameChange: (v: string) => void; onDelete: () => void; onShare: () => void
 }) {
   const isRenaming = renamingId === board.id
   const isDeleting = deletingId === board.id
@@ -324,14 +339,21 @@ function BoardCard({
       </div>
 
       {/* Actions (hover) */}
-      {isOwner && !isRenaming && (
+      {!isRenaming && (
         <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={e => { e.stopPropagation(); onRename() }}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700"
-            style={{ backgroundColor: 'var(--bg-card)' }} title="Renommer">✏️</button>
-          <button onClick={e => { e.stopPropagation(); onDelete() }} disabled={isDeleting}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-400"
-            style={{ backgroundColor: 'var(--bg-card)' }} title="Supprimer">🗑️</button>
+          {isOwner && (
+            <button onClick={e => { e.stopPropagation(); onRename() }}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+              style={{ backgroundColor: 'var(--bg-card)' }} title="Renommer">✏️</button>
+          )}
+          <button onClick={e => { e.stopPropagation(); onShare() }}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shadow-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+            style={{ backgroundColor: 'var(--bg-card)' }} title="Partager">👥</button>
+          {isOwner && (
+            <button onClick={e => { e.stopPropagation(); onDelete() }} disabled={isDeleting}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-400"
+              style={{ backgroundColor: 'var(--bg-card)' }} title="Supprimer">🗑️</button>
+          )}
         </div>
       )}
     </div>

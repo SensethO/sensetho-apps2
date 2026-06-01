@@ -5,6 +5,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import AppShell from '@/components/layout/AppShell'
+import dynamic from 'next/dynamic'
+
+const ShareBoardModal = dynamic(() => import('./ShareBoardModal'), { ssr: false })
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 // CSS Excalidraw — OBLIGATOIRE pour le rendu correct (sans ce CSS, les icônes sont énormes)
 import '@excalidraw/excalidraw/index.css'
@@ -46,7 +49,8 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
   const [isDark, setIsDark]       = useState(false)
   const [bgColor, setBgColor]     = useState('#09090b')
   const [showStickyPicker, setShowStickyPicker] = useState(false)
-  const [addingPdf, setAddingPdf] = useState(false)
+  const [addingPdf, setAddingPdf]   = useState(false)
+  const [showShare, setShowShare]   = useState(false)
   const pdfInputRef = useRef<HTMLInputElement>(null)
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null)
   const saveTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -474,11 +478,21 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
           </div>
 
           {/* Partager */}
-          <button className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
+          <button onClick={() => setShowShare(true)}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
             👥 Partager
           </button>
         </div>
       </div>
+
+      {/* Modale partage */}
+      {showShare && board && (
+        <ShareBoardModal
+          boardId={board.id}
+          boardTitle={board.title}
+          onClose={() => setShowShare(false)}
+        />
+      )}
 
       {/* ── Canvas Excalidraw ── */}
       <div className="flex-1 relative overflow-hidden">
