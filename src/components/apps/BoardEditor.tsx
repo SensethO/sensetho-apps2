@@ -131,7 +131,8 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
       .finally(() => setLoading(false))
   }, [boardId])
 
-  // Sauvegarde auto (debounce 2s)
+  // Sauvegarde auto (debounce 5s — réduit la charge Supabase)
+  // Les images intégrées (base64) sont exclues du stockage DB pour éviter les JSONB géants
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
@@ -141,8 +142,9 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
       try {
         const elements  = excalidrawApiRef.current.getSceneElements()
         const appState  = excalidrawApiRef.current.getAppState()
-        const files     = excalidrawApiRef.current.getFiles()
-        const document  = { elements, appState: { viewBackgroundColor: appState.viewBackgroundColor }, files }
+        // NE PAS stocker les fichiers/images en base64 dans Supabase (trop volumineux)
+        // Les images doivent être upload dans SharePoint séparément
+        const document  = { elements, appState: { viewBackgroundColor: appState.viewBackgroundColor }, files: {} }
         await fetch(`/api/boards/${boardId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
