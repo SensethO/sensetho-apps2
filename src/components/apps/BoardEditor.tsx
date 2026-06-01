@@ -263,13 +263,23 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
       <div className="flex-1 relative overflow-hidden">
         {board !== null && (
           <Excalidraw
-            excalidrawAPI={api => { excalidrawApiRef.current = api }}
+            excalidrawAPI={api => {
+              excalidrawApiRef.current = api
+              // Forcer la fermeture du panneau bibliothèque après montage
+              // (Excalidraw peut le rouvrir depuis localStorage)
+              setTimeout(() => {
+                try {
+                  api.updateScene({
+                    appState: { openSidebar: null } as Parameters<typeof api.updateScene>[0]['appState'],
+                  })
+                } catch { /* ignore */ }
+              }, 100)
+            }}
             initialData={{
               elements: savedElements,
               appState: {
                 ...savedAppState,
                 theme: isDark ? 'dark' : 'light',
-                // Fermer le panneau bibliothèque par défaut (évite la grande icône cadenas)
                 openSidebar: null,
                 defaultSidebarDockedPreference: false,
               },
@@ -279,9 +289,6 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
             onChange={() => { scheduleSave() }}
             theme={isDark ? 'dark' : 'light'}
             langCode="fr-FR"
-            UIOptions={{
-              dockedSidebarBreakpoint: 10000, // Ne jamais docker la sidebar automatiquement
-            }}
           />
         )}
       </div>
