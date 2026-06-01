@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import AppShell from '@/components/layout/AppShell'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
+// CSS Excalidraw — OBLIGATOIRE pour le rendu correct (sans ce CSS, les icônes sont énormes)
+import '@excalidraw/excalidraw/index.css'
 
 // Excalidraw doit être chargé côté client uniquement (pas de SSR)
 const Excalidraw = dynamic(
