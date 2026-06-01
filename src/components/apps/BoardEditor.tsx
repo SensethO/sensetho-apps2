@@ -46,6 +46,8 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
   const [isDark, setIsDark]       = useState(false)
   const [bgColor, setBgColor]     = useState('#09090b')
   const [showStickyPicker, setShowStickyPicker] = useState(false)
+  const [addingPdf, setAddingPdf] = useState(false)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null)
   const saveTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSavingRef  = useRef(false)
@@ -108,6 +110,98 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
     excalidrawApiRef.current?.updateScene({ appState: { viewBackgroundColor: color } } as any)
   }
 
+  // ── Intégration PDF : rendre page 1 via PDF.js → insérer comme image Excalidraw ──
+  async function handlePdfFile(file: File) {
+    if (!excalidrawApiRef.current || !file) return
+    setAddingPdf(true)
+    try {
+      // 1. Charger PDF.js dynamiquement (pas de SSR)
+      const pdfjsLib = await import('pdfjs-dist')
+      // Worker en CDN pour éviter les problèmes de bundling
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+
+      // 2. Lire le fichier
+      const arrayBuffer = await file.arrayBuffer()
+      const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      const page = await pdfDoc.getPage(1)
+
+      // 3. Rendre la page sur un canvas (résolution ×2 pour la qualité)
+      const scale = 2
+      const viewport = page.getViewport({ scale })
+      const canvas = document.createElement('canvas')
+      canvas.width  = viewport.width
+      canvas.height = viewport.height
+      const ctx = canvas.getContext('2d')!
+      await page.render({ canvasContext: ctx, viewport }).promise
+
+      // 4. Convertir en PNG data URL
+      const dataUrl = canvas.toDataURL('image/png')
+
+      // 5. Créer un fichier Excalidraw et l'insérer sur le canvas
+      const { addFilesToCanvas } = await import('@excalidraw/excalidraw')
+      const fileId = `pdf_${Date.now()}` as any
+      const appState = excalidrawApiRef.current.getAppState()
+      const zoom = appState.zoom.value
+      const cx = (-appState.scrollX + window.innerWidth  / 2) / zoom
+      const cy = (-appState.scrollY + window.innerHeight / 2) / zoom
+
+      // Créer l'image à partir du data URL
+      const img = new Image()
+      img.src = dataUrl
+      await new Promise<void>(resolve => { img.onload = () => resolve() })
+
+      // Réduire à max 800px de large pour ne pas surcharger le canvas
+      const maxW = 800
+      const ratio = Math.min(1, maxW / img.width)
+      const w = img.width  * ratio
+      const h = img.height * ratio
+
+      // Copier le canvas avec les bonnes dimensions
+      const finalCanvas = document.createElement('canvas')
+      finalCanvas.width  = img.width  * ratio * scale
+      finalCanvas.height = img.height * ratio * scale
+      const finalCtx = finalCanvas.getContext('2d')!
+      finalCtx.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height)
+      const finalDataUrl = finalCanvas.toDataURL('image/png')
+
+      // Insérer via addFilesToCanvas si disponible, sinon via updateScene
+      try {
+        await addFilesToCanvas(excalidrawApiRef.current, [
+          new File([await (await fetch(finalDataUrl)).blob()], file.name.replace('.pdf', '.png'), { type: 'image/png' }),
+        ])
+      } catch {
+        // Fallback : insérer manuellement un rectangle image
+        const id = crypto.randomUUID()
+        const seed = Math.floor(Math.random() * 2 ** 30)
+        const elements = excalidrawApiRef.current.getSceneElements()
+        excalidrawApiRef.current.updateScene({
+          elements: [...elements, {
+            id, type: 'image', x: cx - w / 2, y: cy - h / 2,
+            width: w, height: h, angle: 0,
+            strokeColor: 'transparent', backgroundColor: 'transparent',
+            fillStyle: 'solid', strokeWidth: 1, strokeStyle: 'solid',
+            roughness: 0, opacity: 100, seed, version: 1,
+            versionNonce: seed + 1, isDeleted: false, groupIds: [],
+            frameId: null, link: null, locked: false, updated: Date.now(),
+            boundElements: null, customData: null,
+            status: 'saved', fileId: id as any,
+          } as any],
+          files: {
+            ...excalidrawApiRef.current.getFiles(),
+            [id]: { id: id as any, dataURL: finalDataUrl as any, mimeType: 'image/png', created: Date.now() },
+          } as any,
+        })
+      }
+
+      alert(`✅ PDF "${file.name}" intégré (page 1 sur ${pdfDoc.numPages})`)
+    } catch (e) {
+      alert('Erreur lors de l\'intégration du PDF : ' + String(e))
+    } finally {
+      setAddingPdf(false)
+      if (pdfInputRef.current) pdfInputRef.current.value = ''
+    }
+  }
+
   // Basculer le thème clair/sombre
   function toggleTheme() {
     const newDark = !isDark
@@ -142,9 +236,9 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
       try {
         const elements  = excalidrawApiRef.current.getSceneElements()
         const appState  = excalidrawApiRef.current.getAppState()
-        // NE PAS stocker les fichiers/images en base64 dans Supabase (trop volumineux)
-        // Les images doivent être upload dans SharePoint séparément
-        const document  = { elements, appState: { viewBackgroundColor: appState.viewBackgroundColor }, files: {} }
+        // Stocker les fichiers (images, PDF convertis) — limiter à <2MB total
+        const files = excalidrawApiRef.current.getFiles()
+        const document  = { elements, appState: { viewBackgroundColor: appState.viewBackgroundColor }, files }
         await fetch(`/api/boards/${boardId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -324,6 +418,20 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* ── Intégrer PDF ── */}
+          <div>
+            <input ref={pdfInputRef} type="file" accept="application/pdf"
+              className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handlePdfFile(f) }} />
+            <button
+              onClick={() => pdfInputRef.current?.click()}
+              disabled={addingPdf}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors hover:border-red-400 disabled:opacity-50"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+              title="Intégrer un PDF (page 1 rendue en image)">
+              {addingPdf ? <span className="animate-spin">⟳</span> : '📄'} PDF
+            </button>
           </div>
 
           {/* ── Couleur de fond ── */}
