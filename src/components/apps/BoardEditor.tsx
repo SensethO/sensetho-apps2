@@ -269,6 +269,9 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
               appState: {
                 ...savedAppState,
                 theme: isDark ? 'dark' : 'light',
+                // Fermer le panneau bibliothèque par défaut (évite la grande icône cadenas)
+                openSidebar: null,
+                defaultSidebarDockedPreference: false,
               },
               files: savedFiles,
               scrollToContent: true,
@@ -276,6 +279,9 @@ export default function BoardEditor({ boardId }: { boardId: string }) {
             onChange={() => { scheduleSave() }}
             theme={isDark ? 'dark' : 'light'}
             langCode="fr-FR"
+            UIOptions={{
+              dockedSidebarBreakpoint: 10000, // Ne jamais docker la sidebar automatiquement
+            }}
           />
         )}
       </div>
