@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const { data: share, error } = await admin
       .from('board_shares')
       .upsert(
-        { board_id: params.id, shared_by: user.id, shared_with_user_id: target.id, permission },
+        { board_id: params.id, shared_with_user_id: target.id, permission },
         { onConflict: 'board_id,shared_with_user_id' }
       )
       .select('id, permission, created_at, shared_with_user_id')
