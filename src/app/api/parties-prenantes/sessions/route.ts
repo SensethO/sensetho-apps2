@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
-/** GET /api/parties-prenantes/sessions — liste légère (sans stakeholders/surveys) */
+/** GET /api/parties-prenantes/sessions — liste avec compteurs (PP identifiées, enquêtes, sujets matériels) */
 export async function GET() {
   try {
     const supabase = createRouteClient()
@@ -12,14 +12,40 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const admin = createAdminClient()
+    // Inclut les JSONB pour calculer les compteurs côté serveur
     const { data, error } = await admin
       .from('pp_sessions')
-      .select('id, name, organisation, secteur, exercice, mode, materiality_type, status, created_at, updated_at')
+      .select('id, name, organisation, secteur, exercice, mode, materiality_type, status, created_at, updated_at, stakeholders, surveys, materiality_scores')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ data: data ?? [] })
+
+    // Extraire les compteurs et supprimer les JSONB lourds de la réponse
+    const processed = (data ?? []).map(s => {
+      const stakeholders = Array.isArray(s.stakeholders) ? s.stakeholders : []
+      const surveys = Array.isArray(s.surveys) ? s.surveys : []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const matScores = Array.isArray(s.materiality_scores) ? s.materiality_scores : []
+      return {
+        id: s.id,
+        name: s.name,
+        organisation: s.organisation,
+        secteur: s.secteur,
+        exercice: s.exercice,
+        mode: s.mode,
+        materiality_type: s.materiality_type,
+        status: s.status,
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+        pp_count: stakeholders.length,
+        surveys_count: surveys.length,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        material_count: matScores.filter((ms: any) => ms.is_material === true).length,
+      }
+    })
+
+    return NextResponse.json({ data: processed })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

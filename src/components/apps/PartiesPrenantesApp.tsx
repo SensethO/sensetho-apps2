@@ -17,7 +17,11 @@ const PPNotePanel = dynamic(() => import('./GuidedActionNotePanel'), { ssr: fals
 
 // ─── Types internes ───────────────────────────────────────────────────────────
 
-type SessionListItem = Omit<PPSession, 'stakeholders' | 'surveys' | 'materiality_scores' | 'session_notes'>
+type SessionListItem = Omit<PPSession, 'stakeholders' | 'surveys' | 'materiality_scores' | 'session_notes'> & {
+  pp_count?: number
+  surveys_count?: number
+  material_count?: number
+}
 
 // ─── Tutorial Modal ───────────────────────────────────────────────────────────
 
@@ -320,11 +324,11 @@ function NewSessionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-6">
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Nouvelle session</h2>
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Nouvelle analyse</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Nom de la session *
+              Nom de l&apos;analyse *
             </label>
             <input
               type="text"
@@ -403,7 +407,7 @@ function NewSessionModal({
               disabled={saving}
               className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-medium transition-colors text-sm"
             >
-              {saving ? 'Création...' : 'Créer la session'}
+              {saving ? 'Création...' : "Créer l'analyse"}
             </button>
           </div>
         </form>
@@ -848,7 +852,7 @@ function TabSurveys({
   const [activeSurveyId, setActiveSurveyId] = useState<string | null>(null)
   const [inviteEmails, setInviteEmails] = useState('')
   const [inviteSending, setInviteSending] = useState(false)
-  const [inviteResult, setInviteResult] = useState<{ sent: string[]; failed: string[] } | null>(null)
+  const [inviteResult, setInviteResult] = useState<{ sent: string[]; failed: string[]; emailErrors?: string[]; note?: string } | null>(null)
   const [shareLoading, setShareLoading] = useState<string | null>(null)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [showInviteFor, setShowInviteFor] = useState<string | null>(null)
@@ -1336,12 +1340,13 @@ function TabSurveys({
                       disabled={inviteSending || !inviteEmails.trim()}
                       className="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg transition-colors"
                     >
-                      {inviteSending ? 'Envoi...' : 'Enregistrer les invitations'}
+                      {inviteSending ? 'Envoi...' : '✉️ Envoyer les invitations par email'}
                     </button>
                     {inviteResult && (
                       <div className="text-xs space-y-1">
-                        {inviteResult.sent.length > 0 && <p className="text-emerald-600 dark:text-emerald-400">✓ {inviteResult.sent.length} invitation{inviteResult.sent.length !== 1 ? 's' : ''} enregistrée{inviteResult.sent.length !== 1 ? 's' : ''}</p>}
-                        {inviteResult.failed.length > 0 && <p className="text-red-600 dark:text-red-400">✗ {inviteResult.failed.length} échec{inviteResult.failed.length !== 1 ? 's' : ''}</p>}
+                        {inviteResult.sent.length > 0 && <p className="text-emerald-600 dark:text-emerald-400">✓ {inviteResult.sent.length} invitation{inviteResult.sent.length !== 1 ? 's' : ''} envoyée{inviteResult.sent.length !== 1 ? 's' : ''}</p>}
+                        {inviteResult.failed.length > 0 && <p className="text-red-600 dark:text-red-400">✗ {inviteResult.failed.length} email{inviteResult.failed.length !== 1 ? 's' : ''} invalide{inviteResult.failed.length !== 1 ? 's' : ''}</p>}
+                        {inviteResult.note && <p className="text-amber-600 dark:text-amber-400 leading-relaxed">{inviteResult.note}</p>}
                       </div>
                     )}
                   </div>
@@ -1580,7 +1585,9 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Parties Prenantes & Matérialité</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Cartographie, enquêtes ESRS et matrice de double matérialité CSRD
+              {sessions.length > 0
+                ? `${sessions.length} analyse${sessions.length !== 1 ? 's' : ''} · Cartographie, enquêtes ESRS et matrice de matérialité`
+                : 'Cartographie, enquêtes ESRS et matrice de double matérialité CSRD'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1594,7 +1601,7 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
               onClick={() => setShowNewModal(true)}
               className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors"
             >
-              + Nouvelle session
+              + Nouvelle analyse
             </button>
           </div>
         </div>
@@ -1621,13 +1628,13 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
             <p className="text-5xl mb-4">👥</p>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Commencez votre engagement parties prenantes</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
-              Créez votre première session pour cartographier vos parties prenantes et évaluer la matérialité de vos enjeux ESG.
+              Créez votre première analyse pour cartographier vos parties prenantes et évaluer la matérialité de vos enjeux ESG.
             </p>
             <button
               onClick={() => setShowNewModal(true)}
               className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl transition-colors"
             >
-              Créer ma première session
+              Créer ma première analyse
             </button>
           </div>
         )}
@@ -1635,26 +1642,43 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
         {!loading && hasSessions && (
           <div className="space-y-3">
             {sessions.map(session => {
-              const modeLabel: Record<string, string> = { csrd: 'CSRD', voluntaire: 'Volontaire', both: 'CSRD + Vol.' }
-              const mtLabel: Record<string, string> = { double: '2 Matérialités', simple: '1 Matérialité' }
-              const statusBadge = session.status === 'archivé'
-                ? 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+              // Badge mode
+              const modeBadge = session.mode === 'csrd'
+                ? { label: 'Obligation CSRD', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' }
+                : session.mode === 'voluntaire'
+                  ? { label: 'Volontaire', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' }
+                  : { label: 'CSRD + Volontaire', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' }
+
+              // Badge matérialité
+              const mtBadge = session.materiality_type === 'double'
+                ? { label: 'Double matérialité', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' }
+                : { label: 'Simple matérialité', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' }
+
+              const ppCount = (session as SessionListItem).pp_count ?? 0
+              const surveysCount = (session as SessionListItem).surveys_count ?? 0
+              const materialCount = (session as SessionListItem).material_count ?? 0
+
               return (
                 <div
                   key={session.id}
-                  className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors cursor-pointer"
+                  className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors cursor-pointer group"
                   onClick={() => handleSelectSession(session.id)}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      {/* Nom + badges */}
+                      <div className="flex items-center gap-2 flex-wrap mb-1.5">
                         <h3 className="font-semibold text-gray-900 dark:text-white">{session.name}</h3>
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusBadge}`}>
-                          {session.status === 'archivé' ? 'Archivé' : 'Actif'}
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${modeBadge.cls}`}>
+                          {modeBadge.label}
+                        </span>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${mtBadge.cls}`}>
+                          {mtBadge.label}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+
+                      {/* Organisation · Secteur · Exercice */}
+                      <div className="flex items-center gap-2 mb-3 flex-wrap">
                         {session.organisation && (
                           <span className="text-xs text-gray-500 dark:text-gray-400">{session.organisation}</span>
                         )}
@@ -1664,24 +1688,41 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
                         {session.secteur && (
                           <span className="text-xs text-gray-500 dark:text-gray-400">{session.secteur}</span>
                         )}
-                        <span className="text-gray-300 dark:text-gray-600">·</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {modeLabel[session.mode] ?? session.mode}
-                        </span>
-                        <span className="text-gray-300 dark:text-gray-600">·</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {mtLabel[session.materiality_type] ?? session.materiality_type}
-                        </span>
-                        <span className="text-gray-300 dark:text-gray-600">·</span>
+                        {(session.organisation || session.secteur) && (
+                          <span className="text-gray-300 dark:text-gray-600">·</span>
+                        )}
                         <span className="text-xs text-gray-500 dark:text-gray-400">Exercice {session.exercice}</span>
                       </div>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+
+                      {/* Grille de stats */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2.5 text-center">
+                          <p className="text-lg font-bold text-gray-900 dark:text-white leading-none mb-0.5">
+                            {ppCount}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight">PP identifiées</p>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2.5 text-center">
+                          <p className="text-lg font-bold text-gray-900 dark:text-white leading-none mb-0.5">
+                            {surveysCount}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight">Enquêtes</p>
+                        </div>
+                        <div className={`rounded-lg p-2.5 text-center ${materialCount > 0 ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-gray-50 dark:bg-gray-700/50'}`}>
+                          <p className={`text-lg font-bold leading-none mb-0.5 ${materialCount > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-900 dark:text-white'}`}>
+                            {materialCount}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight">Sujets matériels</p>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                         Mis à jour le {new Date(session.updated_at).toLocaleDateString('fr-FR')}
                       </p>
                     </div>
                     <button
                       onClick={e => { e.stopPropagation(); handleDeleteSession(session.id) }}
-                      className="p-1.5 text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0"
+                      className="p-1.5 text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
                       title="Supprimer"
                     >
                       🗑️

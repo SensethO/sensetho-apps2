@@ -17,9 +17,10 @@ async function getOwnedSession(sessionId: string, userId: string) {
 }
 
 /** POST /api/parties-prenantes/sessions/[id]/surveys/[surveyId]/share
- *  Génère un token de partage valide 30 jours */
+ *  Génère un token de partage dans pp_survey_tokens (table dédiée, RLS public SELECT)
+ *  et stocke aussi le token dans le JSONB pour affichage dans l'UI */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string; surveyId: string } }
 ) {
   try {
@@ -34,23 +35,51 @@ export async function POST(
     const surveyIndex = surveys.findIndex((s) => s.id === params.surveyId)
     if (surveyIndex === -1) return NextResponse.json({ error: 'Survey not found' }, { status: 404 })
 
-    const token = crypto.randomUUID()
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    // Lire les options de la requête (anonymous ?)
+    let isAnonymous = surveys[surveyIndex].anonymous ?? false
+    try { const b = await req.json(); isAnonymous = b.anonymous ?? isAnonymous } catch { /* pas de body */ }
 
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    const admin = createAdminClient()
+
+    // Supprimer l'ancien token s'il existait déjà
+    if (surveys[surveyIndex].share_token) {
+      await admin
+        .from('pp_survey_tokens')
+        .delete()
+        .eq('token', surveys[surveyIndex].share_token!)
+    }
+
+    // Créer le token dans la table dédiée (token généré par Postgres : hex 32 bytes)
+    const { data: tokenRow, error: tokenError } = await admin
+      .from('pp_survey_tokens')
+      .insert({
+        session_id: params.id,
+        survey_id: params.surveyId,
+        anonymous: isAnonymous,
+        expires_at: expiresAt,
+      })
+      .select('token')
+      .single()
+
+    if (tokenError || !tokenRow) {
+      return NextResponse.json({ error: tokenError?.message ?? 'Erreur création token' }, { status: 500 })
+    }
+
+    const token = tokenRow.token
+
+    // Mettre à jour aussi le JSONB pour affichage dans l'UI
     surveys[surveyIndex] = {
       ...surveys[surveyIndex],
       share_token: token,
       token_expires_at: expiresAt,
     }
 
-    const admin = createAdminClient()
-    const { error } = await admin
+    await admin
       .from('pp_sessions')
       .update({ surveys })
       .eq('id', params.id)
       .eq('user_id', user.id)
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     const url = `https://app.sensetho.fr/enquete/${token}`
     return NextResponse.json({ data: { token, url, expires_at: expiresAt } })
@@ -77,13 +106,23 @@ export async function DELETE(
     const surveyIndex = surveys.findIndex((s) => s.id === params.surveyId)
     if (surveyIndex === -1) return NextResponse.json({ error: 'Survey not found' }, { status: 404 })
 
+    const admin = createAdminClient()
+
+    // Supprimer le token de la table dédiée
+    if (surveys[surveyIndex].share_token) {
+      await admin
+        .from('pp_survey_tokens')
+        .delete()
+        .eq('token', surveys[surveyIndex].share_token!)
+    }
+
+    // Nettoyer le JSONB
     surveys[surveyIndex] = {
       ...surveys[surveyIndex],
       share_token: null,
       token_expires_at: null,
     }
 
-    const admin = createAdminClient()
     const { error } = await admin
       .from('pp_sessions')
       .update({ surveys })

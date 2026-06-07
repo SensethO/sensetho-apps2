@@ -16,6 +16,9 @@ const PUBLIC_ROUTES = [
   '/auth/forgot-password',
   '/auth/signout',
   '/auth/callback',
+  '/enquete',           // page publique questionnaire parties prenantes
+  '/api/pp-survey/',    // API publique données enquête
+  '/api/pp-track/',     // tracking email (pixel + clic)
 ]
 
 const AUTH_PAGES = ['/auth/login', '/auth/register', '/auth/forgot-password']

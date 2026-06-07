@@ -228,6 +228,64 @@ export async function sendEmail(
   }
 }
 
+// ─── Template HTML — invitation enquête de matérialité ───────────────────────
+
+export function buildSurveyInviteEmail({
+  surveyName,
+  sessionOrganisation,
+  surveyUrl,
+  personalMessage,
+  expiresAt,
+}: {
+  surveyName: string
+  sessionOrganisation?: string
+  surveyUrl: string
+  personalMessage?: string
+  expiresAt?: string
+}): string {
+  const orgLine = sessionOrganisation
+    ? `<p style="color:#6b7280;margin:0 0 16px">pour <strong>${sessionOrganisation}</strong></p>`
+    : ''
+  const expLine = expiresAt
+    ? `<p style="color:#9ca3af;font-size:13px;margin:16px 0 0">Ce lien expire le ${new Date(expiresAt).toLocaleDateString('fr-FR')}.</p>`
+    : ''
+  const msgBlock = personalMessage
+    ? `<p style="background:#f9fafb;border-left:3px solid #10b981;padding:12px 16px;margin:16px 0;border-radius:0 8px 8px 0;color:#374151">${personalMessage}</p>`
+    : ''
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Invitation enquête de matérialité</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f3f4f6;margin:0;padding:40px 20px">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)">
+    <div style="background:#10b981;padding:32px 40px">
+      <p style="color:#d1fae5;font-size:13px;margin:0 0 4px">Sens'ethO Apps</p>
+      <h1 style="color:#ffffff;font-size:22px;margin:0;font-weight:700">Enquête de matérialité</h1>
+    </div>
+    <div style="padding:32px 40px">
+      <h2 style="font-size:18px;color:#111827;margin:0 0 8px">${surveyName}</h2>
+      ${orgLine}
+      <p style="color:#374151;margin:0 0 16px">
+        Vous êtes invité·e à participer à une enquête de matérialité ESG / CSRD.<br>
+        Vos réponses sont confidentielles et permettront d'identifier les enjeux les plus importants.
+      </p>
+      ${msgBlock}
+      <a href="${surveyUrl}" style="display:inline-block;background:#10b981;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:15px;margin:8px 0">
+        Répondre au questionnaire →
+      </a>
+      ${expLine}
+    </div>
+    <div style="padding:20px 40px;border-top:1px solid #f3f4f6">
+      <p style="color:#9ca3af;font-size:12px;margin:0">
+        Vous recevez cet email car vous avez été identifié·e comme partie prenante.<br>
+        En cas de doute, contactez <a href="mailto:web@sensetho.com" style="color:#10b981">web@sensetho.com</a>.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 // ─── Mapper Graph → format BDD ────────────────────────────────────────────────
 
 export interface EmailRecord {
