@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import {
   PPSession,
   Stakeholder,
+  StakeholderContact,
   Survey,
   SurveyQuestion,
   SurveyResponse,
@@ -466,7 +467,6 @@ function TabStakeholders({
   const [form, setForm] = useState<{
     name: string
     organisation: string
-    email: string
     category: 'interne' | 'externe'
     type: string
     influence: number
@@ -474,12 +474,16 @@ function TabStakeholders({
     engagement_type: 'csrd' | 'voluntaire' | 'both'
     notes: string
   }>({
-    name: '', organisation: '', email: '', category: 'externe', type: 'clients',
+    name: '', organisation: '', category: 'externe', type: 'clients',
     influence: 3, interest: 3, engagement_type: 'csrd', notes: '',
   })
+  const [contacts, setContacts] = useState<StakeholderContact[]>([
+    { id: crypto.randomUUID(), name: '', email: '', role: '' }
+  ])
 
   function resetForm() {
-    setForm({ name: '', organisation: '', email: '', category: 'externe', type: 'clients', influence: 3, interest: 3, engagement_type: 'csrd', notes: '' })
+    setForm({ name: '', organisation: '', category: 'externe', type: 'clients', influence: 3, interest: 3, engagement_type: 'csrd', notes: '' })
+    setContacts([{ id: crypto.randomUUID(), name: '', email: '', role: '' }])
     setEditId(null)
     setShowAdd(false)
   }
@@ -488,7 +492,6 @@ function TabStakeholders({
     setForm({
       name: s.name,
       organisation: s.organisation ?? '',
-      email: s.email ?? '',
       category: s.category,
       type: s.type,
       influence: s.influence,
@@ -496,35 +499,55 @@ function TabStakeholders({
       engagement_type: s.engagement_type,
       notes: s.notes ?? '',
     })
+    // Rétrocompat : si pas de contacts[], créer un contact à partir de email
+    const existingContacts: StakeholderContact[] = s.contacts && s.contacts.length > 0
+      ? s.contacts
+      : s.email
+        ? [{ id: crypto.randomUUID(), name: s.name, email: s.email, role: '' }]
+        : [{ id: crypto.randomUUID(), name: '', email: '', role: '' }]
+    setContacts(existingContacts)
     setEditId(s.id)
     setShowAdd(true)
   }
 
+  function addContact() {
+    setContacts(prev => [...prev, { id: crypto.randomUUID(), name: '', email: '', role: '' }])
+  }
+
+  function removeContact(id: string) {
+    setContacts(prev => prev.length > 1 ? prev.filter(c => c.id !== id) : prev)
+  }
+
+  function updateContact(id: string, field: keyof StakeholderContact, value: string) {
+    setContacts(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
+  }
+
   function handleSave() {
     if (!form.name.trim()) return
+    const validContacts = contacts.filter(c => c.email.trim())
     const now = new Date().toISOString()
+
+    const baseData: Omit<Stakeholder, 'id' | 'created_at'> = {
+      name: form.name.trim(),
+      organisation: form.organisation || undefined,
+      category: form.category,
+      type: form.type,
+      influence: form.influence as Stakeholder['influence'],
+      interest: form.interest as Stakeholder['interest'],
+      engagement_type: form.engagement_type,
+      notes: form.notes || undefined,
+      contacts: validContacts.length > 0 ? validContacts : undefined,
+      // Rétrocompat : premier email dans le champ email
+      email: validContacts[0]?.email || undefined,
+    }
+
     let updated: Stakeholder[]
     if (editId) {
       updated = session.stakeholders.map(s =>
-        s.id === editId
-          ? { ...s, ...form, influence: form.influence as Stakeholder['influence'], interest: form.interest as Stakeholder['interest'] }
-          : s
+        s.id === editId ? { ...s, ...baseData } : s
       )
     } else {
-      const newOne: Stakeholder = {
-        id: crypto.randomUUID(),
-        name: form.name.trim(),
-        organisation: form.organisation || undefined,
-        email: form.email || undefined,
-        category: form.category,
-        type: form.type,
-        influence: form.influence as Stakeholder['influence'],
-        interest: form.interest as Stakeholder['interest'],
-        engagement_type: form.engagement_type,
-        notes: form.notes || undefined,
-        created_at: now,
-      }
-      updated = [...session.stakeholders, newOne]
+      updated = [...session.stakeholders, { id: crypto.randomUUID(), created_at: now, ...baseData }]
     }
     onUpdate({ stakeholders: updated })
     resetForm()
@@ -567,7 +590,7 @@ function TabStakeholders({
               type="text"
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder="Nom *"
+              placeholder="Nom du groupe / de la PP *"
               className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
             />
             <input
@@ -575,13 +598,6 @@ function TabStakeholders({
               value={form.organisation}
               onChange={e => setForm(f => ({ ...f, organisation: e.target.value }))}
               placeholder="Organisation"
-              className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-            />
-            <input
-              type="email"
-              value={form.email}
-              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              placeholder="Email"
               className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
             />
             <select
@@ -610,6 +626,58 @@ function TabStakeholders({
               <option value="voluntaire">Volontaire</option>
               <option value="both">Les deux</option>
             </select>
+          </div>
+
+          {/* Membres / contacts */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                Membres / contacts ({contacts.filter(c => c.email.trim()).length} avec email)
+              </p>
+              <button
+                type="button"
+                onClick={addContact}
+                className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
+              >
+                + Ajouter un membre
+              </button>
+            </div>
+            <div className="space-y-2">
+              {contacts.map((c, idx) => (
+                <div key={c.id} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={c.name}
+                    onChange={e => updateContact(c.id, 'name', e.target.value)}
+                    placeholder={`Prénom Nom${idx === 0 ? ' *' : ''}`}
+                    className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  />
+                  <input
+                    type="email"
+                    value={c.email}
+                    onChange={e => updateContact(c.id, 'email', e.target.value)}
+                    placeholder="Email"
+                    className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={c.role ?? ''}
+                    onChange={e => updateContact(c.id, 'role', e.target.value)}
+                    placeholder="Rôle"
+                    className="w-28 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeContact(c.id)}
+                    disabled={contacts.length === 1}
+                    className="text-gray-400 hover:text-red-500 disabled:opacity-30 transition-colors text-lg flex-shrink-0"
+                    title="Supprimer ce membre"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -674,13 +742,37 @@ function TabStakeholders({
                           <span className="text-xs text-gray-400 dark:text-gray-500 truncate">— {s.organisation}</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-xs text-gray-500 dark:text-gray-400">{stakeholderTypeLabel(s.type)}</span>
                         <span className="text-xs text-gray-300 dark:text-gray-600">·</span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">Influence {s.influence}/5</span>
                         <span className="text-xs text-gray-300 dark:text-gray-600">·</span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">Intérêt {s.interest}/5</span>
+                        {(() => {
+                          const memberCount = s.contacts?.filter(c => c.email).length ?? (s.email ? 1 : 0)
+                          return memberCount > 0 ? (
+                            <>
+                              <span className="text-xs text-gray-300 dark:text-gray-600">·</span>
+                              <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                                {memberCount} membre{memberCount !== 1 ? 's' : ''}
+                              </span>
+                            </>
+                          ) : null
+                        })()}
                       </div>
+                      {/* Aperçu des premiers contacts */}
+                      {(s.contacts && s.contacts.length > 0) && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {s.contacts.slice(0, 3).map(c => (
+                            <span key={c.id} className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded">
+                              {c.name || c.email}
+                            </span>
+                          ))}
+                          {s.contacts.length > 3 && (
+                            <span className="text-xs text-gray-400 dark:text-gray-500">+{s.contacts.length - 3}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => handleEdit(s)} className="p-1.5 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors" title="Modifier">✏️</button>
@@ -971,7 +1063,7 @@ function TabSurveys({
   }
 
   function copyShareUrl(token: string) {
-    const url = `https://app.sensetho.fr/enquete/${token}`
+    const url = `https://apps.sensetho.com/enquete/${token}`
     navigator.clipboard.writeText(url).then(() => {
       setCopiedToken(token)
       setTimeout(() => setCopiedToken(null), 2000)
@@ -986,6 +1078,17 @@ function TabSurveys({
     } catch (e) { console.error(e) }
   }
 
+  /** Retourne tous les contacts (avec email) d'une PP, avec rétrocompat email unique */
+  function getStakeholderContacts(sh: Stakeholder): StakeholderContact[] {
+    if (sh.contacts && sh.contacts.length > 0) {
+      return sh.contacts.filter(c => c.email.trim())
+    }
+    if (sh.email) {
+      return [{ id: sh.id, name: sh.name, email: sh.email, role: undefined }]
+    }
+    return []
+  }
+
   async function handleOpenInvite(surveyId: string) {
     const wasOpen = showInviteFor === surveyId
     setShowInviteFor(wasOpen ? null : surveyId)
@@ -995,7 +1098,7 @@ function TabSurveys({
       const surv = session.surveys.find(s => s.id === surveyId)
       const targetIds = surv?.stakeholder_ids ?? []
       const targetSHs = session.stakeholders.filter(s =>
-        (targetIds.length === 0 || targetIds.includes(s.id)) && s.email
+        targetIds.length === 0 || targetIds.includes(s.id)
       )
       try {
         const res = await fetch(`/api/parties-prenantes/sessions/${session.id}/surveys/${surveyId}/invitations`)
@@ -1003,9 +1106,10 @@ function TabSurveys({
         if (res.ok) {
           const rows: InvitationRecord[] = json.data ?? []
           setInvitations(prev => ({ ...prev, [surveyId]: rows }))
-          // Pré-sélectionner les PP qui n'ont pas encore répondu
-          const responded = new Set(rows.filter(i => i.responded_at).map(i => i.email))
-          setSelectedEmails(targetSHs.filter(s => !responded.has(s.email!)).map(s => s.email!))
+          // Pré-sélectionner tous les contacts qui n'ont pas encore répondu
+          const responded = new Set(rows.filter(i => i.responded_at).map(i => i.email?.toLowerCase()))
+          const allEmails = targetSHs.flatMap(sh => getStakeholderContacts(sh).map(c => c.email))
+          setSelectedEmails(allEmails.filter(e => !responded.has(e.toLowerCase())))
         }
       } catch (e) { console.error(e) }
       finally { setInviteLoading(false) }
@@ -1332,7 +1436,7 @@ function TabSurveys({
                 {survey.share_token ? (
                   <div className="flex items-center gap-2">
                     <code className="flex-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded px-2 py-1.5 text-gray-700 dark:text-gray-300 truncate">
-                      https://app.sensetho.fr/enquete/{survey.share_token}
+                      https://apps.sensetho.com/enquete/{survey.share_token}
                     </code>
                     <button
                       onClick={() => copyShareUrl(survey.share_token!)}
@@ -1383,7 +1487,11 @@ function TabSurveys({
                     ) : (() => {
                       const targetIds = survey.stakeholder_ids ?? []
                       const targetSHs = session.stakeholders.filter(s =>
-                        (targetIds.length === 0 || targetIds.includes(s.id)) && s.email
+                        targetIds.length === 0 || targetIds.includes(s.id)
+                      )
+                      // Tous les contacts (avec email) de toutes les PP ciblées
+                      const allContacts = targetSHs.flatMap(sh =>
+                        getStakeholderContacts(sh).map(c => ({ sh, contact: c }))
                       )
                       const survInvitations = invitations[survey.id] ?? []
                       const extraCount = extraEmails.split(/[\n,;]+/).filter(e => e.trim()).length
@@ -1391,16 +1499,16 @@ function TabSurveys({
 
                       return (
                         <>
-                          {/* Liste des parties prenantes avec emails */}
-                          {targetSHs.length > 0 ? (
+                          {/* Liste des contacts, groupés par PP */}
+                          {allContacts.length > 0 ? (
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
                                 <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                                  Parties prenantes ({targetSHs.length})
+                                  Membres ({allContacts.length} contact{allContacts.length !== 1 ? 's' : ''})
                                 </p>
                                 <div className="flex gap-2">
                                   <button
-                                    onClick={() => setSelectedEmails(targetSHs.map(s => s.email!))}
+                                    onClick={() => setSelectedEmails(allContacts.map(({ contact }) => contact.email))}
                                     className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
                                   >
                                     Tout sélectionner
@@ -1414,69 +1522,91 @@ function TabSurveys({
                                   </button>
                                 </div>
                               </div>
-                              <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
+                              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                                {/* Grouper par PP */}
                                 {targetSHs.map(sh => {
-                                  const shInvites = survInvitations
-                                    .filter(i => i.email?.toLowerCase() === sh.email?.toLowerCase())
-                                    .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
-                                  const latest = shInvites[0]
-                                  const isSelected = selectedEmails.includes(sh.email!)
+                                  const shContacts = getStakeholderContacts(sh)
+                                  if (shContacts.length === 0) return null
                                   const st = STAKEHOLDER_TYPES.find(t => t.value === sh.type)
-
                                   return (
-                                    <label
-                                      key={sh.id}
-                                      className={`flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
-                                        isSelected
-                                          ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700'
-                                          : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-                                      }`}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isSelected}
-                                        onChange={e => {
-                                          if (e.target.checked) {
-                                            setSelectedEmails(prev => [...prev, sh.email!])
-                                          } else {
-                                            setSelectedEmails(prev => prev.filter(em => em !== sh.email))
-                                          }
-                                        }}
-                                        className="mt-0.5 w-3.5 h-3.5 accent-emerald-600 flex-shrink-0"
-                                      />
-                                      <span className="flex-shrink-0 text-sm mt-0.5">{st?.icon ?? '👤'}</span>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{sh.name}</span>
-                                          {sh.organisation && (
-                                            <span className="text-xs text-gray-400 dark:text-gray-500 truncate">· {sh.organisation}</span>
-                                          )}
-                                          {/* Badge statut de la dernière invitation */}
-                                          {latest && (
-                                            latest.responded_at ? (
-                                              <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Répondu ✓</span>
-                                            ) : latest.clicked_at ? (
-                                              <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Consulté</span>
-                                            ) : latest.opened_at ? (
-                                              <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Ouvert</span>
-                                            ) : (
-                                              <span className="text-xs bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 px-1.5 py-0.5 rounded-full flex-shrink-0">
-                                                Invité {new Date(latest.sent_at).toLocaleDateString('fr-FR')}
-                                              </span>
-                                            )
-                                          )}
-                                        </div>
-                                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{sh.email}</p>
+                                    <div key={sh.id}>
+                                      {/* En-tête du groupe PP */}
+                                      <div className="flex items-center gap-1.5 mb-1 px-1">
+                                        <span className="text-sm">{st?.icon ?? '👤'}</span>
+                                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{sh.name}</span>
+                                        {sh.organisation && (
+                                          <span className="text-xs text-gray-400">— {sh.organisation}</span>
+                                        )}
+                                        <span className="text-xs text-gray-300 dark:text-gray-600">·</span>
+                                        <span className="text-xs text-gray-400">{shContacts.length} membre{shContacts.length !== 1 ? 's' : ''}</span>
                                       </div>
-                                    </label>
+                                      {/* Contacts de ce groupe */}
+                                      <div className="space-y-1 pl-5">
+                                        {shContacts.map(contact => {
+                                          const contactInvites = survInvitations
+                                            .filter(i => i.email?.toLowerCase() === contact.email.toLowerCase())
+                                            .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
+                                          const latest = contactInvites[0]
+                                          const isSelected = selectedEmails.includes(contact.email)
+                                          return (
+                                            <label
+                                              key={contact.id}
+                                              className={`flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+                                                isSelected
+                                                  ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700'
+                                                  : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                              }`}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={e => {
+                                                  if (e.target.checked) {
+                                                    setSelectedEmails(prev => [...prev, contact.email])
+                                                  } else {
+                                                    setSelectedEmails(prev => prev.filter(em => em !== contact.email))
+                                                  }
+                                                }}
+                                                className="mt-0.5 w-3.5 h-3.5 accent-emerald-600 flex-shrink-0"
+                                              />
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{contact.name || contact.email}</span>
+                                                  {contact.role && (
+                                                    <span className="text-xs text-gray-400 italic">{contact.role}</span>
+                                                  )}
+                                                  {/* Badge statut */}
+                                                  {latest && (
+                                                    latest.responded_at ? (
+                                                      <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Répondu ✓</span>
+                                                    ) : latest.clicked_at ? (
+                                                      <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Consulté</span>
+                                                    ) : latest.opened_at ? (
+                                                      <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Ouvert</span>
+                                                    ) : (
+                                                      <span className="text-xs bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                                        Invité {new Date(latest.sent_at).toLocaleDateString('fr-FR')}
+                                                      </span>
+                                                    )
+                                                  )}
+                                                </div>
+                                                {contact.name && (
+                                                  <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{contact.email}</p>
+                                                )}
+                                              </div>
+                                            </label>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
                                   )
                                 })}
                               </div>
                             </div>
                           ) : (
                             <p className="text-xs text-gray-400 dark:text-gray-500 italic">
-                              Aucune partie prenante avec email associée à cette enquête.
-                              Ajoutez des emails dans la cartographie.
+                              Aucun membre avec email dans les parties prenantes associées.
+                              Ajoutez des contacts dans la cartographie.
                             </p>
                           )}
 
@@ -1534,18 +1664,28 @@ function TabSurveys({
                               </p>
                               <div className="divide-y divide-gray-100 dark:divide-gray-800 max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700">
                                 {survInvitations.map(inv => {
-                                  const sh = session.stakeholders.find(s =>
-                                    s.email?.toLowerCase() === inv.email?.toLowerCase()
-                                  )
+                                  // Chercher le contact parmi tous les contacts de toutes les PP
+                                  let contactName: string | null = null
+                                  let groupName: string | null = null
+                                  for (const sh of session.stakeholders) {
+                                    const contacts = getStakeholderContacts(sh)
+                                    const found = contacts.find(c => c.email?.toLowerCase() === inv.email?.toLowerCase())
+                                    if (found) {
+                                      contactName = found.name || null
+                                      groupName = sh.name
+                                      break
+                                    }
+                                  }
                                   return (
                                     <div key={inv.tracking_id} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 text-xs">
                                       <div className="flex-1 min-w-0">
                                         <p className="font-medium text-gray-800 dark:text-gray-200 truncate">
-                                          {sh?.name ?? inv.email}
+                                          {contactName ?? inv.email}
                                         </p>
-                                        {sh && (
-                                          <p className="text-gray-400 dark:text-gray-500 truncate">{inv.email}</p>
-                                        )}
+                                        <p className="text-gray-400 dark:text-gray-500 truncate">
+                                          {contactName ? inv.email : null}
+                                          {groupName ? <span className="ml-1 italic">({groupName})</span> : null}
+                                        </p>
                                       </div>
                                       <div className="flex flex-col items-end gap-0.5 flex-shrink-0 text-right">
                                         <span className="text-gray-400 dark:text-gray-500">

@@ -93,7 +93,7 @@ export default function EnquetePage() {
     if (trackingId) {
       fetch(`/api/pp-track/${trackingId}`, { method: 'PATCH' }).catch(() => {})
     }
-    // Route publique identique à app.sensetho.fr
+    // Route publique apps.sensetho.com/enquete/[token]
     fetch(`/api/pp-survey/${token}`)
       .then(r => r.json())
       .then(json => {

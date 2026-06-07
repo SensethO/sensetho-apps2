@@ -215,7 +215,7 @@ export function CoverPage({ data }: { data: GuidedPDFData }) {
       {/* Pied */}
       <div style={{ padding: '16px 52px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', fontFamily: 'Arial, sans-serif' }}>
-          Genere avec Sens&apos;ethO Apps · app.sensetho.fr
+          Genere avec Sens&apos;ethO Apps · apps.sensetho.com
         </span>
         <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', fontFamily: 'Arial, sans-serif' }}>Page 1</span>
       </div>
@@ -755,7 +755,7 @@ export function AIAnalysisPages({ data }: { data: GuidedPDFData }) {
           {/* Footer */}
           <div style={{ paddingTop: 14, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
             <span style={{ fontSize: 9, color: '#cbd5e1', fontFamily: 'Arial, sans-serif' }}>
-              Genere avec Sens&apos;ethO Apps · app.sensetho.fr
+              Genere avec Sens&apos;ethO Apps · apps.sensetho.com
             </span>
             <span style={{ fontSize: 9, color: '#cbd5e1', fontFamily: 'Arial, sans-serif' }}>
               Analyse IA{pageGroups.length > 1 ? ` · ${pageIdx + 1}/${pageGroups.length}` : ''}

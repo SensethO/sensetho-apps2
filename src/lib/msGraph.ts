@@ -237,12 +237,14 @@ export function buildSurveyInviteEmail({
   surveyUrl,
   personalMessage,
   expiresAt,
+  trackingPixelUrl,
 }: {
   surveyName: string
   sessionOrganisation?: string
   surveyUrl: string
   personalMessage?: string
   expiresAt?: string
+  trackingPixelUrl?: string
 }): { html: string; text: string } {
   const orgLine = sessionOrganisation
     ? `<p style="color:#6b7280;margin:0 0 16px">pour <strong>${sessionOrganisation}</strong></p>`
@@ -283,6 +285,7 @@ export function buildSurveyInviteEmail({
       </p>
     </div>
   </div>
+  ${trackingPixelUrl ? `<img src="${trackingPixelUrl}" width="1" height="1" style="display:none;border:0" alt="" />` : ''}
 </body>
 </html>`
 

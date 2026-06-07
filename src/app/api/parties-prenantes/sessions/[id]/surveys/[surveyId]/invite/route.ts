@@ -68,7 +68,9 @@ export async function POST(
 
         // Lien direct vers l'enquête (avec tracking_id en query param — pas de redirect opaque)
         // Évite d'être bloqué par les filtres antivirus/Safe Links des serveurs de messagerie
-        const directUrl = `https://app.sensetho.fr/enquete/${token}?tid=${inviteRow.tracking_id}`
+        const BASE_URL = 'https://apps.sensetho.com'
+        const directUrl = `${BASE_URL}/enquete/${token}?tid=${inviteRow.tracking_id}`
+        const pixelUrl = `${BASE_URL}/api/pp-track/${inviteRow.tracking_id}`
 
         // Envoi email (non bloquant — l'invite est enregistrée même si l'email échoue)
         try {
@@ -78,6 +80,7 @@ export async function POST(
             surveyUrl: directUrl,
             personalMessage: body.message ?? undefined,
             expiresAt,
+            trackingPixelUrl: pixelUrl,
           })
           await sendEmail(
             trimmed,

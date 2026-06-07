@@ -30,13 +30,13 @@ export async function GET(
     }
 
     if (!invite?.token) {
-      return NextResponse.redirect(new URL('https://app.sensetho.fr'))
+      return NextResponse.redirect(new URL('https://apps.sensetho.com'))
     }
 
     // Redirige vers la page publique de l'enquête avec le tracking_id en query
-    const url = `https://app.sensetho.fr/enquete/${invite.token}?tid=${params.trackingId}`
+    const url = `https://apps.sensetho.com/enquete/${invite.token}?tid=${params.trackingId}`
     return NextResponse.redirect(url, { status: 302 })
   } catch {
-    return NextResponse.redirect(new URL('https://app.sensetho.fr'))
+    return NextResponse.redirect(new URL('https://apps.sensetho.com'))
   }
 }

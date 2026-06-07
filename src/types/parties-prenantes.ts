@@ -5,11 +5,22 @@ export type SessionStatus = 'actif' | 'archivé'
 export type SurveyStatus = 'brouillon' | 'en_cours' | 'terminé'
 export type QuestionDimension = 'impact' | 'financial' | 'general'
 
+/** Contact individuel d'une partie prenante (membre du groupe) */
+export interface StakeholderContact {
+  id: string
+  name: string
+  email: string
+  role?: string
+}
+
 export interface Stakeholder {
   id: string
   name: string
   organisation?: string
+  /** @deprecated Utiliser contacts[] — conservé pour rétrocompatibilité (1er contact) */
   email?: string
+  /** Liste des membres/contacts de cette partie prenante */
+  contacts?: StakeholderContact[]
   category: StakeholderCategory
   type: string
   influence: 1 | 2 | 3 | 4 | 5

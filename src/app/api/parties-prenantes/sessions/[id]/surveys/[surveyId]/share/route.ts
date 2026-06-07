@@ -81,7 +81,7 @@ export async function POST(
       .eq('id', params.id)
       .eq('user_id', user.id)
 
-    const url = `https://app.sensetho.fr/enquete/${token}`
+    const url = `https://apps.sensetho.com/enquete/${token}`
     return NextResponse.json({ data: { token, url, expires_at: expiresAt } })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
