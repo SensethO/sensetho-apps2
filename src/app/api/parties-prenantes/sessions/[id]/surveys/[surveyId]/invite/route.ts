@@ -66,15 +66,16 @@ export async function POST(
 
         if (inviteErr || !inviteRow) { failed.push(email); continue }
 
-        // URL tracking → redirige vers /enquete/{token}?tid={trackingId}
-        const trackingUrl = `https://app.sensetho.fr/api/pp-track/${inviteRow.tracking_id}/click`
+        // Lien direct vers l'enquête (avec tracking_id en query param — pas de redirect opaque)
+        // Évite d'être bloqué par les filtres antivirus/Safe Links des serveurs de messagerie
+        const directUrl = `https://app.sensetho.fr/enquete/${token}?tid=${inviteRow.tracking_id}`
 
         // Envoi email (non bloquant — l'invite est enregistrée même si l'email échoue)
         try {
           const html = buildSurveyInviteEmail({
             surveyName: survey.name,
             sessionOrganisation: session.organisation ?? undefined,
-            surveyUrl: trackingUrl,
+            surveyUrl: directUrl,
             personalMessage: body.message ?? undefined,
             expiresAt,
           })

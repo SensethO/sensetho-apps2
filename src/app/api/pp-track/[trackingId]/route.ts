@@ -36,3 +36,26 @@ export async function GET(
     },
   })
 }
+
+/**
+ * PATCH /api/pp-track/[trackingId]
+ * Marque le clic sur le lien email (appelé côté client depuis /enquete/[token])
+ * Approche compatible antivirus : pas de redirect opaque, le client fait lui-même l'appel
+ */
+export async function PATCH(
+  _req: NextRequest,
+  { params }: { params: { trackingId: string } }
+) {
+  try {
+    const admin = createAdminClient()
+    await admin
+      .from('pp_survey_invitations')
+      .update({ clicked_at: new Date().toISOString() })
+      .eq('tracking_id', params.trackingId)
+      .is('clicked_at', null)
+  } catch {
+    // Silencieux — le tracking ne doit pas bloquer l'affichage du questionnaire
+  }
+
+  return new NextResponse(null, { status: 204 })
+}

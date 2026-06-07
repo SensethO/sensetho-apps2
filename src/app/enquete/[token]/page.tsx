@@ -85,10 +85,14 @@ export default function EnquetePage() {
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  // ── Charger le questionnaire ─────────────────────────────────────────────────
+  // ── Charger le questionnaire + marquer le clic (tracking) ───────────────────
 
   useEffect(() => {
     if (!token) return
+    // Marquer le clic si trackingId présent (lien direct sans redirect — compatible antivirus)
+    if (trackingId) {
+      fetch(`/api/pp-track/${trackingId}`, { method: 'PATCH' }).catch(() => {})
+    }
     // Route publique identique à app.sensetho.fr
     fetch(`/api/pp-survey/${token}`)
       .then(r => r.json())
