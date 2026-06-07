@@ -72,7 +72,7 @@ export async function POST(
 
         // Envoi email (non bloquant — l'invite est enregistrée même si l'email échoue)
         try {
-          const html = buildSurveyInviteEmail({
+          const { html, text } = buildSurveyInviteEmail({
             surveyName: survey.name,
             sessionOrganisation: session.organisation ?? undefined,
             surveyUrl: directUrl,
@@ -81,9 +81,16 @@ export async function POST(
           })
           await sendEmail(
             trimmed,
-            `Invitation : ${survey.name} — Enquête de matérialité`,
+            `Invitation : ${survey.name} - Enquête de matérialité`,
             html,
-            { fromName: "Sens'ethO Apps" }
+            {
+              fromName: "SensethO Apps",
+              textBody: text,
+              headers: [
+                { name: 'List-Unsubscribe', value: '<mailto:web@sensetho.com?subject=unsubscribe>' },
+                { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
+              ],
+            }
           )
         } catch (emailErr) {
           console.error(`[invite] Email send failed for ${trimmed}:`, emailErr)
