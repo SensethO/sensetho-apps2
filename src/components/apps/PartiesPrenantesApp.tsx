@@ -23,6 +23,15 @@ type SessionListItem = Omit<PPSession, 'stakeholders' | 'surveys' | 'materiality
   material_count?: number
 }
 
+interface InvitationRecord {
+  tracking_id: string
+  email: string
+  sent_at: string
+  opened_at: string | null
+  clicked_at: string | null
+  responded_at: string | null
+}
+
 // ─── Tutorial Modal ───────────────────────────────────────────────────────────
 
 const TUTORIAL_STEPS = [
@@ -850,13 +859,17 @@ function TabSurveys({
   const [wizardStakeholders, setWizardStakeholders] = useState<string[]>([])
   const [wizardAnonymous, setWizardAnonymous] = useState(false)
   const [activeSurveyId, setActiveSurveyId] = useState<string | null>(null)
-  const [inviteEmails, setInviteEmails] = useState('')
   const [inviteSending, setInviteSending] = useState(false)
   const [inviteResult, setInviteResult] = useState<{ sent: string[]; failed: string[]; emailErrors?: string[]; note?: string } | null>(null)
   const [shareLoading, setShareLoading] = useState<string | null>(null)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [showInviteFor, setShowInviteFor] = useState<string | null>(null)
   const [showResponseFor, setShowResponseFor] = useState<string | null>(null)
+  // Invitation tracking
+  const [invitations, setInvitations] = useState<Record<string, InvitationRecord[]>>({})
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [selectedEmails, setSelectedEmails] = useState<string[]>([])
+  const [extraEmails, setExtraEmails] = useState('')
   const [responseForm, setResponseForm] = useState<{
     stakeholderId: string
     answers: Record<string, number>
@@ -965,8 +978,43 @@ function TabSurveys({
     })
   }
 
+  async function loadInvitations(surveyId: string) {
+    try {
+      const res = await fetch(`/api/parties-prenantes/sessions/${session.id}/surveys/${surveyId}/invitations`)
+      const json = await res.json()
+      if (res.ok) setInvitations(prev => ({ ...prev, [surveyId]: json.data ?? [] }))
+    } catch (e) { console.error(e) }
+  }
+
+  async function handleOpenInvite(surveyId: string) {
+    const wasOpen = showInviteFor === surveyId
+    setShowInviteFor(wasOpen ? null : surveyId)
+    setInviteResult(null)
+    if (!wasOpen) {
+      setInviteLoading(true)
+      const surv = session.surveys.find(s => s.id === surveyId)
+      const targetIds = surv?.stakeholder_ids ?? []
+      const targetSHs = session.stakeholders.filter(s =>
+        (targetIds.length === 0 || targetIds.includes(s.id)) && s.email
+      )
+      try {
+        const res = await fetch(`/api/parties-prenantes/sessions/${session.id}/surveys/${surveyId}/invitations`)
+        const json = await res.json()
+        if (res.ok) {
+          const rows: InvitationRecord[] = json.data ?? []
+          setInvitations(prev => ({ ...prev, [surveyId]: rows }))
+          // Pré-sélectionner les PP qui n'ont pas encore répondu
+          const responded = new Set(rows.filter(i => i.responded_at).map(i => i.email))
+          setSelectedEmails(targetSHs.filter(s => !responded.has(s.email!)).map(s => s.email!))
+        }
+      } catch (e) { console.error(e) }
+      finally { setInviteLoading(false) }
+    }
+  }
+
   async function handleSendInvites(surveyId: string) {
-    const emails = inviteEmails.split(/[\n,;]+/).map(e => e.trim()).filter(Boolean)
+    const extra = extraEmails.split(/[\n,;]+/).map(e => e.trim()).filter(Boolean)
+    const emails = Array.from(new Set([...selectedEmails, ...extra]))
     if (emails.length === 0) return
     setInviteSending(true)
     try {
@@ -977,7 +1025,8 @@ function TabSurveys({
       })
       const json = await res.json()
       setInviteResult(json.data)
-      setInviteEmails('')
+      setExtraEmails('')
+      await loadInvitations(surveyId)
     } catch (e) {
       console.error(e)
     } finally {
@@ -1320,35 +1369,207 @@ function TabSurveys({
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Invitations email</p>
                   <button
-                    onClick={() => { setShowInviteFor(showInviteFor === survey.id ? null : survey.id); setInviteResult(null) }}
+                    onClick={() => handleOpenInvite(survey.id)}
                     className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
                   >
                     {showInviteFor === survey.id ? 'Fermer' : 'Inviter'}
                   </button>
                 </div>
+
                 {showInviteFor === survey.id && (
-                  <div className="space-y-2">
-                    <textarea
-                      value={inviteEmails}
-                      onChange={e => setInviteEmails(e.target.value)}
-                      placeholder="Entrez les emails (un par ligne, ou séparés par virgule)"
-                      rows={3}
-                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none resize-none"
-                    />
-                    <button
-                      onClick={() => handleSendInvites(survey.id)}
-                      disabled={inviteSending || !inviteEmails.trim()}
-                      className="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg transition-colors"
-                    >
-                      {inviteSending ? 'Envoi...' : '✉️ Envoyer les invitations par email'}
-                    </button>
-                    {inviteResult && (
-                      <div className="text-xs space-y-1">
-                        {inviteResult.sent.length > 0 && <p className="text-emerald-600 dark:text-emerald-400">✓ {inviteResult.sent.length} invitation{inviteResult.sent.length !== 1 ? 's' : ''} envoyée{inviteResult.sent.length !== 1 ? 's' : ''}</p>}
-                        {inviteResult.failed.length > 0 && <p className="text-red-600 dark:text-red-400">✗ {inviteResult.failed.length} email{inviteResult.failed.length !== 1 ? 's' : ''} invalide{inviteResult.failed.length !== 1 ? 's' : ''}</p>}
-                        {inviteResult.note && <p className="text-amber-600 dark:text-amber-400 leading-relaxed">{inviteResult.note}</p>}
-                      </div>
-                    )}
+                  <div className="space-y-3">
+                    {inviteLoading ? (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 animate-pulse">Chargement...</p>
+                    ) : (() => {
+                      const targetIds = survey.stakeholder_ids ?? []
+                      const targetSHs = session.stakeholders.filter(s =>
+                        (targetIds.length === 0 || targetIds.includes(s.id)) && s.email
+                      )
+                      const survInvitations = invitations[survey.id] ?? []
+                      const extraCount = extraEmails.split(/[\n,;]+/).filter(e => e.trim()).length
+                      const totalToSend = selectedEmails.length + extraCount
+
+                      return (
+                        <>
+                          {/* Liste des parties prenantes avec emails */}
+                          {targetSHs.length > 0 ? (
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                                  Parties prenantes ({targetSHs.length})
+                                </p>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => setSelectedEmails(targetSHs.map(s => s.email!))}
+                                    className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
+                                  >
+                                    Tout sélectionner
+                                  </button>
+                                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                                  <button
+                                    onClick={() => setSelectedEmails([])}
+                                    className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:underline"
+                                  >
+                                    Désélectionner
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
+                                {targetSHs.map(sh => {
+                                  const shInvites = survInvitations
+                                    .filter(i => i.email?.toLowerCase() === sh.email?.toLowerCase())
+                                    .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
+                                  const latest = shInvites[0]
+                                  const isSelected = selectedEmails.includes(sh.email!)
+                                  const st = STAKEHOLDER_TYPES.find(t => t.value === sh.type)
+
+                                  return (
+                                    <label
+                                      key={sh.id}
+                                      className={`flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+                                        isSelected
+                                          ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700'
+                                          : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={e => {
+                                          if (e.target.checked) {
+                                            setSelectedEmails(prev => [...prev, sh.email!])
+                                          } else {
+                                            setSelectedEmails(prev => prev.filter(em => em !== sh.email))
+                                          }
+                                        }}
+                                        className="mt-0.5 w-3.5 h-3.5 accent-emerald-600 flex-shrink-0"
+                                      />
+                                      <span className="flex-shrink-0 text-sm mt-0.5">{st?.icon ?? '👤'}</span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{sh.name}</span>
+                                          {sh.organisation && (
+                                            <span className="text-xs text-gray-400 dark:text-gray-500 truncate">· {sh.organisation}</span>
+                                          )}
+                                          {/* Badge statut de la dernière invitation */}
+                                          {latest && (
+                                            latest.responded_at ? (
+                                              <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Répondu ✓</span>
+                                            ) : latest.clicked_at ? (
+                                              <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Consulté</span>
+                                            ) : latest.opened_at ? (
+                                              <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Ouvert</span>
+                                            ) : (
+                                              <span className="text-xs bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                                Invité {new Date(latest.sent_at).toLocaleDateString('fr-FR')}
+                                              </span>
+                                            )
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{sh.email}</p>
+                                      </div>
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-400 dark:text-gray-500 italic">
+                              Aucune partie prenante avec email associée à cette enquête.
+                              Ajoutez des emails dans la cartographie.
+                            </p>
+                          )}
+
+                          {/* Emails supplémentaires */}
+                          <div>
+                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              Emails supplémentaires <span className="font-normal text-gray-400">(optionnel)</span>
+                            </p>
+                            <textarea
+                              value={extraEmails}
+                              onChange={e => setExtraEmails(e.target.value)}
+                              placeholder="Autres emails non listés ci-dessus (un par ligne)"
+                              rows={2}
+                              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none resize-none"
+                            />
+                          </div>
+
+                          {/* Bouton d'envoi */}
+                          <button
+                            onClick={() => handleSendInvites(survey.id)}
+                            disabled={inviteSending || totalToSend === 0}
+                            className="w-full px-3 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
+                          >
+                            {inviteSending
+                              ? 'Envoi en cours...'
+                              : totalToSend > 0
+                                ? `✉️ Envoyer ${totalToSend} invitation${totalToSend !== 1 ? 's' : ''}`
+                                : 'Sélectionnez des destinataires'}
+                          </button>
+
+                          {/* Résultat de l'envoi */}
+                          {inviteResult && (
+                            <div className="text-xs space-y-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                              {inviteResult.sent.length > 0 && (
+                                <p className="text-emerald-600 dark:text-emerald-400">
+                                  ✓ {inviteResult.sent.length} invitation{inviteResult.sent.length !== 1 ? 's' : ''} envoyée{inviteResult.sent.length !== 1 ? 's' : ''}
+                                </p>
+                              )}
+                              {inviteResult.failed.length > 0 && (
+                                <p className="text-red-600 dark:text-red-400">
+                                  ✗ {inviteResult.failed.length} email{inviteResult.failed.length !== 1 ? 's' : ''} invalide{inviteResult.failed.length !== 1 ? 's' : ''} : {inviteResult.failed.join(', ')}
+                                </p>
+                              )}
+                              {inviteResult.note && (
+                                <p className="text-amber-600 dark:text-amber-400 leading-relaxed">{inviteResult.note}</p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Historique complet des invitations */}
+                          {survInvitations.length > 0 && (
+                            <div>
+                              <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                                Historique des envois ({survInvitations.length})
+                              </p>
+                              <div className="divide-y divide-gray-100 dark:divide-gray-800 max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                                {survInvitations.map(inv => {
+                                  const sh = session.stakeholders.find(s =>
+                                    s.email?.toLowerCase() === inv.email?.toLowerCase()
+                                  )
+                                  return (
+                                    <div key={inv.tracking_id} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 text-xs">
+                                      <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-gray-800 dark:text-gray-200 truncate">
+                                          {sh?.name ?? inv.email}
+                                        </p>
+                                        {sh && (
+                                          <p className="text-gray-400 dark:text-gray-500 truncate">{inv.email}</p>
+                                        )}
+                                      </div>
+                                      <div className="flex flex-col items-end gap-0.5 flex-shrink-0 text-right">
+                                        <span className="text-gray-400 dark:text-gray-500">
+                                          {new Date(inv.sent_at).toLocaleDateString('fr-FR')}
+                                        </span>
+                                        {inv.responded_at ? (
+                                          <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 px-1.5 py-0.5 rounded-full font-medium">Répondu ✓</span>
+                                        ) : inv.clicked_at ? (
+                                          <span className="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-1.5 py-0.5 rounded-full">Consulté</span>
+                                        ) : inv.opened_at ? (
+                                          <span className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded-full">Ouvert</span>
+                                        ) : (
+                                          <span className="bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 px-1.5 py-0.5 rounded-full">Envoyé</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                 )}
               </div>
