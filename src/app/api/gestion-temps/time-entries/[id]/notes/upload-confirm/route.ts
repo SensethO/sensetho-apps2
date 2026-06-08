@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
-type Params = { params: { entryId: string } }
+type Params = { params: { id: string } }
 
 async function canWrite(userId: string, entryId: string): Promise<boolean> {
   const admin = createAdminClient()
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const supabase = createRouteClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canWrite(user.id, params.entryId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canWrite(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const body = await req.json() as {
       actionKey?:    string
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         size:        size ?? null,
         annexe_index: annexeIndex ?? null,
         action_key:  actionKey ?? null,
-        entry_id:    params.entryId,
+        entry_id:    params.id,
       }
     })
   } catch (err) {

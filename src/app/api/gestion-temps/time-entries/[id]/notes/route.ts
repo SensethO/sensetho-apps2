@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
-type Params = { params: { entryId: string } }
+type Params = { params: { id: string } }
 
 async function canAccess(userId: string, entryId: string): Promise<boolean> {
   const admin = createAdminClient()
@@ -30,17 +30,17 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const supabase = createRouteClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canAccess(user.id, params.entryId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canAccess(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const admin = createAdminClient()
     const { data: row } = await admin
       .from('gt_time_entry_notes')
       .select('sections, content')
-      .eq('entry_id', params.entryId)
+      .eq('entry_id', params.id)
       .maybeSingle()
 
-    const sections = { [params.entryId]: row?.sections ?? [] }
-    const notes    = { [params.entryId]: row?.content ?? '' }
+    const sections = { [params.id]: row?.sections ?? [] }
+    const notes    = { [params.id]: row?.content ?? '' }
 
     return NextResponse.json({ data: { sections, notes } })
   } catch (err) {
@@ -57,14 +57,14 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const supabase = createRouteClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canAccess(user.id, params.entryId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canAccess(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const body = await req.json() as { sections?: unknown[]; content?: string }
     const { sections, content } = body
 
     const admin = createAdminClient()
     const upsertRow: Record<string, unknown> = {
-      entry_id:   params.entryId,
+      entry_id:   params.id,
       updated_at: new Date().toISOString(),
     }
     if (sections !== undefined) upsertRow.sections = sections

@@ -5,7 +5,7 @@ import { spGraphForApp } from '@/lib/sharepointMulti'
 
 export const dynamic = 'force-dynamic'
 
-type Params = { params: { entryId: string } }
+type Params = { params: { id: string } }
 
 async function canWrite(userId: string, entryId: string): Promise<boolean> {
   const admin = createAdminClient()
@@ -30,7 +30,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const supabase = createRouteClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canWrite(user.id, params.entryId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canWrite(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const attachmentId = req.nextUrl.searchParams.get('attachment_id')
     if (!attachmentId) return NextResponse.json({ error: 'attachment_id requis' }, { status: 400 })
@@ -40,7 +40,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const { data: row } = await admin
       .from('gt_time_entry_notes')
       .select('sections')
-      .eq('entry_id', params.entryId)
+      .eq('entry_id', params.id)
       .maybeSingle()
 
     let spItemId: string | null = null

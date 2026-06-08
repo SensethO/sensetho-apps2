@@ -5,7 +5,7 @@ import { spGraphForApp, getConfigForApp } from '@/lib/sharepointMulti'
 
 export const dynamic = 'force-dynamic'
 
-type Params = { params: { entryId: string } }
+type Params = { params: { id: string } }
 
 async function canWrite(userId: string, entryId: string): Promise<boolean> {
   const admin = createAdminClient()
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const supabase = createRouteClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canWrite(user.id, params.entryId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canWrite(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const body = await req.json() as { filename?: string; size?: number; actionKey?: string }
     const { filename, size, actionKey } = body
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Préfixe atomique A001_ via fonction SQL
     const admin = createAdminClient()
     const { data: counterData, error: counterError } = await admin
-      .rpc('increment_gt_time_entry_notes_counter', { p_entry_id: params.entryId })
+      .rpc('increment_gt_time_entry_notes_counter', { p_entry_id: params.id })
     if (counterError || counterData == null) {
       console.error('[gestion-temps/time-entries/notes/upload-session/counter]', counterError)
       return NextResponse.json({ error: 'Échec génération index annexe' }, { status: 500 })
@@ -54,9 +54,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     const prefix    = 'A' + String(annexeIndex).padStart(3, '0') + '_'
     const finalName = prefix + safeName
 
-    const key    = actionKey ?? params.entryId
+    const key    = actionKey ?? params.id
     const config = await getConfigForApp('gestion-temps')
-    const spPath = `/root:/${config.rootFolder}/${params.entryId}/notes/${key}/${finalName}:/createUploadSession`
+    const spPath = `/root:/${config.rootFolder}/${params.id}/notes/${key}/${finalName}:/createUploadSession`
 
     const spRes = await spGraphForApp('gestion-temps', spPath, {
       method: 'POST',

@@ -5,7 +5,7 @@ import { spGraphForApp } from '@/lib/sharepointMulti'
 
 export const dynamic = 'force-dynamic'
 
-type Params = { params: { entryId: string } }
+type Params = { params: { id: string } }
 
 async function canAccess(userId: string, entryId: string): Promise<boolean> {
   const admin = createAdminClient()
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     const supabase = createRouteClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canAccess(user.id, params.entryId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canAccess(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const item_id = req.nextUrl.searchParams.get('item_id')
     if (!item_id) return NextResponse.json({ error: 'item_id requis' }, { status: 400 })
