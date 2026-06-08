@@ -206,7 +206,6 @@ function TabDashboard({ projects, recentEntries, onSelectProject, onTabChange }:
           ) : (
             <div className="space-y-3">
               {topProjects.map(p => {
-                const t = TYPE_LABELS[p.type]
                 return (
                   <div key={p.id} className="cursor-pointer group" onClick={() => { onSelectProject(p.id); onTabChange('actions') }}>
                     <div className="flex items-center gap-2 mb-1">
@@ -746,7 +745,6 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
 
           <div className="space-y-2">
             {actions.map(a => {
-              const st = ACTION_STATUS[a.status]
               const pr = PRIORITY_LABELS[a.priority]
               const over = a.planned_hours > 0 && a.actual_hours > a.planned_hours
               const isLate = a.due_date && a.status !== 'done' && new Date(a.due_date) < new Date()
@@ -1221,6 +1219,7 @@ const TABS = [
   { id: 'bilan',     label: 'Bilan',            icon: '📈' },
 ]
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function GestionTempsApp({ ctx: _ctx }: { ctx: RseContext }) {
   const [tab, setTab]                     = useState('dashboard')
   const [projects, setProjects]           = useState<GTProject[]>([])
