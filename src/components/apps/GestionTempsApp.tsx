@@ -914,9 +914,8 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
 
 // ─── Tab Saisie du temps ──────────────────────────────────────
 
-function TabSaisie({ projects, orgId, recentEntries, onRefresh }: {
+function TabSaisie({ projects, recentEntries, onRefresh }: {
   projects: GTProject[]
-  orgId: string | null
   recentEntries: GTEntry[]
   onRefresh: () => void
 }) {
@@ -1434,7 +1433,6 @@ export default function GestionTempsApp({ ctx }: { ctx: RseContext }) {
         {tab === 'saisie' && (
           <TabSaisie
             projects={projects}
-            orgId={orgId}
             recentEntries={recentEntries}
             onRefresh={handleRefresh}
           />
