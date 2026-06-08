@@ -592,6 +592,12 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
 
   const project = projects.find(p => p.id === selectedProjectId)
 
+  // Auto-sélectionner si un seul projet
+  useEffect(() => {
+    const active = projects.filter(p => p.status !== 'archived')
+    if (active.length === 1 && !selectedProjectId) onSelectProject(active[0].id)
+  }, [projects, selectedProjectId, onSelectProject])
+
   const loadActions = useCallback(async (projectId: string) => {
     setLoading(true)
     try {
@@ -713,55 +719,71 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
             )}
           </div>
 
-          {/* Bouton + formulaire */}
+          {/* Bouton + titre */}
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Actions ({actions.length})</h3>
-            {(project.is_owner || projects.find(p => p.id === selectedProjectId)?.members?.length !== undefined) && (
-              <button onClick={() => { resetForm(); setShowForm(true) }}
-                className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg">
-                + Ajouter une action
-              </button>
-            )}
+            <button onClick={() => { resetForm(); setShowForm(true) }}
+              className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg">
+              + Ajouter une action
+            </button>
           </div>
 
+          {/* ── Modale création / édition d'action ────────────────── */}
           {showForm && (
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-              <h4 className="font-medium text-gray-900 dark:text-white text-sm">{editAction ? 'Modifier' : 'Nouvelle action'}</h4>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="Nom de l'action *"
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
-              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                placeholder="Description (optionnel)" rows={2}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none" />
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Heures planifiées</label>
-                  <input type="number" min="0" step="0.5" value={form.planned_hours}
-                    onChange={e => setForm(f => ({ ...f, planned_hours: e.target.value }))}
-                    placeholder="0"
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={e => { if (e.target === e.currentTarget) resetForm() }}>
+              <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl w-full max-w-lg">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                  <h4 className="font-semibold text-gray-900 dark:text-white">{editAction ? 'Modifier l\'action' : 'Nouvelle action'}</h4>
+                  <button onClick={resetForm} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl leading-none">&times;</button>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Priorité</label>
-                  <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as Priority }))}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-                    <option value="low">Basse</option>
-                    <option value="medium">Moyenne</option>
-                    <option value="high">Haute</option>
-                  </select>
+                {/* Corps */}
+                <div className="p-5 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Nom de l&apos;action *</label>
+                    <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="Ex : Réaliser l'audit fournisseurs"
+                      autoFocus
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Description</label>
+                    <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Contexte, objectifs, livrables attendus…" rows={3}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Heures prévues</label>
+                      <input type="number" min="0" step="0.5" value={form.planned_hours}
+                        onChange={e => setForm(f => ({ ...f, planned_hours: e.target.value }))}
+                        placeholder="0"
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Priorité</label>
+                      <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as Priority }))}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                        <option value="low">Basse</option>
+                        <option value="medium">Moyenne</option>
+                        <option value="high">Haute</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Échéance</label>
+                      <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Échéance</label>
-                  <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+                {/* Footer */}
+                <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-gray-700">
+                  <button onClick={resetForm} className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">Annuler</button>
+                  <button onClick={handleSave} disabled={saving || !form.name.trim()}
+                    className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-medium">
+                    {saving ? 'Enregistrement…' : editAction ? 'Enregistrer' : 'Ajouter l\'action'}
+                  </button>
                 </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={resetForm} className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">Annuler</button>
-                <button onClick={handleSave} disabled={saving || !form.name.trim()}
-                  className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg">
-                  {saving ? 'Enregistrement...' : editAction ? 'Enregistrer' : 'Ajouter'}
-                </button>
               </div>
             </div>
           )}
@@ -835,13 +857,13 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
 
                         {/* Bouton Notes & documents */}
                         <button onClick={() => toggleNotes(a.id)}
-                          className={`mt-2 flex items-center gap-1 text-xs font-medium transition-colors ${
+                          className={`mt-3 w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
                             notesExpanded
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                              ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400'
+                              : 'bg-gray-50 dark:bg-gray-700/40 border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-emerald-300 dark:hover:border-emerald-600 hover:text-emerald-600 dark:hover:text-emerald-400'
                           }`}>
-                          <span>📎 Notes &amp; documents</span>
-                          <span className="text-gray-400">{notesExpanded ? '▲' : '▼'}</span>
+                          <span className="flex items-center gap-1.5">📎 Notes &amp; documents</span>
+                          <span className="text-gray-400 dark:text-gray-500">{notesExpanded ? '▲' : '▼'}</span>
                         </button>
                       </div>
 
@@ -963,6 +985,11 @@ function TabSaisie({ projects, orgId, onRefresh }: {
   }
 
   const activeProjects = projects.filter(p => p.status !== 'archived')
+
+  // Auto-sélectionner si un seul projet
+  useEffect(() => {
+    if (activeProjects.length === 1 && !selectedProject) setSelectedProject(activeProjects[0].id)
+  }, [activeProjects, selectedProject])
 
   return (
     <div className="space-y-6">
