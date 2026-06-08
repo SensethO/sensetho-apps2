@@ -928,6 +928,24 @@ function TabSaisie({ projects, recentEntries, onRefresh }: {
   const [editEntry, setEditEntry] = useState<GTEntry | null>(null)
   const [editForm, setEditForm] = useState({ hours: '', note: '' })
 
+  // Notes & documents par action
+  const [actionNotes, setActionNotes] = useState<Record<string, { note: string; sections: NoteSection[]; loaded: boolean }>>({})
+  const [notesExpanded, setNotesExpanded] = useState(false)
+
+  const loadActionNotes = useCallback(async (actionId: string) => {
+    if (actionNotes[actionId]?.loaded) return
+    try {
+      const res = await fetch(`/api/gestion-temps/actions/${actionId}/notes`)
+      const json = await res.json()
+      setActionNotes(prev => ({
+        ...prev,
+        [actionId]: { note: json.data?.note ?? '', sections: json.data?.sections ?? [], loaded: true },
+      }))
+    } catch {
+      setActionNotes(prev => ({ ...prev, [actionId]: { note: '', sections: [], loaded: true } }))
+    }
+  }, [actionNotes])
+
   const loadProjectActions = useCallback(async (projectId: string) => {
     setLoadingActions(true)
     try {
@@ -936,12 +954,19 @@ function TabSaisie({ projects, recentEntries, onRefresh }: {
       const filtered = (json.data ?? []).filter((a: GTAction) => a.status !== 'cancelled' && a.status !== 'done')
       setActions(filtered)
       // Auto-sélectionner si une seule action disponible
-      if (filtered.length === 1) setForm(f => ({ ...f, action_id: filtered[0].id }))
+      if (filtered.length === 1) {
+        setForm(f => ({ ...f, action_id: filtered[0].id }))
+      }
     } finally { setLoadingActions(false) }
   }, [])
 
+  // Charger les notes quand une action est sélectionnée
   useEffect(() => {
-    if (selectedProject) { loadProjectActions(selectedProject); setForm(f => ({ ...f, action_id: '' })) }
+    if (form.action_id) loadActionNotes(form.action_id)
+  }, [form.action_id, loadActionNotes])
+
+  useEffect(() => {
+    if (selectedProject) { loadProjectActions(selectedProject); setForm(f => ({ ...f, action_id: '' })); setNotesExpanded(false) }
     else setActions([])
   }, [selectedProject, loadProjectActions])
 
@@ -1045,6 +1070,47 @@ function TabSaisie({ projects, recentEntries, onRefresh }: {
           {success && <p className="text-xs text-emerald-600 dark:text-emerald-400 text-center">✓ Saisie enregistrée avec succès !</p>}
         </div>
       </div>
+
+      {/* Notes & documents de l'action sélectionnée */}
+      {form.action_id && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <button
+            onClick={() => setNotesExpanded(v => !v)}
+            className={`w-full flex items-center justify-between px-4 py-3 text-xs font-medium transition-all ${
+              notesExpanded
+                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
+                : 'text-gray-500 dark:text-gray-400 hover:text-emerald-600 hover:bg-gray-50 dark:hover:bg-gray-700/40'
+            }`}>
+            <span className="flex items-center gap-1.5">📎 Notes &amp; documents de l&apos;action</span>
+            <span>{notesExpanded ? '▲' : '▼'}</span>
+          </button>
+          {notesExpanded && (
+            <div className="border-t border-gray-100 dark:border-gray-700">
+              {!actionNotes[form.action_id]?.loaded ? (
+                <div className="px-4 py-3 text-xs text-gray-400 animate-pulse">Chargement des notes...</div>
+              ) : (
+                <GuidedActionNotePanel
+                  diagnosticId={form.action_id}
+                  actionKey={form.action_id}
+                  readOnly={false}
+                  note={actionNotes[form.action_id]?.note ?? ''}
+                  onNoteChange={val => setActionNotes(prev => ({
+                    ...prev,
+                    [form.action_id]: { ...prev[form.action_id], note: val },
+                  }))}
+                  initialSections={actionNotes[form.action_id]?.sections ?? []}
+                  onSectionsChange={sections => setActionNotes(prev => ({
+                    ...prev,
+                    [form.action_id]: { ...prev[form.action_id], sections },
+                  }))}
+                  apiBase="/api/gestion-temps/actions"
+                  noteTable="gt_action_notes"
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Historique des saisies */}
       <div>
