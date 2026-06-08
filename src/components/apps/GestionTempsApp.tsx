@@ -914,15 +914,15 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
 
 // ─── Tab Saisie du temps ──────────────────────────────────────
 
-function TabSaisie({ projects, orgId, onRefresh }: {
+function TabSaisie({ projects, orgId, recentEntries, onRefresh }: {
   projects: GTProject[]
   orgId: string | null
+  recentEntries: GTEntry[]
   onRefresh: () => void
 }) {
   const [selectedProject, setSelectedProject] = useState('')
   const [actions, setActions]   = useState<GTAction[]>([])
   const [loadingActions, setLoadingActions] = useState(false)
-  const [recentEntries, setRecentEntries] = useState<GTEntry[]>([])
   const [form, setForm] = useState({ action_id: '', date: new Date().toISOString().split('T')[0], hours: '', note: '' })
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -934,25 +934,24 @@ function TabSaisie({ projects, orgId, onRefresh }: {
     try {
       const res = await fetch(`/api/gestion-temps/projects/${projectId}/actions`)
       const json = await res.json()
-      setActions((json.data ?? []).filter((a: GTAction) => a.status !== 'cancelled' && a.status !== 'done'))
+      const filtered = (json.data ?? []).filter((a: GTAction) => a.status !== 'cancelled' && a.status !== 'done')
+      setActions(filtered)
+      // Auto-sélectionner si une seule action disponible
+      if (filtered.length === 1) setForm(f => ({ ...f, action_id: filtered[0].id }))
     } finally { setLoadingActions(false) }
   }, [])
-
-  const loadRecent = useCallback(async () => {
-    const dateFrom = new Date(); dateFrom.setDate(dateFrom.getDate() - 30)
-    const params = new URLSearchParams({ date_from: dateFrom.toISOString().split('T')[0] })
-    if (orgId) params.set('org_id', orgId)
-    const res = await fetch(`/api/gestion-temps/time-entries?${params}`)
-    const json = await res.json()
-    if (res.ok) setRecentEntries(json.data ?? [])
-  }, [orgId])
-
-  useEffect(() => { loadRecent() }, [loadRecent])
 
   useEffect(() => {
     if (selectedProject) { loadProjectActions(selectedProject); setForm(f => ({ ...f, action_id: '' })) }
     else setActions([])
   }, [selectedProject, loadProjectActions])
+
+  const activeProjects = projects.filter(p => p.status !== 'archived')
+
+  // Auto-sélectionner si un seul projet actif
+  useEffect(() => {
+    if (activeProjects.length === 1 && !selectedProject) setSelectedProject(activeProjects[0].id)
+  }, [activeProjects, selectedProject])
 
   async function handleSubmit() {
     if (!form.action_id || !form.date || !form.hours) return
@@ -963,16 +962,17 @@ function TabSaisie({ projects, orgId, onRefresh }: {
         body: JSON.stringify({ action_id: form.action_id, date: form.date, hours: Number(form.hours), note: form.note || null }),
       })
       if (res.ok) {
-        setForm(f => ({ ...f, action_id: '', hours: '', note: '' }))
+        // Réinitialiser le formulaire — garder l'action si elle est unique
+        setForm(f => ({ ...f, action_id: actions.length === 1 ? actions[0].id : '', hours: '', note: '' }))
         setSuccess(true); setTimeout(() => setSuccess(false), 3000)
-        loadRecent(); onRefresh()
+        onRefresh()
       }
     } finally { setSaving(false) }
   }
 
   async function handleDeleteEntry(id: string) {
     await fetch(`/api/gestion-temps/time-entries/${id}`, { method: 'DELETE' })
-    loadRecent(); onRefresh()
+    onRefresh()
   }
 
   async function handleEditEntry() {
@@ -981,15 +981,8 @@ function TabSaisie({ projects, orgId, onRefresh }: {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hours: Number(editForm.hours), note: editForm.note || null }),
     })
-    setEditEntry(null); loadRecent(); onRefresh()
+    setEditEntry(null); onRefresh()
   }
-
-  const activeProjects = projects.filter(p => p.status !== 'archived')
-
-  // Auto-sélectionner si un seul projet
-  useEffect(() => {
-    if (activeProjects.length === 1 && !selectedProject) setSelectedProject(activeProjects[0].id)
-  }, [activeProjects, selectedProject])
 
   return (
     <div className="space-y-6">
@@ -1062,46 +1055,67 @@ function TabSaisie({ projects, orgId, onRefresh }: {
         ) : (
           <div className="space-y-2">
             {recentEntries.map(e => (
-              <div key={e.id}>
-                {editEntry?.id === e.id ? (
-                  <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-emerald-400 p-3 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <input type="number" min="0.25" max="24" step="0.25" value={editForm.hours}
-                        onChange={ev => setEditForm(f => ({ ...f, hours: ev.target.value }))}
-                        className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none" />
-                      <input value={editForm.note} onChange={ev => setEditForm(f => ({ ...f, note: ev.target.value }))}
-                        placeholder="Note"
-                        className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none" />
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setEditEntry(null)} className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg">Annuler</button>
-                      <button onClick={handleEditEntry} className="px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg">Enregistrer</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
-                    <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: e.project_color ?? '#10b981' }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{e.action_name}</p>
-                      <p className="text-xs text-gray-400 truncate">{e.project_name}</p>
-                      {e.note && <p className="text-xs text-gray-500 dark:text-gray-400 italic mt-0.5 truncate">{e.note}</p>}
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{fmtH(e.hours)}</p>
-                      <p className="text-xs text-gray-400">{fmtDate(e.date)}</p>
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      <button onClick={() => { setEditEntry(e); setEditForm({ hours: String(e.hours), note: e.note ?? '' }) }}
-                        className="p-1 text-gray-400 hover:text-emerald-600 text-xs">✏️</button>
-                      <button onClick={() => handleDeleteEntry(e.id)} className="p-1 text-gray-400 hover:text-red-600 text-xs">🗑️</button>
-                    </div>
-                  </div>
-                )}
+              <div key={e.id} className="flex items-start gap-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+                <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: e.project_color ?? '#10b981' }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{e.action_name}</p>
+                  <p className="text-xs text-gray-400 truncate">{e.project_name}</p>
+                  {e.note && <p className="text-xs text-gray-500 dark:text-gray-400 italic mt-0.5 truncate">{e.note}</p>}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{fmtH(e.hours)}</p>
+                  <p className="text-xs text-gray-400">{fmtDate(e.date)}</p>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => { setEditEntry(e); setEditForm({ hours: String(e.hours), note: e.note ?? '' }) }}
+                    className="p-1 text-gray-400 hover:text-emerald-600 text-xs">✏️</button>
+                  <button onClick={() => handleDeleteEntry(e.id)} className="p-1 text-gray-400 hover:text-red-600 text-xs">🗑️</button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Modal édition saisie */}
+      {editEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+             onClick={e => { if (e.target === e.currentTarget) setEditEntry(null) }}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <div>
+                <h4 className="font-semibold text-gray-900 dark:text-white text-sm">Modifier la saisie</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{editEntry.action_name} — {fmtDate(editEntry.date)}</p>
+              </div>
+              <button onClick={() => setEditEntry(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Durée (heures)</label>
+                <input type="number" min="0.25" max="24" step="0.25" value={editForm.hours}
+                  onChange={ev => setEditForm(f => ({ ...f, hours: ev.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Note (optionnel)</label>
+                <textarea value={editForm.note} onChange={ev => setEditForm(f => ({ ...f, note: ev.target.value }))}
+                  placeholder="Description..." rows={2}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-gray-700">
+              <button onClick={() => setEditEntry(null)}
+                className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+                Annuler
+              </button>
+              <button onClick={handleEditEntry} disabled={!editForm.hours}
+                className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-medium">
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1421,6 +1435,7 @@ export default function GestionTempsApp({ ctx }: { ctx: RseContext }) {
           <TabSaisie
             projects={projects}
             orgId={orgId}
+            recentEntries={recentEntries}
             onRefresh={handleRefresh}
           />
         )}
