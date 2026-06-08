@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import GuidedActionNotePanel, { type NoteSection } from '@/components/apps/GuidedActionNotePanel'
 
@@ -931,9 +931,11 @@ function TabSaisie({ projects, recentEntries, onRefresh }: {
   // Notes & documents par action
   const [actionNotes, setActionNotes] = useState<Record<string, { note: string; sections: NoteSection[]; loaded: boolean }>>({})
   const [notesExpanded, setNotesExpanded] = useState(false)
+  const loadedNoteIds = useRef<Set<string>>(new Set())
 
   const loadActionNotes = useCallback(async (actionId: string) => {
-    if (actionNotes[actionId]?.loaded) return
+    if (loadedNoteIds.current.has(actionId)) return
+    loadedNoteIds.current.add(actionId)
     try {
       const res = await fetch(`/api/gestion-temps/actions/${actionId}/notes`)
       const json = await res.json()
@@ -942,9 +944,10 @@ function TabSaisie({ projects, recentEntries, onRefresh }: {
         [actionId]: { note: json.data?.note ?? '', sections: json.data?.sections ?? [], loaded: true },
       }))
     } catch {
+      loadedNoteIds.current.delete(actionId) // permettre un retry si erreur réseau
       setActionNotes(prev => ({ ...prev, [actionId]: { note: '', sections: [], loaded: true } }))
     }
-  }, [actionNotes])
+  }, [])
 
   const loadProjectActions = useCallback(async (projectId: string) => {
     setLoadingActions(true)
