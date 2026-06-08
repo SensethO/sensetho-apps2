@@ -19,13 +19,27 @@ export async function GET(req: NextRequest) {
     const actionId  = url.searchParams.get('action_id')
     const dateFrom  = url.searchParams.get('date_from')
     const dateTo    = url.searchParams.get('date_to')
+    const orgId     = url.searchParams.get('org_id')
 
     const admin = createAdminClient()
 
-    // Projets dont je suis propriétaire (pour voir toutes les saisies)
-    const { data: ownedProjects } = await admin
-      .from('gt_projects').select('id').eq('owner_id', user.id)
+    // Projets dont je suis propriétaire (pour voir toutes les saisies), filtrés par org si spécifié
+    let ownedQuery = admin.from('gt_projects').select('id').eq('owner_id', user.id)
+    if (orgId) ownedQuery = ownedQuery.eq('org_id', orgId)
+    const { data: ownedProjects } = await ownedQuery
     const ownedIds = new Set((ownedProjects ?? []).map((p: { id: string }) => p.id))
+
+    // Si org_id spécifié, restreindre aussi les projets partagés à cette org
+    if (orgId && !projectId) {
+      const { data: sharedRows } = await admin
+        .from('gt_project_members').select('project_id').eq('user_id', user.id)
+      const sharedProjectIds = (sharedRows ?? []).map(r => r.project_id)
+      if (sharedProjectIds.length > 0) {
+        const { data: sharedInOrg } = await admin
+          .from('gt_projects').select('id').in('id', sharedProjectIds).eq('org_id', orgId)
+        ;(sharedInOrg ?? []).forEach((p: { id: string }) => ownedIds.add(p.id))
+      }
+    }
 
     let query = admin.from('gt_time_entries').select(`
       id, action_id, project_id, user_id, user_email, date, hours, note, created_at,

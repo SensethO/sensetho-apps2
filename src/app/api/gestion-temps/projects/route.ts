@@ -11,21 +11,25 @@ async function getUser() {
   return user
 }
 
-/** GET /api/gestion-temps/projects — liste tous les projets de l'utilisateur (own + shared) */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function GET(_req: NextRequest) {
+/** GET /api/gestion-temps/projects — liste les projets de l'utilisateur filtrés par org */
+export async function GET(req: NextRequest) {
   try {
     const user = await getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    const url = new URL(req.url)
+    const orgId = url.searchParams.get('org_id')
+
     const admin = createAdminClient()
 
     // Projets dont je suis propriétaire
-    const { data: ownProjects } = await admin
+    let ownQuery = admin
       .from('gt_projects')
       .select('*')
       .eq('owner_id', user.id)
       .order('created_at', { ascending: false })
+    if (orgId) ownQuery = ownQuery.eq('org_id', orgId)
+    const { data: ownProjects } = await ownQuery
 
     // Projets partagés avec moi
     const { data: memberRows } = await admin
@@ -34,9 +38,14 @@ export async function GET(_req: NextRequest) {
       .eq('user_id', user.id)
 
     const sharedIds = (memberRows ?? []).map(r => r.project_id)
-    const { data: sharedProjects } = sharedIds.length > 0
-      ? await admin.from('gt_projects').select('*').in('id', sharedIds).order('created_at', { ascending: false })
-      : { data: [] }
+    let sharedData: typeof ownProjects = []
+    if (sharedIds.length > 0) {
+      let sharedQuery = admin.from('gt_projects').select('*').in('id', sharedIds).order('created_at', { ascending: false })
+      if (orgId) sharedQuery = sharedQuery.eq('org_id', orgId)
+      const { data } = await sharedQuery
+      sharedData = data ?? []
+    }
+    const sharedProjects = sharedData
 
     // Fusionner sans doublons
     const allIds = new Set((ownProjects ?? []).map((p: { id: string }) => p.id))
@@ -97,7 +106,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const { name, description, type, color, status, start_date, end_date } = body
+    const { name, description, type, color, status, start_date, end_date, org_id } = body
 
     if (!name?.trim()) return NextResponse.json({ error: 'name requis' }, { status: 400 })
 
@@ -106,6 +115,7 @@ export async function POST(req: NextRequest) {
       .from('gt_projects')
       .insert({
         owner_id: user.id,
+        org_id: org_id ?? null,
         name: name.trim(),
         description: description || null,
         type: type ?? 'strategic',

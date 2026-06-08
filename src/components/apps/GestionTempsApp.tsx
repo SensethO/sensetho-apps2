@@ -271,11 +271,12 @@ function TabDashboard({ projects, recentEntries, onSelectProject, onTabChange }:
 
 // ─── Tab Projets ──────────────────────────────────────────────
 
-function TabProjects({ projects, loading, onSelect, selectedId, onRefresh }: {
+function TabProjects({ projects, loading, onSelect, selectedId, orgId, onRefresh }: {
   projects: GTProject[]
   loading: boolean
   onSelect: (id: string) => void
   selectedId: string | null
+  orgId: string | null
   onRefresh: () => void
 }) {
   const [showForm, setShowForm] = useState(false)
@@ -321,7 +322,7 @@ function TabProjects({ projects, loading, onSelect, selectedId, onRefresh }: {
       } else {
         await fetch('/api/gestion-temps/projects', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
+          body: JSON.stringify({ ...form, org_id: orgId }),
         })
       }
       resetForm()
@@ -891,8 +892,9 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
 
 // ─── Tab Saisie du temps ──────────────────────────────────────
 
-function TabSaisie({ projects, onRefresh }: {
+function TabSaisie({ projects, orgId, onRefresh }: {
   projects: GTProject[]
+  orgId: string | null
   onRefresh: () => void
 }) {
   const [selectedProject, setSelectedProject] = useState('')
@@ -916,10 +918,12 @@ function TabSaisie({ projects, onRefresh }: {
 
   const loadRecent = useCallback(async () => {
     const dateFrom = new Date(); dateFrom.setDate(dateFrom.getDate() - 30)
-    const res = await fetch(`/api/gestion-temps/time-entries?date_from=${dateFrom.toISOString().split('T')[0]}`)
+    const params = new URLSearchParams({ date_from: dateFrom.toISOString().split('T')[0] })
+    if (orgId) params.set('org_id', orgId)
+    const res = await fetch(`/api/gestion-temps/time-entries?${params}`)
     const json = await res.json()
     if (res.ok) setRecentEntries(json.data ?? [])
-  }, [])
+  }, [orgId])
 
   useEffect(() => { loadRecent() }, [loadRecent])
 
@@ -1077,7 +1081,7 @@ function TabSaisie({ projects, onRefresh }: {
 
 // ─── Tab Bilan ────────────────────────────────────────────────
 
-function TabBilan({ projects }: { projects: GTProject[] }) {
+function TabBilan({ projects, orgId }: { projects: GTProject[]; orgId: string | null }) {
   const [filterProject, setFilterProject] = useState('')
   const [filterDateFrom, setFilterDateFrom] = useState(() => {
     const d = new Date(); d.setMonth(d.getMonth() - 3)
@@ -1095,6 +1099,7 @@ function TabBilan({ projects }: { projects: GTProject[] }) {
       if (filterProject) params.set('project_id', filterProject)
       if (filterDateFrom) params.set('date_from', filterDateFrom)
       if (filterDateTo)   params.set('date_to', filterDateTo)
+      if (orgId)          params.set('org_id', orgId)
 
       const [entriesRes] = await Promise.all([
         fetch(`/api/gestion-temps/time-entries?${params}`),
@@ -1117,7 +1122,7 @@ function TabBilan({ projects }: { projects: GTProject[] }) {
         setActions(allActions)
       }
     } finally { setLoading(false) }
-  }, [filterProject, filterDateFrom, filterDateTo, projects])
+  }, [filterProject, filterDateFrom, filterDateTo, projects, orgId])
 
   useEffect(() => { if (projects.length > 0) load() }, [load, projects.length])
 
@@ -1294,36 +1299,44 @@ const TABS = [
   { id: 'bilan',     label: 'Bilan',            icon: '📈' },
 ]
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function GestionTempsApp({ ctx: _ctx }: { ctx: RseContext }) {
+export default function GestionTempsApp({ ctx }: { ctx: RseContext }) {
+  const orgId = ctx.org?.id ?? null
+
   const [tab, setTab]                     = useState('dashboard')
   const [projects, setProjects]           = useState<GTProject[]>([])
   const [loadingProjects, setLoadingProjects] = useState(false)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [recentEntries, setRecentEntries] = useState<GTEntry[]>([])
 
-  const loadProjects = useCallback(async () => {
+  const loadProjects = useCallback(async (oid: string | null) => {
     setLoadingProjects(true)
     try {
-      const res = await fetch('/api/gestion-temps/projects')
+      const params = oid ? `?org_id=${oid}` : ''
+      const res = await fetch(`/api/gestion-temps/projects${params}`)
       const json = await res.json()
       if (res.ok) setProjects(json.data ?? [])
     } finally { setLoadingProjects(false) }
   }, [])
 
-  const loadRecentEntries = useCallback(async () => {
+  const loadRecentEntries = useCallback(async (oid: string | null) => {
     const d = new Date(); d.setDate(d.getDate() - 30)
-    const res = await fetch(`/api/gestion-temps/time-entries?date_from=${d.toISOString().split('T')[0]}`)
+    const params = new URLSearchParams({ date_from: d.toISOString().split('T')[0] })
+    if (oid) params.set('org_id', oid)
+    const res = await fetch(`/api/gestion-temps/time-entries?${params}`)
     const json = await res.json()
     if (res.ok) setRecentEntries(json.data ?? [])
   }, [])
 
   useEffect(() => {
-    loadProjects()
-    loadRecentEntries()
-  }, [loadProjects, loadRecentEntries])
+    // Recharger quand l'organisation change, réinitialiser le projet sélectionné
+    setSelectedProjectId(null)
+    setProjects([])
+    setRecentEntries([])
+    loadProjects(orgId)
+    loadRecentEntries(orgId)
+  }, [orgId, loadProjects, loadRecentEntries])
 
-  function handleRefresh() { loadProjects(); loadRecentEntries() }
+  function handleRefresh() { loadProjects(orgId); loadRecentEntries(orgId) }
 
   function handleSelectProject(id: string) {
     setSelectedProjectId(id)
@@ -1365,6 +1378,7 @@ export default function GestionTempsApp({ ctx: _ctx }: { ctx: RseContext }) {
             loading={loadingProjects}
             onSelect={handleSelectProject}
             selectedId={selectedProjectId}
+            orgId={orgId}
             onRefresh={handleRefresh}
           />
         )}
@@ -1379,11 +1393,12 @@ export default function GestionTempsApp({ ctx: _ctx }: { ctx: RseContext }) {
         {tab === 'saisie' && (
           <TabSaisie
             projects={projects}
+            orgId={orgId}
             onRefresh={handleRefresh}
           />
         )}
         {tab === 'bilan' && (
-          <TabBilan projects={projects} />
+          <TabBilan projects={projects} orgId={orgId} />
         )}
       </div>
     </div>
