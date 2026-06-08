@@ -928,26 +928,34 @@ function TabSaisie({ projects, recentEntries, onRefresh }: {
   const [editEntry, setEditEntry] = useState<GTEntry | null>(null)
   const [editForm, setEditForm] = useState({ hours: '', note: '' })
 
-  // Notes & documents par action
-  const [actionNotes, setActionNotes] = useState<Record<string, { note: string; sections: NoteSection[]; loaded: boolean }>>({})
-  const [notesExpanded, setNotesExpanded] = useState(false)
-  const loadedNoteIds = useRef<Set<string>>(new Set())
+  // Notes & documents par saisie (entry_id)
+  const [entryNotes, setEntryNotes] = useState<Record<string, { note: string; sections: NoteSection[]; loaded: boolean }>>({})
+  const [notesExpandedId, setNotesExpandedId] = useState<string | null>(null)
+  const loadedEntryNoteIds = useRef<Set<string>>(new Set())
 
-  const loadActionNotes = useCallback(async (actionId: string) => {
-    if (loadedNoteIds.current.has(actionId)) return
-    loadedNoteIds.current.add(actionId)
+  const loadEntryNotes = useCallback(async (entryId: string) => {
+    if (loadedEntryNoteIds.current.has(entryId)) return
+    loadedEntryNoteIds.current.add(entryId)
     try {
-      const res = await fetch(`/api/gestion-temps/actions/${actionId}/notes`)
+      const res = await fetch(`/api/gestion-temps/time-entries/${entryId}/notes`)
       const json = await res.json()
-      setActionNotes(prev => ({
-        ...prev,
-        [actionId]: { note: json.data?.note ?? '', sections: json.data?.sections ?? [], loaded: true },
-      }))
+      const sections = json.data?.sections?.[entryId] ?? []
+      const note     = json.data?.notes?.[entryId] ?? ''
+      setEntryNotes(prev => ({ ...prev, [entryId]: { note, sections, loaded: true } }))
     } catch {
-      loadedNoteIds.current.delete(actionId) // permettre un retry si erreur réseau
-      setActionNotes(prev => ({ ...prev, [actionId]: { note: '', sections: [], loaded: true } }))
+      loadedEntryNoteIds.current.delete(entryId)
+      setEntryNotes(prev => ({ ...prev, [entryId]: { note: '', sections: [], loaded: true } }))
     }
   }, [])
+
+  function toggleEntryNotes(entryId: string) {
+    if (notesExpandedId === entryId) {
+      setNotesExpandedId(null)
+    } else {
+      setNotesExpandedId(entryId)
+      loadEntryNotes(entryId)
+    }
+  }
 
   const loadProjectActions = useCallback(async (projectId: string) => {
     setLoadingActions(true)
@@ -963,13 +971,8 @@ function TabSaisie({ projects, recentEntries, onRefresh }: {
     } finally { setLoadingActions(false) }
   }, [])
 
-  // Charger les notes quand une action est sélectionnée
   useEffect(() => {
-    if (form.action_id) loadActionNotes(form.action_id)
-  }, [form.action_id, loadActionNotes])
-
-  useEffect(() => {
-    if (selectedProject) { loadProjectActions(selectedProject); setForm(f => ({ ...f, action_id: '' })); setNotesExpanded(false) }
+    if (selectedProject) { loadProjectActions(selectedProject); setForm(f => ({ ...f, action_id: '' })); setNotesExpandedId(null) }
     else setActions([])
   }, [selectedProject, loadProjectActions])
 
@@ -1074,73 +1077,76 @@ function TabSaisie({ projects, recentEntries, onRefresh }: {
         </div>
       </div>
 
-      {/* Notes & documents de l'action sélectionnée */}
-      {form.action_id && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <button
-            onClick={() => setNotesExpanded(v => !v)}
-            className={`w-full flex items-center justify-between px-4 py-3 text-xs font-medium transition-all ${
-              notesExpanded
-                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
-                : 'text-gray-500 dark:text-gray-400 hover:text-emerald-600 hover:bg-gray-50 dark:hover:bg-gray-700/40'
-            }`}>
-            <span className="flex items-center gap-1.5">📎 Notes &amp; documents de l&apos;action</span>
-            <span>{notesExpanded ? '▲' : '▼'}</span>
-          </button>
-          {notesExpanded && (
-            <div className="border-t border-gray-100 dark:border-gray-700">
-              {!actionNotes[form.action_id]?.loaded ? (
-                <div className="px-4 py-3 text-xs text-gray-400 animate-pulse">Chargement des notes...</div>
-              ) : (
-                <GuidedActionNotePanel
-                  diagnosticId={form.action_id}
-                  actionKey={form.action_id}
-                  readOnly={false}
-                  note={actionNotes[form.action_id]?.note ?? ''}
-                  onNoteChange={val => setActionNotes(prev => ({
-                    ...prev,
-                    [form.action_id]: { ...prev[form.action_id], note: val },
-                  }))}
-                  initialSections={actionNotes[form.action_id]?.sections ?? []}
-                  onSectionsChange={sections => setActionNotes(prev => ({
-                    ...prev,
-                    [form.action_id]: { ...prev[form.action_id], sections },
-                  }))}
-                  apiBase="/api/gestion-temps/actions"
-                  noteTable="gt_action_notes"
-                />
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Historique des saisies */}
+      {/* Historique des saisies avec Notes & documents */}
       <div>
         <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-3">Mes saisies récentes (30 jours)</h3>
         {recentEntries.length === 0 ? (
           <p className="text-xs text-gray-400 italic">Aucune saisie récente.</p>
         ) : (
           <div className="space-y-2">
-            {recentEntries.map(e => (
-              <div key={e.id} className="flex items-start gap-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
-                <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: e.project_color ?? '#10b981' }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{e.action_name}</p>
-                  <p className="text-xs text-gray-400 truncate">{e.project_name}</p>
-                  {e.note && <p className="text-xs text-gray-500 dark:text-gray-400 italic mt-0.5 truncate">{e.note}</p>}
+            {recentEntries.map(e => {
+              const notesOpen = notesExpandedId === e.id
+              const noteData  = entryNotes[e.id]
+              return (
+                <div key={e.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  {/* Ligne principale */}
+                  <div className="flex items-start gap-2 p-3">
+                    <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: e.project_color ?? '#10b981' }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{e.action_name}</p>
+                      <p className="text-xs text-gray-400 truncate">{e.project_name}</p>
+                      {e.note && <p className="text-xs text-gray-500 dark:text-gray-400 italic mt-0.5 truncate">{e.note}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{fmtH(e.hours)}</p>
+                      <p className="text-xs text-gray-400">{fmtDate(e.date)}</p>
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={() => { setEditEntry(e); setEditForm({ hours: String(e.hours), note: e.note ?? '' }) }}
+                        className="p-1 text-gray-400 hover:text-emerald-600 text-xs">✏️</button>
+                      <button onClick={() => handleDeleteEntry(e.id)} className="p-1 text-gray-400 hover:text-red-600 text-xs">🗑️</button>
+                    </div>
+                  </div>
+                  {/* Bouton Notes & documents */}
+                  <button
+                    onClick={() => toggleEntryNotes(e.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium border-t transition-all ${
+                      notesOpen
+                        ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400'
+                        : 'border-gray-100 dark:border-gray-700 text-gray-400 hover:text-emerald-600 hover:bg-gray-50 dark:hover:bg-gray-700/30'
+                    }`}>
+                    <span className="flex items-center gap-1.5">📎 Notes &amp; documents</span>
+                    <span>{notesOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {/* Panel Notes */}
+                  {notesOpen && (
+                    <div className="border-t border-gray-100 dark:border-gray-700">
+                      {!noteData?.loaded ? (
+                        <div className="px-4 py-3 text-xs text-gray-400 animate-pulse">Chargement des notes...</div>
+                      ) : (
+                        <GuidedActionNotePanel
+                          diagnosticId={e.id}
+                          actionKey={e.id}
+                          readOnly={false}
+                          note={noteData.note}
+                          onNoteChange={val => setEntryNotes(prev => ({
+                            ...prev,
+                            [e.id]: { ...prev[e.id], note: val },
+                          }))}
+                          initialSections={noteData.sections}
+                          onSectionsChange={sections => setEntryNotes(prev => ({
+                            ...prev,
+                            [e.id]: { ...prev[e.id], sections },
+                          }))}
+                          apiBase="/api/gestion-temps/time-entries"
+                          noteTable="gt_time_entry_notes"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{fmtH(e.hours)}</p>
-                  <p className="text-xs text-gray-400">{fmtDate(e.date)}</p>
-                </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => { setEditEntry(e); setEditForm({ hours: String(e.hours), note: e.note ?? '' }) }}
-                    className="p-1 text-gray-400 hover:text-emerald-600 text-xs">✏️</button>
-                  <button onClick={() => handleDeleteEntry(e.id)} className="p-1 text-gray-400 hover:text-red-600 text-xs">🗑️</button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
