@@ -11,11 +11,8 @@ async function getUser() {
   return user
 }
 
-function canAccessProject(project: { owner_id: string }, members: { user_id: string }[], userId: string) {
-  return project.owner_id === userId || members.some(m => m.user_id === userId)
-}
-
 /** GET /api/gestion-temps/projects — liste tous les projets de l'utilisateur (own + shared) */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function GET(_req: NextRequest) {
   try {
     const user = await getUser()
