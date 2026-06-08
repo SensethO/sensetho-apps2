@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import type { RseContext } from '@/components/rse/RseAppShell'
+import GuidedActionNotePanel, { type NoteSection } from '@/components/apps/GuidedActionNotePanel'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -557,6 +558,37 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
     name: '', description: '', planned_hours: '', priority: 'medium' as Priority, due_date: '',
   })
 
+  // ── Notes & documents ─────────────────────────────────────────
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null)
+  const [actionNotes, setActionNotes] = useState<Record<string, { note: string; sections: NoteSection[]; loaded: boolean }>>({})
+
+  const loadActionNotes = useCallback(async (actionId: string) => {
+    if (actionNotes[actionId]?.loaded) return
+    try {
+      const res  = await fetch(`/api/gestion-temps/actions/${actionId}/notes`)
+      const json = await res.json()
+      if (res.ok && json.data) {
+        setActionNotes(prev => ({
+          ...prev,
+          [actionId]: {
+            note:     json.data.notes?.[actionId]    ?? '',
+            sections: json.data.sections?.[actionId] ?? [],
+            loaded:   true,
+          },
+        }))
+      }
+    } catch { /* ignore */ }
+  }, [actionNotes])
+
+  function toggleNotes(actionId: string) {
+    if (expandedNoteId === actionId) {
+      setExpandedNoteId(null)
+    } else {
+      setExpandedNoteId(actionId)
+      loadActionNotes(actionId)
+    }
+  }
+
   const project = projects.find(p => p.id === selectedProjectId)
 
   const loadActions = useCallback(async (projectId: string) => {
@@ -748,62 +780,105 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
               const pr = PRIORITY_LABELS[a.priority]
               const over = a.planned_hours > 0 && a.actual_hours > a.planned_hours
               const isLate = a.due_date && a.status !== 'done' && new Date(a.due_date) < new Date()
+              const notesExpanded = expandedNoteId === a.id
+              const noteData = actionNotes[a.id]
+              const isEditor = project.is_owner || true // membres éditeurs peuvent aussi noter
               return (
-                <div key={a.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                  <div className="flex items-start gap-3">
-                    {/* Statut */}
-                    <select value={a.status} onChange={e => handleStatusChange(a, e.target.value as ActionStatus)}
-                      className={`text-xs px-2 py-1 rounded-lg border-0 font-medium cursor-pointer flex-shrink-0 ${
-                        a.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
-                        a.status === 'in_progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400' :
-                        a.status === 'cancelled' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
-                        'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                      }`}>
-                      {Object.entries(ACTION_STATUS).map(([v, s]) => <option key={v} value={v}>{s.label}</option>)}
-                    </select>
+                <div key={a.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div className="p-4">
+                    <div className="flex items-start gap-3">
+                      {/* Statut */}
+                      <select value={a.status} onChange={e => handleStatusChange(a, e.target.value as ActionStatus)}
+                        className={`text-xs px-2 py-1 rounded-lg border-0 font-medium cursor-pointer flex-shrink-0 ${
+                          a.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
+                          a.status === 'in_progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400' :
+                          a.status === 'cancelled' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
+                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                        {Object.entries(ACTION_STATUS).map(([v, s]) => <option key={v} value={v}>{s.label}</option>)}
+                      </select>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`font-medium text-sm ${a.status === 'done' ? 'line-through text-gray-400' : 'text-gray-900 dark:text-white'}`}>{a.name}</span>
-                        <Badge variant={pr.color as 'red' | 'amber' | 'gray'}>{pr.label}</Badge>
-                        {isLate && <Badge variant="red">En retard</Badge>}
-                        {over && <Badge variant="red">Hors budget</Badge>}
-                      </div>
-                      {a.description && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{a.description}</p>}
-
-                      {/* Stats heures */}
-                      <div className="flex items-center gap-4 mt-2 flex-wrap">
-                        {a.planned_hours > 0 && <span className="text-xs text-gray-500">📋 {fmtH(a.planned_hours)} planifiés</span>}
-                        <span className={`text-xs font-medium ${over ? 'text-red-600' : 'text-emerald-600 dark:text-emerald-400'}`}>⏱️ {fmtH(a.actual_hours)} réalisés</span>
-                        {a.due_date && <span className={`text-xs ${isLate ? 'text-red-600' : 'text-gray-400'}`}>📅 {fmtDate(a.due_date)}</span>}
-                      </div>
-
-                      {a.planned_hours > 0 && (
-                        <div className="mt-2">
-                          <ProgressBar actual={a.actual_hours} planned={a.planned_hours} color={project.color} />
-                          <p className="text-xs text-gray-400 mt-0.5">{pct(a.actual_hours, a.planned_hours) ?? 0} %</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`font-medium text-sm ${a.status === 'done' ? 'line-through text-gray-400' : 'text-gray-900 dark:text-white'}`}>{a.name}</span>
+                          <Badge variant={pr.color as 'red' | 'amber' | 'gray'}>{pr.label}</Badge>
+                          {isLate && <Badge variant="red">En retard</Badge>}
+                          {over && <Badge variant="red">Hors budget</Badge>}
                         </div>
-                      )}
+                        {a.description && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{a.description}</p>}
 
-                      {/* Par utilisateur */}
-                      {Object.keys(a.actual_by_user).length > 1 && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {Object.entries(a.actual_by_user).map(([email, h]) => (
-                            <span key={email} className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
-                              {email.split('@')[0]} : {fmtH(h)}
-                            </span>
-                          ))}
+                        {/* Stats heures */}
+                        <div className="flex items-center gap-4 mt-2 flex-wrap">
+                          {a.planned_hours > 0 && <span className="text-xs text-gray-500">📋 {fmtH(a.planned_hours)} planifiés</span>}
+                          <span className={`text-xs font-medium ${over ? 'text-red-600' : 'text-emerald-600 dark:text-emerald-400'}`}>⏱️ {fmtH(a.actual_hours)} réalisés</span>
+                          {a.due_date && <span className={`text-xs ${isLate ? 'text-red-600' : 'text-gray-400'}`}>📅 {fmtDate(a.due_date)}</span>}
                         </div>
-                      )}
-                    </div>
 
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button onClick={() => openEdit(a)} className="p-1.5 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors text-sm">✏️</button>
-                      {project.is_owner && (
-                        <button onClick={() => handleDelete(a)} className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors text-sm">🗑️</button>
-                      )}
+                        {a.planned_hours > 0 && (
+                          <div className="mt-2">
+                            <ProgressBar actual={a.actual_hours} planned={a.planned_hours} color={project.color} />
+                            <p className="text-xs text-gray-400 mt-0.5">{pct(a.actual_hours, a.planned_hours) ?? 0} %</p>
+                          </div>
+                        )}
+
+                        {/* Par utilisateur */}
+                        {Object.keys(a.actual_by_user).length > 1 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {Object.entries(a.actual_by_user).map(([email, h]) => (
+                              <span key={email} className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
+                                {email.split('@')[0]} : {fmtH(h)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Bouton Notes & documents */}
+                        <button onClick={() => toggleNotes(a.id)}
+                          className={`mt-2 flex items-center gap-1 text-xs font-medium transition-colors ${
+                            notesExpanded
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                          }`}>
+                          <span>📎 Notes &amp; documents</span>
+                          <span className="text-gray-400">{notesExpanded ? '▲' : '▼'}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button onClick={() => openEdit(a)} className="p-1.5 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors text-sm">✏️</button>
+                        {project.is_owner && (
+                          <button onClick={() => handleDelete(a)} className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors text-sm">🗑️</button>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Panel Notes & documents */}
+                  {notesExpanded && (
+                    <div className="border-t border-gray-100 dark:border-gray-700">
+                      {!noteData?.loaded ? (
+                        <div className="px-4 py-3 text-xs text-gray-400 animate-pulse">Chargement des notes...</div>
+                      ) : (
+                        <GuidedActionNotePanel
+                          diagnosticId={a.id}
+                          actionKey={a.id}
+                          readOnly={!isEditor}
+                          note={noteData.note}
+                          onNoteChange={val => setActionNotes(prev => ({
+                            ...prev,
+                            [a.id]: { ...prev[a.id], note: val },
+                          }))}
+                          initialSections={noteData.sections}
+                          onSectionsChange={sections => setActionNotes(prev => ({
+                            ...prev,
+                            [a.id]: { ...prev[a.id], sections },
+                          }))}
+                          apiBase="/api/gestion-temps/actions"
+                          noteTable="gt_action_notes"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
