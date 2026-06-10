@@ -153,22 +153,26 @@ const spRes = await spGraphForApp('<slug>-diagnostic', spPath, { method: 'POST',
 ```typescript
 // src/app/rse/<slug>/page.tsx
 'use client'
-import AppShell from '@/components/layout/AppShell'
 import RequireSubscription from '@/components/rse/RequireSubscription'
+import RseAppShell, { type RseContext } from '@/components/rse/RseAppShell'
 import dynamic from 'next/dynamic'
 
 const DiagApp = dynamic(() => import('@/components/apps/<Slug>DiagnosticApp'), { ssr: false })
 
 export default function Page() {
   return (
-    <AppShell>
-      <RequireSubscription appSlug="<slug>" appName="<Nom>">
-        {(ctx) => <DiagApp ctx={ctx} />}
-      </RequireSubscription>
-    </AppShell>
+    <RequireSubscription appSlug="<slug>" appName="<Nom>">
+      <RseAppShell appSlug="<slug>" title="<Titre complet>">
+        {(ctx: RseContext) => <DiagApp ctx={ctx} />}
+      </RseAppShell>
+    </RequireSubscription>
   )
 }
 ```
+
+> ⚠️ **JAMAIS** passer une render prop directement à `RequireSubscription` — il attend
+> `React.ReactNode` et ferait un rendu vide (bug page blanche ACT Bas-Carbone, 2026-06-10).
+> La render prop `(ctx) => ...` va dans `RseAppShell`, pas dans `RequireSubscription`.
 
 ---
 
@@ -419,6 +423,7 @@ gh run list --limit 1  # Doit être "success"
 | Devoir de Vigilance | `vigilance` | `/rse/vigilance` | Loi n°2017-399 | 2026-06 |
 | EUDR Sans Déforestation | `eudr` | `/rse/eudr` | Règlement (UE) 2023/1115 | 2026-06 |
 | Label Engagé RSE AFNOR | `afnor-rse` | `/rse/afnor-rse` | Label AFNOR / ISO 26000 | 2026-06 |
+| Label Numérique Responsable | `label-nr` | `/rse/label-nr` | Label NR LUCIE/INR — GR491/RGESN | 2026-06 |
 
 ---
 
