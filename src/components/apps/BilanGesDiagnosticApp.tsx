@@ -12,6 +12,12 @@ const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActi
   loading: () => <div className="py-3 text-xs text-gray-400 animate-pulse">Chargement éditeur…</div>
 })
 
+// Calculateur d'émissions tCO2e (port v1) — chargé en lazy, client only
+const BilanGesCalculateur = dynamic(() => import('@/components/apps/BilanGesCalculateur'), {
+  ssr: false,
+  loading: () => <div className="py-10 text-center text-sm text-gray-400 animate-pulse">Chargement du calculateur…</div>
+})
+
 // ─── Données statiques Bilan GES (BEGES réglementaire) ────────────────────────
 
 export const BILAN_GES_AXES = [
@@ -107,7 +113,7 @@ function getBadge(score: number) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'presentation' | 'dashboard' | 'diagnostic' | 'actions' | 'correspondances'
+type View = 'presentation' | 'calculateur' | 'dashboard' | 'diagnostic' | 'actions' | 'correspondances'
 
 interface DiagnosticData { id: string; annee: number; statut: string; score_global: number | null }
 interface Reponse { id?: string; critere_id: string; niveau: number; commentaire: string | null }
@@ -218,6 +224,38 @@ function PresentationView() {
               <span className="text-red-600 font-bold flex-shrink-0">📐</span>
               <span><strong>Méthode réglementaire V5 ADEME</strong>, cohérente avec Bilan Carbone, GHG Protocol et ISO 14064-1.</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Calculateur intégré */}
+      <div className={card('p-5 space-y-4 border-l-4 border-emerald-500')}>
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">🧮</span>
+          <div>
+            <h3 className="font-bold text-gray-900 dark:text-white">Calculateur intégré — vos émissions en tCO₂e</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Saisissez vos données d&apos;activité et obtenez vos émissions en tCO₂e — facteurs ADEME Base Carbone 2023.
+            </p>
+          </div>
+        </div>
+        <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+          L&apos;onglet <strong>🧮 Calculateur</strong> vous permet de créer des sessions de bilan GES, de saisir vos lignes
+          d&apos;émissions par <strong>scope 1, 2 et 3</strong> (15 catégories Scope 3), de documenter chaque ligne
+          (notes et pièces jointes) et de suivre vos objectifs de réduction — selon trois méthodes au choix :
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10 p-4">
+            <div className="text-sm font-bold text-gray-900 dark:text-white mb-1">GHG Protocol</div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">Standard international (WRI/WBCSD) — référence mondiale pour le reporting carbone</div>
+          </div>
+          <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10 p-4">
+            <div className="text-sm font-bold text-gray-900 dark:text-white mb-1">Bilan Carbone®</div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">Méthode ADEME/ABC — référence française, facteurs Base Carbone, scopes 1-2-3</div>
+          </div>
+          <div className="rounded-xl border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-900/10 p-4">
+            <div className="text-sm font-bold text-gray-900 dark:text-white mb-1">CSRD / ESRS E1</div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">Reporting obligatoire selon ESRS E1 — objectifs E1-4, énergie E1-5, GES E1-6, absorptions E1-7</div>
           </div>
         </div>
       </div>
@@ -1277,6 +1315,7 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: 'presentation',    label: 'Présentation',    icon: '📋' },
+  { id: 'calculateur',     label: 'Calculateur',     icon: '🧮' },
   { id: 'dashboard',       label: 'Tableau de bord', icon: '📊' },
   { id: 'diagnostic',      label: 'Diagnostic BEGES', icon: '🏭' },
   { id: 'actions',         label: "Plan d'actions",  icon: '📝' },
@@ -1517,6 +1556,7 @@ export default function BilanGesDiagnosticApp({ ctx }: { ctx: RseContext }) {
 
       {/* Contenu des vues */}
       {view === 'presentation' && <PresentationView />}
+      {view === 'calculateur' && <BilanGesCalculateur org={org} year={year} />}
       {view === 'correspondances' && <CorrespondancesView />}
       {view === 'dashboard' && org && diagnostic && (
         <TableauDeBordView
