@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import {
   PPSession,
   Stakeholder,
@@ -1848,6 +1849,7 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
   const [showNewModal, setShowNewModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
 
   const loadSessions = useCallback(async () => {
     setLoading(true)
@@ -1914,7 +1916,6 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
   }, [])
 
   const handleDeleteSession = useCallback(async (id: string) => {
-    if (!confirm('Supprimer cette session ? Cette action est irréversible.')) return
     try {
       await fetch(`/api/parties-prenantes/sessions/${id}`, { method: 'DELETE' })
       setSessions(prev => prev.filter(s => s.id !== id))
@@ -2082,7 +2083,7 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
                       </p>
                     </div>
                     <button
-                      onClick={e => { e.stopPropagation(); handleDeleteSession(session.id) }}
+                      onClick={e => { e.stopPropagation(); setSessionToDelete(session.id) }}
                       className="p-1.5 text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
                       title="Supprimer"
                     >
@@ -2094,6 +2095,13 @@ export default function PartiesPrenantesApp({ ctx }: { ctx: RseContext }) {
             })}
           </div>
         )}
+        <ConfirmModal
+          open={!!sessionToDelete}
+          title="Supprimer cette session ?"
+          message="Cette action est irréversible."
+          onConfirm={() => { if (sessionToDelete) handleDeleteSession(sessionToDelete); setSessionToDelete(null) }}
+          onCancel={() => setSessionToDelete(null)}
+        />
       </div>
     )
   }

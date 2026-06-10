@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -472,6 +473,7 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
 
   const [deviceAuthLog, setDeviceAuthLog] = useState<string[]>([])
   const [devicePollTimer, setDevicePollTimer] = useState<ReturnType<typeof setInterval> | null>(null)
+  const [pendingUnblock, setPendingUnblock] = useState(false)
   const is401 = error.includes('401')
 
   // Nettoyer le timer de polling au démontage
@@ -573,7 +575,6 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
   }
 
   async function runUnlock() {
-    if (!confirm(`Débloquer le pipeline de "${tenant.name}" ?\n\nCette opération modifie temporairement la politique Anti-Phish (30 secondes) puis la restaure. La configuration finale est identique à l'état initial.`)) return
     setRunning(true); setLog([]); setError(''); setDone(false); setAfterScore(null)
     try {
       const res = await fetch('/api/secure-score/unlock', {
@@ -659,7 +660,7 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
       {/* Boutons d'action */}
       {!running && !done && (
         <div className="flex flex-col sm:flex-row gap-3">
-          <button onClick={runUnlock}
+          <button onClick={() => setPendingUnblock(true)}
             className="flex-1 py-3 rounded-xl font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
             <Icon name="lightning" size={16} />
             Déblocage automatique (API)
@@ -903,6 +904,14 @@ function UnlockView({ tenant, onUpdateTenant }: { tenant: M365Tenant; onUpdateTe
           )}
         </div>
       )}
+      <ConfirmModal
+        open={pendingUnblock}
+        title={`Débloquer le pipeline de "${tenant.name}" ?`}
+        message="Cette opération modifie temporairement la politique Anti-Phish (30 secondes) puis la restaure. La configuration finale est identique à l'état initial."
+        confirmLabel="Débloquer"
+        onConfirm={() => { setPendingUnblock(false); runUnlock() }}
+        onCancel={() => setPendingUnblock(false)}
+      />
     </div>
   )
 }
@@ -1285,6 +1294,7 @@ export default function SecureScoreApp() {
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editTenant, setEditTenant] = useState<M365Tenant | null>(null)
+  const [tenantToDelete, setTenantToDelete] = useState<string | null>(null)
 
   const allTenants = [...ownTenants, ...sharedTenants]
   const activeTenant = allTenants.find(t => t.id === activeTenantId) ?? null
@@ -1346,7 +1356,6 @@ export default function SecureScoreApp() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Supprimer ce tenant ?')) return
     await fetch(`/api/secure-score/tenants/${id}`, { method: 'DELETE' })
     await loadTenants()
     if (activeTenantId === id) setActiveTenantId(allTenants.find(t => t.id !== id)?.id ?? null)
@@ -1453,7 +1462,7 @@ export default function SecureScoreApp() {
                   isActive={t.id === activeTenantId}
                   onSelect={() => setActiveTenantId(t.id)}
                   onEdit={() => { setEditTenant(t); setShowForm(false) }}
-                  onDelete={() => handleDelete(t.id)} />
+                  onDelete={() => setTenantToDelete(t.id)} />
               ))}
               {sharedTenants.map(t => (
                 <TenantCard key={t.id} tenant={t} isOwner={false}
@@ -1538,6 +1547,13 @@ export default function SecureScoreApp() {
       <div className={tab !== 'optimize' ? 'hidden' : ''}>
         <OptimizeView tenant={activeTenant} />
       </div>
+      <ConfirmModal
+        open={!!tenantToDelete}
+        title="Supprimer ce tenant ?"
+        message="La configuration du tenant sera définitivement supprimée."
+        onConfirm={() => { if (tenantToDelete) handleDelete(tenantToDelete); setTenantToDelete(null) }}
+        onCancel={() => setTenantToDelete(null)}
+      />
     </div>
   )
 }

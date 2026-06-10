@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { RseContext } from '@/components/rse/RseAppShell'
 
 // ─── Données statiques ────────────────────────────────────────────────────────
@@ -316,6 +317,7 @@ function DiagnosticsListView({
   const [showForm, setShowForm] = useState(false)
   const [titre, setTitre] = useState('')
   const [creating, setCreating] = useState(false)
+  const [diagToDelete, setDiagToDelete] = useState<Diagnostic | null>(null)
 
   useEffect(() => { setTitre(`Diagnostic Green Claims ${year}`) }, [year])
 
@@ -406,7 +408,7 @@ function DiagnosticsListView({
                   </div>
                   <div className="text-xs text-gray-400 mt-0.5">{d.nb_total} allégation{d.nb_total !== 1 ? 's' : ''}</div>
                 </div>
-                <button onClick={e => { e.stopPropagation(); if (confirm('Supprimer ce diagnostic ?')) onDelete(d.id) }}
+                <button onClick={e => { e.stopPropagation(); setDiagToDelete(d) }}
                   className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-sm transition-all px-1 flex-shrink-0">✕</button>
               </div>
               {/* Badges */}
@@ -436,6 +438,13 @@ function DiagnosticsListView({
           ))}
         </div>
       )}
+      <ConfirmModal
+        open={!!diagToDelete}
+        title="Supprimer ce diagnostic ?"
+        message={diagToDelete ? `"${diagToDelete.titre}" et ses allégations seront définitivement supprimés.` : undefined}
+        onConfirm={() => { if (diagToDelete) onDelete(diagToDelete.id); setDiagToDelete(null) }}
+        onCancel={() => setDiagToDelete(null)}
+      />
     </div>
   )
 }
@@ -459,6 +468,7 @@ function EditeurView({
   const [saving, setSaving] = useState(false)
   const [editTitre, setEditTitre] = useState(false)
   const [titreVal, setTitreVal] = useState(diag.titre)
+  const [allegToDelete, setAllegToDelete] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
 
   const scores = allegations.map(a => computeScore(a))
@@ -572,7 +582,7 @@ function EditeurView({
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div className="text-sm font-bold text-gray-900 dark:text-white">Modifier l&apos;allégation</div>
-                <button onClick={() => { if (confirm('Supprimer ?')) onDeleteAllegation(selectedAllegation.id).then(() => setSelected(null)) }}
+                <button onClick={() => setAllegToDelete(selectedAllegation.id)}
                   className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20">🗑 Supprimer</button>
               </div>
               <AllegationForm
@@ -585,6 +595,13 @@ function EditeurView({
           )}
         </div>
       </div>
+      <ConfirmModal
+        open={!!allegToDelete}
+        title="Supprimer cette allégation ?"
+        message="Cette action est irréversible."
+        onConfirm={() => { if (allegToDelete) onDeleteAllegation(allegToDelete).then(() => setSelected(null)); setAllegToDelete(null) }}
+        onCancel={() => setAllegToDelete(null)}
+      />
     </div>
   )
 }

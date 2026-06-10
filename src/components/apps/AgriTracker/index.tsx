@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import ActionNotePanel from '@/components/apps/ActionNotePanel'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 const AgriCRM = dynamic(() => import('./CRM'), { ssr: false, loading: () => <div className="py-8 text-center text-gray-400 text-sm animate-pulse">Chargement CRM…</div> })
 const MessagesTabAcheteur = dynamic(() => import('./CRM').then(m => ({ default: m.MessagesTabAcheteur })), { ssr: false, loading: () => <div className="py-8 text-center text-gray-400 text-sm animate-pulse">Chargement…</div> })
 
@@ -1206,6 +1207,7 @@ function PhotosTab({
   const [renamingFile, setRenamingFile] = useState(false)
   const [renameValue, setRenameValue]   = useState('')
   const [renameSaving, setRenameSaving] = useState(false)
+  const [photoToDelete, setPhotoToDelete] = useState<PhotoTerrain | null>(null)
   // ── Hover GPS ─────────────────────────────────────────────────────────────
   const [hoveredPhotoCoords, setHoveredPhotoCoords] = useState<{ lat: number; lon: number } | null>(null)
 
@@ -1365,7 +1367,6 @@ function PhotosTab({
   }
 
   async function confirmDeletePhoto(photo: PhotoTerrain) {
-    if (!confirm('Supprimer cette photo ? Cette action est irréversible.')) return
     try {
       await fetch(`/api/agri/photos/${photo.id}`, { method: 'DELETE' })
       setEditingPhoto(null)
@@ -1744,7 +1745,7 @@ function PhotosTab({
                   <span />
                 ) : (
                   <button
-                    onClick={() => confirmDeletePhoto(editingPhoto)}
+                    onClick={() => setPhotoToDelete(editingPhoto)}
                     className="px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                   >
                     🗑️ Supprimer la photo
@@ -1973,6 +1974,13 @@ function PhotosTab({
         </div>
 
       </div>}
+      <ConfirmModal
+        open={!!photoToDelete}
+        title="Supprimer cette photo ?"
+        message="Cette action est irréversible."
+        onConfirm={() => { if (photoToDelete) confirmDeletePhoto(photoToDelete); setPhotoToDelete(null) }}
+        onCancel={() => setPhotoToDelete(null)}
+      />
     </div>
   )
 }

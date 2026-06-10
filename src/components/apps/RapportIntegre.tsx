@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { RseContext } from '@/components/rse/RseAppShell'
 
 // ─── Données statiques ────────────────────────────────────────────────────────
@@ -203,6 +204,7 @@ function RapportsListView({
   const [titre, setTitre] = useState(`Rapport Intégré ${year}`)
   const [template, setTemplate] = useState<TemplateKey>('iirc')
   const [creating, setCreating] = useState(false)
+  const [rapportToDelete, setRapportToDelete] = useState<Rapport | null>(null)
 
   useEffect(() => { setTitre(`Rapport Intégré ${year}`) }, [year])
 
@@ -295,7 +297,7 @@ function RapportsListView({
                       <div className="text-xs text-gray-500">{tpl.label} · {tpl.sections.length} sections</div>
                     </div>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); if (confirm('Supprimer ce rapport ?')) onDelete(r.id) }}
+                  <button onClick={e => { e.stopPropagation(); setRapportToDelete(r) }}
                     className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-sm transition-all px-1">✕</button>
                 </div>
                 {/* Sources */}
@@ -328,6 +330,13 @@ function RapportsListView({
           })}
         </div>
       )}
+      <ConfirmModal
+        open={!!rapportToDelete}
+        title="Supprimer ce rapport ?"
+        message={rapportToDelete ? `"${rapportToDelete.titre}" sera définitivement supprimé.` : undefined}
+        onConfirm={() => { if (rapportToDelete) onDelete(rapportToDelete.id); setRapportToDelete(null) }}
+        onCancel={() => setRapportToDelete(null)}
+      />
     </div>
   )
 }

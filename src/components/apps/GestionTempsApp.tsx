@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import GuidedActionNotePanel, { type NoteSection } from '@/components/apps/GuidedActionNotePanel'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -287,6 +288,7 @@ function TabProjects({ projects, loading, onSelect, selectedId, orgId, onRefresh
   const [shareRole, setShareRole] = useState<MemberRole>('editor')
   const [shareSaving, setShareSaving] = useState(false)
   const [shareError, setShareError] = useState('')
+  const [projectToDelete, setProjectToDelete] = useState<GTProject | null>(null)
 
   const [form, setForm] = useState({
     name: '', description: '', type: 'strategic' as ProjectType,
@@ -331,7 +333,6 @@ function TabProjects({ projects, loading, onSelect, selectedId, orgId, onRefresh
   }
 
   async function handleDelete(p: GTProject) {
-    if (!confirm(`Supprimer le projet "${p.name}" ? Toutes les actions et saisies seront perdues.`)) return
     await fetch(`/api/gestion-temps/projects/${p.id}`, { method: 'DELETE' })
     onRefresh()
   }
@@ -484,7 +485,7 @@ function TabProjects({ projects, loading, onSelect, selectedId, orgId, onRefresh
                               className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm">👥</button>
                             <button onClick={() => openEdit(p)} title="Modifier"
                               className="p-1.5 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors text-sm">✏️</button>
-                            <button onClick={() => handleDelete(p)} title="Supprimer"
+                            <button onClick={() => setProjectToDelete(p)} title="Supprimer"
                               className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors text-sm">🗑️</button>
                           </>}
                         </div>
@@ -538,6 +539,13 @@ function TabProjects({ projects, loading, onSelect, selectedId, orgId, onRefresh
           <p className="text-xs mt-1">Créez votre premier projet stratégique ou RSE.</p>
         </div>
       )}
+      <ConfirmModal
+        open={!!projectToDelete}
+        title={`Supprimer le projet "${projectToDelete?.name}" ?`}
+        message="Toutes les actions et saisies seront perdues."
+        onConfirm={() => { if (projectToDelete) handleDelete(projectToDelete); setProjectToDelete(null) }}
+        onCancel={() => setProjectToDelete(null)}
+      />
     </div>
   )
 }
@@ -558,6 +566,7 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
   const [form, setForm] = useState({
     name: '', description: '', planned_hours: '', priority: 'medium' as Priority, due_date: '',
   })
+  const [actionToDelete, setActionToDelete] = useState<GTAction | null>(null)
 
   // ── Notes & documents ─────────────────────────────────────────
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null)
@@ -659,7 +668,6 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
   }
 
   async function handleDelete(a: GTAction) {
-    if (!confirm(`Supprimer l'action "${a.name}" ? Les saisies de temps associées seront perdues.`)) return
     await fetch(`/api/gestion-temps/projects/${a.project_id}/actions/${a.id}`, { method: 'DELETE' })
     loadActions(a.project_id); onRefresh()
   }
@@ -870,7 +878,7 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button onClick={() => openEdit(a)} className="p-1.5 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors text-sm">✏️</button>
                         {project.is_owner && (
-                          <button onClick={() => handleDelete(a)} className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors text-sm">🗑️</button>
+                          <button onClick={() => setActionToDelete(a)} className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors text-sm">🗑️</button>
                         )}
                       </div>
                     </div>
@@ -908,6 +916,13 @@ function TabActions({ projects, selectedProjectId, onSelectProject, onRefresh }:
           </div>
         </>
       )}
+      <ConfirmModal
+        open={!!actionToDelete}
+        title={`Supprimer l'action "${actionToDelete?.name}" ?`}
+        message="Les saisies de temps associées seront perdues."
+        onConfirm={() => { if (actionToDelete) handleDelete(actionToDelete); setActionToDelete(null) }}
+        onCancel={() => setActionToDelete(null)}
+      />
     </div>
   )
 }

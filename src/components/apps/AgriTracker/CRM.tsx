@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { CRMMessage, CRMRdv, CRMRdvType, CRMRdvStatut, CRMNote, CRMConfianceEntry } from './types'
 
 // ─── Helpers UI ───────────────────────────────────────────────────────────────
@@ -770,6 +771,7 @@ function RdvTab({ plantationId }: { plantationId: string }) {
   const [savingCR, setSavingCR] = useState(false)
   const [form, setForm] = useState({ titre: '', date_rdv: '', heure: '', duree_min: '', type: 'sur_place' as CRMRdvType, lieu: '', lien: '' })
   const [saving, setSaving] = useState(false)
+  const [rdvToDelete, setRdvToDelete] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`/api/agri/crm/rdv?plantation_id=${plantationId}`)
@@ -798,7 +800,6 @@ function RdvTab({ plantationId }: { plantationId: string }) {
   }
 
   async function deleteRdv(id: string) {
-    if (!confirm('Supprimer ce rendez-vous ?')) return
     await fetch(`/api/agri/crm/rdv/${id}`, { method: 'DELETE' })
     setRdvs(prev => prev.filter(r => r.id !== id))
   }
@@ -885,12 +886,19 @@ function RdvTab({ plantationId }: { plantationId: string }) {
                     <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{r.compte_rendu}{r.compte_rendu_updated_at && <div className="text-[10px] text-gray-400 mt-2">Mis à jour le {new Date(r.compte_rendu_updated_at).toLocaleDateString('fr-FR')}</div>}</div>
                   ) : <p className="text-xs text-gray-400 italic">Aucun compte rendu</p>}
                 </div>
-                <div className="flex justify-end"><button onClick={() => deleteRdv(r.id)} className="text-xs text-red-500 hover:text-red-600 transition">🗑️ Supprimer ce RDV</button></div>
+                <div className="flex justify-end"><button onClick={() => setRdvToDelete(r.id)} className="text-xs text-red-500 hover:text-red-600 transition">🗑️ Supprimer ce RDV</button></div>
               </div>
             )}
           </div>
         )
       })}
+      <ConfirmModal
+        open={!!rdvToDelete}
+        title="Supprimer ce rendez-vous ?"
+        message="Cette action est irréversible."
+        onConfirm={() => { if (rdvToDelete) deleteRdv(rdvToDelete); setRdvToDelete(null) }}
+        onCancel={() => setRdvToDelete(null)}
+      />
     </div>
   )
 }
@@ -905,6 +913,7 @@ function NotesTab({ plantationId, isAdmin }: { plantationId: string; isAdmin?: b
   const [form, setForm] = useState({ titre: '', contenu: '' })
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`/api/agri/crm/notes?plantation_id=${plantationId}`)
@@ -925,7 +934,6 @@ function NotesTab({ plantationId, isAdmin }: { plantationId: string; isAdmin?: b
   }
 
   async function deleteNote(id: string) {
-    if (!confirm('Supprimer cette note ?')) return
     await fetch(`/api/agri/crm/notes/${id}`, { method: 'DELETE' })
     setNotes(prev => prev.filter(n => n.id !== id))
   }
@@ -990,7 +998,7 @@ function NotesTab({ plantationId, isAdmin }: { plantationId: string; isAdmin?: b
                 {isAdmin && (
                   <div className="flex justify-between items-center pt-2">
                     <button className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline" onClick={() => { setEditingId(n.id); setForm({ titre: n.titre, contenu: n.contenu }); setShowForm(false) }}>✏️ Modifier</button>
-                    <button onClick={() => deleteNote(n.id)} className="text-xs text-red-500 hover:text-red-600 transition">🗑️ Supprimer</button>
+                    <button onClick={() => setNoteToDelete(n.id)} className="text-xs text-red-500 hover:text-red-600 transition">🗑️ Supprimer</button>
                   </div>
                 )}
               </div>
@@ -998,6 +1006,13 @@ function NotesTab({ plantationId, isAdmin }: { plantationId: string; isAdmin?: b
           </div>
         )
       })}
+      <ConfirmModal
+        open={!!noteToDelete}
+        title="Supprimer cette note ?"
+        message="Cette action est irréversible."
+        onConfirm={() => { if (noteToDelete) deleteNote(noteToDelete); setNoteToDelete(null) }}
+        onCancel={() => setNoteToDelete(null)}
+      />
     </div>
   )
 }

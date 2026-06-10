@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { Organisation, OrganisationSearchResult } from '@/types/organisation'
 
 interface OrganisationsSidebarProps {
@@ -31,6 +32,7 @@ export default function OrganisationsSidebar({
   const [manualName, setManualName] = useState('')
   const [showManual, setShowManual] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [orgToDelete, setOrgToDelete] = useState<Organisation | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   /** true = l'utilisateur a explicitement ouvert la sidebar sur écran étroit */
@@ -278,7 +280,7 @@ export default function OrganisationsSidebar({
                   </button>
                   {/* Bouton supprimer (hover) */}
                   <button
-                    onClick={() => { if (confirm('Supprimer cette organisation ?')) onRemove(org.id) }}
+                    onClick={() => setOrgToDelete(org)}
                     className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-0.5 rounded text-red-400 hover:text-red-600 transition-opacity">
                     <Icon name="trash" size={11} />
                   </button>
@@ -312,6 +314,15 @@ export default function OrganisationsSidebar({
           </button>
         </div>
       )}
+
+      {/* Confirmation suppression organisation */}
+      <ConfirmModal
+        open={!!orgToDelete}
+        title="Supprimer cette organisation ?"
+        message={orgToDelete ? `« ${orgToDelete.denomination} » et ses données associées seront supprimées.` : undefined}
+        onConfirm={() => { if (orgToDelete) onRemove(orgToDelete.id); setOrgToDelete(null) }}
+        onCancel={() => setOrgToDelete(null)}
+      />
     </aside>
   )
 }

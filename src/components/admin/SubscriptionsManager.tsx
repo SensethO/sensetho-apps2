@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import clsx from 'clsx'
 import type { Profile, App, AppSubscription, SubscriptionPlan, SubscriptionStatus } from '@/types'
 
@@ -43,6 +44,7 @@ export default function SubscriptionsManager() {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false)
   const [selectedUserLabel, setSelectedUserLabel] = useState('')
   const [saving, setSaving] = useState(false)
+  const [subToCancel, setSubToCancel] = useState<string | null>(null)
   const supabase = createClient()
 
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -92,7 +94,6 @@ export default function SubscriptionsManager() {
   }
 
   async function cancelSub(id: string) {
-    if (!confirm('Annuler cet abonnement ?')) return
     await supabase.from('app_subscriptions')
       .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
       .eq('id', id)
@@ -280,7 +281,7 @@ export default function SubscriptionsManager() {
                   </td>
                   <td className="px-4 py-3">
                     {sub.status === 'active' ? (
-                      <button onClick={() => cancelSub(sub.id)}
+                      <button onClick={() => setSubToCancel(sub.id)}
                         className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20">
                         Annuler
                       </button>
@@ -412,6 +413,16 @@ export default function SubscriptionsManager() {
           </div>
         </div>
       )}
+
+      {/* Confirmation annulation abonnement */}
+      <ConfirmModal
+        open={!!subToCancel}
+        title="Annuler cet abonnement ?"
+        message="L'abonnement passera au statut « Annulé ». Vous pourrez le réactiver ultérieurement."
+        confirmLabel="Annuler l'abonnement"
+        onConfirm={() => { if (subToCancel) cancelSub(subToCancel); setSubToCancel(null) }}
+        onCancel={() => setSubToCancel(null)}
+      />
     </div>
   )
 }

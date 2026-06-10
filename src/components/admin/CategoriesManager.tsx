@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAllApps, broadcastAppsUpdate } from '@/hooks/useApps'
 import Icon from '@/components/ui/Icon'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import clsx from 'clsx'
 import type { AppCategory, App, PricingType, ShellType } from '@/types'
 
@@ -116,6 +117,8 @@ export default function CategoriesManager() {
   const [editApp, setEditApp] = useState<Partial<App> | null>(null)
   const [saving, setSaving] = useState(false)
   const [tab, setTab] = useState<'categories' | 'apps'>('categories')
+  const [catToDelete, setCatToDelete] = useState<string | null>(null)
+  const [appToDelete, setAppToDelete] = useState<string | null>(null)
 
   const supabase = createClient()
 
@@ -143,7 +146,6 @@ export default function CategoriesManager() {
   }
 
   async function deleteCat(id: string) {
-    if (!confirm('Supprimer cette catégorie ?')) return
     await supabase.from('app_categories').delete().eq('id', id)
     reload(); broadcastAppsUpdate()
   }
@@ -191,7 +193,6 @@ export default function CategoriesManager() {
   }
 
   async function deleteApp(id: string) {
-    if (!confirm('Supprimer cette application ?')) return
     await supabase.from('apps').delete().eq('id', id)
     reload(); broadcastAppsUpdate()
   }
@@ -254,7 +255,7 @@ export default function CategoriesManager() {
                   <button disabled={i === 0} onClick={() => moveCat(cat.id, 'up')} className="p-1 hover:opacity-80 disabled:opacity-30" style={{ color: 'var(--text-muted)' }}><Icon name="arrowUp" size={14} /></button>
                   <button disabled={i === categories.length - 1} onClick={() => moveCat(cat.id, 'down')} className="p-1 hover:opacity-80 disabled:opacity-30" style={{ color: 'var(--text-muted)' }}><Icon name="arrowDown" size={14} /></button>
                   <button onClick={() => setEditCat(cat)} className="p-1 hover:opacity-80" style={{ color: 'var(--text-muted)' }}><Icon name="pencil" size={14} /></button>
-                  <button onClick={() => deleteCat(cat.id)} className="p-1 text-red-400 hover:text-red-600"><Icon name="trash" size={14} /></button>
+                  <button onClick={() => setCatToDelete(cat.id)} className="p-1 text-red-400 hover:text-red-600"><Icon name="trash" size={14} /></button>
                 </div>
               </div>
             ))}
@@ -291,7 +292,7 @@ export default function CategoriesManager() {
                     <button disabled={idxInCat === 0} onClick={() => moveApp(app.id, 'up')} className="p-1 hover:opacity-80 disabled:opacity-30" style={{ color: 'var(--text-muted)' }}><Icon name="arrowUp" size={14} /></button>
                     <button disabled={idxInCat === catApps.length - 1} onClick={() => moveApp(app.id, 'down')} className="p-1 hover:opacity-80 disabled:opacity-30" style={{ color: 'var(--text-muted)' }}><Icon name="arrowDown" size={14} /></button>
                     <button onClick={() => setEditApp(app)} className="p-1 hover:opacity-80" style={{ color: 'var(--text-muted)' }}><Icon name="pencil" size={14} /></button>
-                    <button onClick={() => deleteApp(app.id)} className="p-1 text-red-400 hover:text-red-600"><Icon name="trash" size={14} /></button>
+                    <button onClick={() => setAppToDelete(app.id)} className="p-1 text-red-400 hover:text-red-600"><Icon name="trash" size={14} /></button>
                   </div>
                 </div>
               )
@@ -402,6 +403,24 @@ export default function CategoriesManager() {
           </div>
         </Modal>
       )}
+
+      {/* Confirmation suppression catégorie */}
+      <ConfirmModal
+        open={!!catToDelete}
+        title="Supprimer cette catégorie ?"
+        message="La catégorie sera définitivement supprimée."
+        onConfirm={() => { if (catToDelete) deleteCat(catToDelete); setCatToDelete(null) }}
+        onCancel={() => setCatToDelete(null)}
+      />
+
+      {/* Confirmation suppression application */}
+      <ConfirmModal
+        open={!!appToDelete}
+        title="Supprimer cette application ?"
+        message="L'application sera définitivement supprimée."
+        onConfirm={() => { if (appToDelete) deleteApp(appToDelete); setAppToDelete(null) }}
+        onCancel={() => setAppToDelete(null)}
+      />
     </div>
   )
 }

@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import type { RseContext } from '@/components/rse/RseAppShell'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
 
 // GuidedActionNotePanel chargé en lazy — même pattern que les autres apps RSE
@@ -768,8 +769,8 @@ function CriterePanel({
     setSavingAction(false)
   }
 
+  const [actionToDelete, setActionToDelete] = useState<string | null>(null)
   async function deleteAction(id: string) {
-    if (!confirm('Supprimer cette action ?')) return
     await fetch(`/api/label-nr/${diagnosticId}/actions?action_id=${id}`, { method: 'DELETE' })
     onActionsChange(actions.filter(a => a.id !== id))
   }
@@ -956,7 +957,7 @@ function CriterePanel({
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => { setEditingActionId(a.id); setEditData({}) }}
                         className="text-gray-400 hover:text-blue-500 text-xs px-1 py-0.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Modifier">✏️</button>
-                      <button onClick={() => deleteAction(a.id)} className="text-gray-300 hover:text-red-400 text-xs px-1">✕</button>
+                      <button onClick={() => setActionToDelete(a.id)} className="text-gray-300 hover:text-red-400 text-xs px-1">✕</button>
                     </div>
                   </div>
                 )}
@@ -993,6 +994,13 @@ function CriterePanel({
           })}
         </div>
       </div>
+      <ConfirmModal
+        open={!!actionToDelete}
+        title="Supprimer l'action"
+        message="L'action sera définitivement supprimée."
+        onConfirm={() => { if (actionToDelete) deleteAction(actionToDelete); setActionToDelete(null) }}
+        onCancel={() => setActionToDelete(null)}
+      />
     </div>
   )
 }
@@ -1176,8 +1184,8 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
     setSaving(false)
   }
 
+  const [actionToDelete, setActionToDelete] = useState<string | null>(null)
   async function deleteAction(id: string) {
-    if (!confirm('Supprimer ?')) return
     await fetch(`/api/label-nr/${diagnostic.id}/actions?action_id=${id}`, { method: 'DELETE' })
     onActionsChange(actions.filter(a => a.id !== id))
   }
@@ -1273,7 +1281,7 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
                 {!isEditing && (
                   <div className="flex gap-1 flex-shrink-0">
                     <button onClick={() => { setEditId(a.id); setEditData({}) }} className="text-xs text-gray-400 hover:text-blue-500 px-1">✏️</button>
-                    <button onClick={() => deleteAction(a.id)} className="text-xs text-gray-400 hover:text-red-500 px-1">✕</button>
+                    <button onClick={() => setActionToDelete(a.id)} className="text-xs text-gray-400 hover:text-red-500 px-1">✕</button>
                   </div>
                 )}
               </div>
@@ -1281,6 +1289,13 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
           )
         })}
       </div>
+      <ConfirmModal
+        open={!!actionToDelete}
+        title="Supprimer l'action"
+        message="L'action sera définitivement supprimée."
+        onConfirm={() => { if (actionToDelete) deleteAction(actionToDelete); setActionToDelete(null) }}
+        onCancel={() => setActionToDelete(null)}
+      />
     </div>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 
 interface UserRow {
   id: string
@@ -55,6 +56,7 @@ function EditModal({ user, onClose, onSaved, onToast }: EditModalProps) {
   const [resetting, setResetting]       = useState(false)
   const [tempPassword, setTempPassword] = useState<string | null>(null)
   const [copied, setCopied]             = useState(false)
+  const [resetPending, setResetPending] = useState(false)
 
   async function handleSave() {
     setSaving(true)
@@ -78,7 +80,6 @@ function EditModal({ user, onClose, onSaved, onToast }: EditModalProps) {
   }
 
   async function handleResetPassword() {
-    if (!window.confirm(`Générer un mot de passe temporaire pour ${user.email} ?\nL'utilisateur devra le changer à la prochaine connexion.`)) return
     setResetting(true)
     try {
       const res = await fetch('/api/admin/reset-password', {
@@ -193,7 +194,7 @@ function EditModal({ user, onClose, onSaved, onToast }: EditModalProps) {
         {!tempPassword ? (
           <div>
             <button
-              onClick={handleResetPassword}
+              onClick={() => setResetPending(true)}
               disabled={resetting}
               className="w-full py-2 rounded-lg text-sm font-medium border transition-colors"
               style={{
@@ -243,6 +244,16 @@ function EditModal({ user, onClose, onSaved, onToast }: EditModalProps) {
           </div>
         )}
       </div>
+
+      {/* Confirmation génération mot de passe temporaire */}
+      <ConfirmModal
+        open={resetPending}
+        title="Générer un mot de passe temporaire ?"
+        message={`Un mot de passe temporaire sera généré pour ${user.email}. L'utilisateur devra le changer à la prochaine connexion.`}
+        confirmLabel="Générer"
+        onConfirm={() => { setResetPending(false); handleResetPassword() }}
+        onCancel={() => setResetPending(false)}
+      />
     </div>
   )
 }
@@ -256,6 +267,7 @@ export default function UsersManager() {
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [toast, setToast]           = useState<string | null>(null)
   const [editingUser, setEditingUser] = useState<UserRow | null>(null)
+  const [actionPending, setActionPending] = useState<{ user: UserRow; action: 'refuse' | 'suspend' } | null>(null)
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -295,14 +307,8 @@ export default function UsersManager() {
   }
 
   async function handleApprove(user: UserRow) { await patchUser(user.id, 'active') }
-  async function handleReject(user: UserRow) {
-    if (!window.confirm(`Refuser l'inscription de ${user.email} ? Son compte sera suspendu.`)) return
-    await patchUser(user.id, 'suspended')
-  }
-  async function handleSuspend(user: UserRow) {
-    if (!window.confirm(`Suspendre le compte de ${user.email} ?`)) return
-    await patchUser(user.id, 'suspended')
-  }
+  function handleReject(user: UserRow) { setActionPending({ user, action: 'refuse' }) }
+  function handleSuspend(user: UserRow) { setActionPending({ user, action: 'suspend' }) }
   async function handleReactivate(user: UserRow) { await patchUser(user.id, 'active') }
 
   const counts: Record<TabStatus, number> = {
@@ -527,6 +533,23 @@ export default function UsersManager() {
           </table>
         </div>
       )}
+
+      {/* Confirmation refus / suspension */}
+      <ConfirmModal
+        open={!!actionPending}
+        title={actionPending?.action === 'refuse' ? "Refuser l'inscription ?" : 'Suspendre le compte ?'}
+        message={
+          actionPending?.action === 'refuse'
+            ? `Refuser l'inscription de ${actionPending.user.email} ? Son compte sera suspendu.`
+            : actionPending ? `Suspendre le compte de ${actionPending.user.email} ?` : undefined
+        }
+        confirmLabel={actionPending?.action === 'refuse' ? 'Refuser' : 'Suspendre'}
+        onConfirm={() => {
+          if (actionPending) patchUser(actionPending.user.id, 'suspended')
+          setActionPending(null)
+        }}
+        onCancel={() => setActionPending(null)}
+      />
     </div>
   )
 }

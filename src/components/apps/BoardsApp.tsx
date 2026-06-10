@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import dynamic from 'next/dynamic'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 
 const ShareBoardModal = dynamic(() => import('./ShareBoardModal'), { ssr: false })
 
@@ -52,6 +53,7 @@ export default function BoardsApp() {
   const [renameVal,  setRenameVal]      = useState('')
   const [deletingId, setDeletingId]     = useState<string | null>(null)
   const [sharingBoard, setSharingBoard] = useState<BoardMeta | null>(null)
+  const [boardToDelete, setBoardToDelete] = useState<string | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -82,7 +84,6 @@ export default function BoardsApp() {
   }
 
   async function deleteBoard(id: string) {
-    if (!confirm('Supprimer ce tableau ?')) return
     setDeletingId(id)
     await fetch(`/api/boards/${id}`, { method: 'DELETE' })
     setDeletingId(null)
@@ -217,7 +218,7 @@ export default function BoardsApp() {
                     onRenameConfirm={() => renameBoard(board.id)}
                     onRenameCancel={() => setRenamingId(null)}
                     onRenameChange={setRenameVal}
-                    onDelete={() => deleteBoard(board.id)}
+                    onDelete={() => setBoardToDelete(board.id)}
                     onShare={() => setSharingBoard(board)}
                   />
                 ))}
@@ -255,6 +256,13 @@ export default function BoardsApp() {
           </>
         )}
       </div>
+      <ConfirmModal
+        open={!!boardToDelete}
+        title="Supprimer ce tableau ?"
+        message="Le tableau et son contenu seront définitivement supprimés."
+        onConfirm={() => { if (boardToDelete) deleteBoard(boardToDelete); setBoardToDelete(null) }}
+        onCancel={() => setBoardToDelete(null)}
+      />
     </div>
   )
 }
