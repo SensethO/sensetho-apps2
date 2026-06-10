@@ -18,6 +18,7 @@ import {
   groupBySubcategory, getSourcesByScope, getSourcesByS3Cat,
 } from '@/data/bilan-ges'
 import FileViewerModal from '@/components/ui/FileViewerModal'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { Organisation } from '@/types/organisation'
 
 // ─── Types locaux ─────────────────────────────────────────────────────────────
@@ -254,6 +255,7 @@ function GESAttachmentItem({
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const [thumbUrl, setThumbUrl]   = useState<string | null>(null)
   const [editing,  setEditing]    = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const renaming = false
 
   const isPdf   = att.mime === 'application/pdf'
@@ -414,7 +416,7 @@ function GESAttachmentItem({
               {loading === 'download' ? '…' : '⬇ Télécharger'}
             </button>
             <button
-              onClick={() => { if (confirm(`Supprimer la pièce jointe « ${att.name} » ?`)) onDelete() }}
+              onClick={() => setConfirmingDelete(true)}
               disabled={!!loading}
               title="Supprimer la pièce jointe"
               className="text-xs px-2 py-1 rounded text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition disabled:opacity-50">
@@ -423,6 +425,13 @@ function GESAttachmentItem({
           </div>
         )}
       </div>
+      <ConfirmModal
+        open={confirmingDelete}
+        title="Supprimer la pièce jointe"
+        message={`« ${att.name} » sera définitivement supprimée de SharePoint.`}
+        onConfirm={() => { setConfirmingDelete(false); onDelete() }}
+        onCancel={() => setConfirmingDelete(false)}
+      />
     </>
   )
 }
@@ -1539,6 +1548,7 @@ function ObjectifSection({ objectif, total, onUpdate }: {
   onUpdate: (o: GESObjectif | null) => void
 }) {
   const [editing, setEditing] = useState(false)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [draft, setDraft] = useState<GESObjectif>(objectif ?? {
     annee_baseline: null, valeur_baseline_tco2e: null,
     annee_cible: null, reduction_pct: null,
@@ -1551,7 +1561,7 @@ function ObjectifSection({ objectif, total, onUpdate }: {
   }
 
   function remove() {
-    if (confirm('Supprimer l\'objectif ?')) { onUpdate(null); setEditing(false) }
+    setConfirmingRemove(true)
   }
 
   // Calcul progression
@@ -1713,6 +1723,13 @@ function ObjectifSection({ objectif, total, onUpdate }: {
           )}
         </div>
       )}
+      <ConfirmModal
+        open={confirmingRemove}
+        title="Supprimer l'objectif"
+        message="L'objectif de réduction et son suivi de progression seront supprimés."
+        onConfirm={() => { setConfirmingRemove(false); onUpdate(null); setEditing(false) }}
+        onCancel={() => setConfirmingRemove(false)}
+      />
     </div>
   )
 }
@@ -2845,6 +2862,7 @@ export default function BilanGesCalculateur({ org, year }: { org: Organisation |
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showGuide, setShowGuide] = useState(false)
+  const [sessionToDelete, setSessionToDelete] = useState<GESSessionData | null>(null)
 
   useEffect(() => {
     fetch('/api/bilan-ges/sessions')
@@ -2875,7 +2893,6 @@ export default function BilanGesCalculateur({ org, year }: { org: Organisation |
   }
 
   async function deleteSession(id: string) {
-    if (!confirm('Supprimer cette session ?')) return
     await fetch(`/api/bilan-ges/sessions/${id}`, { method: 'DELETE' })
     setSessions(prev => prev.filter(s => s.id !== id))
     if (activeSession?.id === id) setActiveSession(null)
@@ -3033,7 +3050,7 @@ export default function BilanGesCalculateur({ org, year }: { org: Organisation |
                         {methode.label}
                       </span>
                       <button
-                        onClick={e => { e.stopPropagation(); deleteSession(s.id) }}
+                        onClick={e => { e.stopPropagation(); setSessionToDelete(s) }}
                         className="text-gray-300 hover:text-red-500 dark:text-gray-600 dark:hover:text-red-400 transition-colors text-sm"
                       >
                         ✕
@@ -3072,6 +3089,13 @@ export default function BilanGesCalculateur({ org, year }: { org: Organisation |
           </div>
         )}
       </div>
+      <ConfirmModal
+        open={!!sessionToDelete}
+        title="Supprimer la session"
+        message={sessionToDelete ? `« ${sessionToDelete.name} » et toutes ses données (scopes, notes, objectif) seront définitivement supprimés.` : undefined}
+        onConfirm={() => { if (sessionToDelete) deleteSession(sessionToDelete.id); setSessionToDelete(null) }}
+        onCancel={() => setSessionToDelete(null)}
+      />
     </>
   )
 }
