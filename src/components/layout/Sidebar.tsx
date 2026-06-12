@@ -54,12 +54,13 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
   return (
     <nav className="flex flex-col h-full py-4 overflow-y-auto">
       {/* Logo */}
-      <div className={clsx('flex items-center gap-3 px-4 mb-6', collapsed && 'justify-center')}>
-        <div className="w-8 h-8 rounded-lg bg-gray-900 dark:bg-slate-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-white text-xs font-bold">S</span>
-        </div>
-        {!collapsed && (
-          <span className="font-semibold text-sm truncate" style={{ color: 'var(--text)' }}>Sensetho Apps</span>
+      <div className={clsx('flex items-center px-4 mb-6', collapsed && 'justify-center px-2')}>
+        {collapsed ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/picto.png" alt="Sens'ethO" className="w-8 h-8 flex-shrink-0 object-contain" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/logo2.png" alt="Sens'ethO — Éthologue d'entreprise pour apporter du sens" className="w-full h-auto rounded-lg" />
         )}
       </div>
 
