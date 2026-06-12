@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon-32x32.png',
     shortcut: '/favicon-32x32.png',
+    apple: '/apple-touch-icon.png',
   },
 }
 
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon-32x32.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         {/* Anti-flash : applique le thème avant le rendu */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
