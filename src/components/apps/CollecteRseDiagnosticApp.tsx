@@ -1306,6 +1306,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [sharePermission, setSharePermission] = useState<'read'|'edit'>('read')
   const [shareSaving, setShareSaving] = useState(false)
   const [shareError, setShareError] = useState('')
+  const [shareList, setShareList] = useState<{ id: string; email: string; permission: 'read'|'edit' }[]>([])
 
   const load = useCallback(async () => {
     if (!org || !year) return
@@ -1415,15 +1416,44 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
     window.print()
   }
 
+  const loadShares = useCallback(async () => {
+    if (!diagnostic) return
+    try {
+      const res = await fetch(`/api/collecte-rse/${diagnostic.id}/shares`)
+      const { data } = await res.json()
+      setShareList(data ?? [])
+    } catch { /* ignore */ }
+  }, [diagnostic])
+
+  useEffect(() => { if (showShare) loadShares() }, [showShare, loadShares])
+
   async function handleAddShare() {
     if (!diagnostic || !shareEmail.trim()) return
     setShareSaving(true); setShareError('')
     try {
-      alert(`Lien de partage : ${window.location.href}\nEmail notifié : ${shareEmail}`)
+      const res = await fetch(`/api/collecte-rse/${diagnostic.id}/shares`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: shareEmail.trim(), permission: sharePermission }),
+      })
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: 'Erreur de partage' }))
+        setShareError(error || 'Erreur de partage')
+        return
+      }
       setShareEmail('')
+      await loadShares()
     } catch {
       setShareError('Erreur de partage')
     } finally { setShareSaving(false) }
+  }
+
+  async function handleRemoveShare(shareId: string) {
+    if (!diagnostic) return
+    try {
+      await fetch(`/api/collecte-rse/${diagnostic.id}/shares?shareId=${shareId}`, { method: 'DELETE' })
+      await loadShares()
+    } catch { /* ignore */ }
   }
 
   // ── Boutons injectés dans le header RseAppShell ───────────────────────────
@@ -1486,7 +1516,26 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
                   {shareSaving ? 'Partage en cours…' : '+ Partager'}
                 </button>
               </div>
-              <p className="text-xs text-gray-400 text-center">Partagez le lien de cette page avec un collaborateur ayant un compte Sens&apos;ethO.</p>
+
+              {shareList.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Personnes ayant accès</p>
+                  {shareList.map(s => (
+                    <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/40 text-sm">
+                      <span className="truncate text-gray-700 dark:text-gray-200">{s.email}</span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
+                          {s.permission === 'edit' ? 'Édition' : 'Lecture'}
+                        </span>
+                        <button onClick={() => handleRemoveShare(s.id)} title="Retirer l'accès"
+                          className="text-gray-400 hover:text-red-500 transition-colors">✕</button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-xs text-gray-400 text-center">Le collaborateur doit avoir un compte Sens&apos;ethO. Il retrouvera le dossier en sélectionnant la même organisation et la même année.</p>
             </div>
           </div>
         </div>
