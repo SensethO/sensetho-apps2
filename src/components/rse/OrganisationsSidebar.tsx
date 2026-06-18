@@ -14,14 +14,17 @@ interface OrganisationsSidebarProps {
   onSaveManual: (denomination: string, siren?: string) => Promise<Organisation | null>
   onRemove: (id: string) => void
   loading?: boolean
+  /** Ids des organisations partagées avec l'utilisateur (badge + pas de suppression) */
+  sharedIds?: Set<string>
 }
 
 /** Seuil en px en-dessous duquel la sidebar se replie automatiquement */
 const AUTO_COLLAPSE_PX = 1100
 
 export default function OrganisationsSidebar({
-  organisations, selected, onSelect, onSave, onSaveManual, onRemove, loading
+  organisations, selected, onSelect, onSave, onSaveManual, onRemove, loading, sharedIds
 }: OrganisationsSidebarProps) {
+  const isShared = (id: string) => !!sharedIds && sharedIds.has(id)
   const [collapsed, setCollapsed] = useState(() =>
     typeof window !== 'undefined' && window.innerWidth < AUTO_COLLAPSE_PX
   )
@@ -265,6 +268,12 @@ export default function OrganisationsSidebar({
                       style={selected?.id !== org.id ? { color: 'var(--text)' } : undefined}>
                       {org.denomination}
                     </p>
+                    {isShared(org.id) && (
+                      <span className={clsx('inline-block mt-0.5 text-[9px] px-1.5 py-0.5 rounded-full',
+                        selected?.id === org.id ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300')}>
+                        👥 Partagée
+                      </span>
+                    )}
                     {org.siren && (
                       <p className={clsx('text-[10px] truncate', selected?.id === org.id ? 'text-white/70' : '')}
                         style={selected?.id !== org.id ? { color: 'var(--text-muted)' } : undefined}>
@@ -278,12 +287,14 @@ export default function OrganisationsSidebar({
                       </p>
                     )}
                   </button>
-                  {/* Bouton supprimer (hover) */}
-                  <button
-                    onClick={() => setOrgToDelete(org)}
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-0.5 rounded text-red-400 hover:text-red-600 transition-opacity">
-                    <Icon name="trash" size={11} />
-                  </button>
+                  {/* Bouton supprimer (hover) — masqué pour les organisations partagées */}
+                  {!isShared(org.id) && (
+                    <button
+                      onClick={() => setOrgToDelete(org)}
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-0.5 rounded text-red-400 hover:text-red-600 transition-opacity">
+                      <Icon name="trash" size={11} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

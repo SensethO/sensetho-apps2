@@ -106,6 +106,29 @@ export default function RseAppShell({ appSlug, title, requireYear = true, childr
   const { organisations, loading, save, saveManual, remove } = useOrganisations()
   const favoriteOrgs = organisations.filter(o => o.is_favorite)
 
+  // ── Organisations partagées avec l'utilisateur pour cette app ──────────────
+  // Les organisations/années étant privées (RLS auth.uid()=user_id), on les
+  // remonte via un endpoint serveur pour que le destinataire d'un partage
+  // puisse ouvrir le dossier (sélection « même organisation + année »).
+  const [sharedOrgs, setSharedOrgs] = useState<Organisation[]>([])
+  const [sharedYearsByOrg, setSharedYearsByOrg] = useState<Record<string, number[]>>({})
+  const [sharedYear, setSharedYear] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!profile) return
+    let cancel = false
+    fetch(`/api/rse/shared?app=${appSlug}`)
+      .then(r => r.json())
+      .then(d => { if (!cancel) { setSharedOrgs((d.organisations ?? []) as Organisation[]); setSharedYearsByOrg(d.yearsByOrg ?? {}) } })
+      .catch(() => {})
+    return () => { cancel = true }
+  }, [profile, appSlug])
+
+  const ownedIds = new Set(organisations.map(o => o.id))
+  const sharedOnly = sharedOrgs.filter(o => !ownedIds.has(o.id))
+  const sharedIds = new Set(sharedOnly.map(o => o.id))
+  const sidebarOrgs = [...favoriteOrgs, ...sharedOnly]
+
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedOrg, setSelectedOrg] = useState<Organisation | null>(null)
@@ -137,6 +160,24 @@ export default function RseAppShell({ appSlug, title, requireYear = true, childr
     appSlug,
   })
 
+  // ── Organisation partagée : années/handlers spécifiques ────────────────────
+  const isSharedOrg = !!selectedOrg && sharedIds.has(selectedOrg.id)
+  const effectiveYears = isSharedOrg ? (sharedYearsByOrg[selectedOrg!.id] ?? []) : years
+  const effectiveYear = isSharedOrg
+    ? (sharedYear && effectiveYears.includes(sharedYear) ? sharedYear : (effectiveYears[0] ?? selectedYear))
+    : selectedYear
+
+  // Réinitialise l'année partagée quand on sélectionne une org partagée
+  useEffect(() => {
+    if (isSharedOrg) {
+      const ys = sharedYearsByOrg[selectedOrg!.id] ?? []
+      setSharedYear(ys[0] ?? null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrg])
+
+  const noop = () => {}
+
   /** Handler enregistré par l'app enfant pour décaler ses données quand l'année de départ change */
   const yearShiftHandlerRef = useRef<((delta: number) => Promise<void>) | null>(null)
 
@@ -164,7 +205,7 @@ export default function RseAppShell({ appSlug, title, requireYear = true, childr
 
   const ctx: RseContext = {
     org: selectedOrg,
-    year: selectedYear,
+    year: effectiveYear,
     setActions: setHeaderActions,
     setYearShiftHandler: (fn) => { yearShiftHandlerRef.current = fn },
   }
@@ -275,29 +316,31 @@ export default function RseAppShell({ appSlug, title, requireYear = true, childr
         {/* Contenu RSE : OrganisationsSidebar + colonne droite */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <OrganisationsSidebar
-            organisations={favoriteOrgs}
+            organisations={sidebarOrgs}
             selected={selectedOrg}
             onSelect={setSelectedOrg}
             onSave={save}
             onSaveManual={saveManual}
             onRemove={remove}
             loading={loading}
+            sharedIds={sharedIds}
           />
 
           {/* Colonne contenu : header org/années + contenu app */}
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
             <RseHeader
               organisation={selectedOrg}
-              years={years}
-              selectedYear={selectedYear}
-              onSelectYear={setSelectedYear}
-              onAddNextYear={addNextYear}
-              onChangeStartYear={handleChangeStartYear}
+              years={effectiveYears}
+              selectedYear={effectiveYear}
+              onSelectYear={isSharedOrg ? (y => setSharedYear(y)) : setSelectedYear}
+              onAddNextYear={isSharedOrg ? noop : addNextYear}
+              onChangeStartYear={isSharedOrg ? noop : handleChangeStartYear}
               actions={headerActions}
             />
             <main className="flex-1 overflow-y-auto p-6">
-              {/* Si org sélectionnée mais aucune année configurée → forcer le choix d'une année */}
-              {requireYear && selectedOrg && !yearsLoading && years.length === 0 ? (
+              {/* Si org sélectionnée mais aucune année configurée → forcer le choix d'une année.
+                  Pour une organisation partagée, l'année vient du partage : pas de prompt. */}
+              {requireYear && selectedOrg && !isSharedOrg && !yearsLoading && years.length === 0 ? (
                 <FirstYearPrompt
                   orgName={selectedOrg.denomination}
                   onConfirm={(y) => addYear(y)}
