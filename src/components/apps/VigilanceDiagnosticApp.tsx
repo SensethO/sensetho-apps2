@@ -1464,15 +1464,19 @@ export default function VigilanceDiagnosticApp({ ctx }: { ctx: RseContext }) {
               <button onClick={() => setShowShare(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
             </div>
             <div className="p-5 space-y-4">
-              <div className="space-y-2">
-                <label className={labelCls()}>Email de l&apos;utilisateur</label>
-                <div className="flex gap-2">
-                  <input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="prenom.nom@example.com"
-                    className={`${inputCls()} flex-1`}
+              <div className="space-y-3">
+                <div>
+                  <label className={labelCls()}>Email de l&apos;utilisateur</label>
+                  <input type="email" value={shareEmail} onChange={e => setShareEmail(e.target.value)}
+                    placeholder="prenom.nom@example.com"
+                    className={inputCls()}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddShare() }} />
+                </div>
+                <div>
+                  <label className={labelCls()}>Niveau d&apos;accès</label>
                   <select value={sharePermission} onChange={e => setSharePermission(e.target.value as 'read'|'edit')}
-                    className={`${inputCls()} w-24`}>
-                    <option value="read">Lecture</option>
+                    className={inputCls()}>
+                    <option value="read">Lecture seule</option>
                     <option value="edit">Édition</option>
                   </select>
                 </div>
