@@ -139,7 +139,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     // Charger toutes les données
     const [diagRes, repRes, actRes] = await Promise.all([
-      admin.from('bcorp_diagnostics').select('*, organisations(nom, siret, pays)').eq('id', params.id).single(),
+      admin.from('bcorp_diagnostics').select('*, organisations(denomination, siret_siege, ville)').eq('id', params.id).single(),
       admin.from('bcorp_reponses').select('*').eq('diagnostic_id', params.id),
       admin.from('bcorp_actions').select('*').eq('diagnostic_id', params.id).order('created_at'),
     ])
@@ -157,8 +157,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const scoreGlobal = calculateScore(reponses)
     const badge = BADGE_LEVELS.find(b => scoreGlobal >= b.min)?.label ?? 'Non engagé'
-    const org = diag.organisations as { nom?: string; siret?: string; pays?: string } | null
-    const orgNom = org?.nom ?? 'Organisation'
+    const org = diag.organisations as { denomination?: string; siret_siege?: string; ville?: string } | null
+    const orgNom = org?.denomination ?? 'Organisation'
     const dateExport = new Date().toLocaleDateString('fr-FR')
 
     // ─── Workbook ────────────────────────────────────────────────────────────
@@ -179,8 +179,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       let row = 4
       for (const [label, val] of [
         ['Organisation', orgNom],
-        ['SIRET', org?.siret ?? '—'],
-        ['Pays', org?.pays ?? '—'],
+        ['SIRET', org?.siret_siege ?? '—'],
+        ['Ville', org?.ville ?? '—'],
         ['Année', String(diag.annee)],
         ['Date export', dateExport],
       ]) {

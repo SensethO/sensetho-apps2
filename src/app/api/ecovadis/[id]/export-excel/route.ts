@@ -122,7 +122,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     // Charger toutes les données
     const [diagRes, repRes, actRes, docRes] = await Promise.all([
-      admin.from('ecovadis_diagnostics').select('*, organisations(nom, siret, pays)').eq('id', params.id).single(),
+      admin.from('ecovadis_diagnostics').select('*, organisations(denomination, siret_siege, ville)').eq('id', params.id).single(),
       admin.from('ecovadis_reponses').select('*').eq('diagnostic_id', params.id),
       admin.from('ecovadis_actions').select('*').eq('diagnostic_id', params.id).order('created_at'),
       admin.from('ecovadis_documents').select('*').eq('diagnostic_id', params.id).order('annexe_index'),
@@ -142,8 +142,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const scoreGlobal = calculateScore(reponses)
     const badge = BADGE_LEVELS.find(b => scoreGlobal >= b.min)?.label ?? 'Non noté'
-    const org = (diag as Record<string, unknown>).organisations as { nom?: string; siret?: string; pays?: string } | null
-    const orgNom = org?.nom ?? 'Organisation'
+    const org = (diag as Record<string, unknown>).organisations as { denomination?: string; siret_siege?: string; ville?: string } | null
+    const orgNom = org?.denomination ?? 'Organisation'
     const dateExport = new Date().toLocaleDateString('fr-FR')
 
     // ─── Workbook ────────────────────────────────────────────────────────────
@@ -164,8 +164,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       let row = 4
       for (const [label, val] of [
         ['Organisation', orgNom],
-        ['SIRET', org?.siret ?? '—'],
-        ['Pays', org?.pays ?? '—'],
+        ['SIRET', org?.siret_siege ?? '—'],
+        ['Ville', org?.ville ?? '—'],
         ['Année', String(diag.annee)],
         ['Date export', dateExport],
       ]) {
