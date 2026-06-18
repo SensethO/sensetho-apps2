@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
+import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
 
 // GuidedActionNotePanel chargé en lazy — même pattern que les autres apps RSE
@@ -1501,10 +1502,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
               <div className="space-y-3">
                 <div>
                   <label className={labelCls()}>Email de l&apos;utilisateur</label>
-                  <input type="email" value={shareEmail} onChange={e => setShareEmail(e.target.value)}
-                    placeholder="prenom.nom@example.com"
-                    className={inputCls()}
-                    onKeyDown={e => { if (e.key === 'Enter') handleAddShare() }} />
+                  <ShareAutocomplete value={shareEmail} onChange={setShareEmail} onEnter={handleAddShare} inputClassName={inputCls()} />
                 </div>
                 <div>
                   <label className={labelCls()}>Niveau d&apos;accès</label>
