@@ -56,6 +56,25 @@ function merge(ws: ExcelJS.Worksheet, r1: number, c1: number, r2: number, c2: nu
   ws.mergeCells(r1, c1, r2, c2)
 }
 
+// ─── Strip HTML → texte simple ──────────────────────────────────────────────
+function htmlToText(raw: unknown): string {
+  if (raw == null) return ''
+  let s = String(raw)
+  s = s.replace(/<\s*br\s*\/?>/gi, '\n')        // <br> → saut de ligne
+  s = s.replace(/<\/(p|div|li|h[1-6])\s*>/gi, '\n') // fin de bloc → saut de ligne
+  s = s.replace(/<[^>]*>/g, '')                  // retire toutes les balises
+  s = s.replace(/&nbsp;/gi, ' ')
+       .replace(/&amp;/gi, '&')
+       .replace(/&lt;/gi, '<')
+       .replace(/&gt;/gi, '>')
+       .replace(/&quot;/gi, '"')
+       .replace(/&#39;/gi, "'")
+  s = s.replace(/[ \t]+/g, ' ')                  // compacte les espaces
+       .replace(/\s*\n\s*/g, '\n')               // nettoie autour des sauts
+       .replace(/\n{3,}/g, '\n\n')               // max 1 ligne vide
+  return s.trim()
+}
+
 // ─── Données statiques Collecte RSE ───────────────────────────────────────────
 const COLLECTE_RSE_AXES = [
   { id: 'gouvernance', label: 'Gouvernance & Stratégie', icon: '🧭', weight: 0.20, criteres: [
@@ -137,10 +156,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const admin = createAdminClient()
 
-    const [diagRes, repRes, actRes] = await Promise.all([
+    const [diagRes, repRes, actRes, notesRes] = await Promise.all([
       admin.from('collecte_rse_diagnostics').select('*, organisations(nom, siret, pays)').eq('id', params.id).single(),
       admin.from('collecte_rse_reponses').select('*').eq('diagnostic_id', params.id),
       admin.from('collecte_rse_actions').select('*').eq('diagnostic_id', params.id).order('created_at'),
+      admin.from('collecte_rse_notes').select('critere_id, content, sections').eq('diagnostic_id', params.id),
     ])
 
     const diag = diagRes.data as any
@@ -153,6 +173,50 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       if (r.commentaire) commentaires[r.critere_id] = r.commentaire
     }
     const actions = actRes.data ?? []
+
+    // ─── Index critère → axe + libellé de catégorie ──────────────────────────
+    const critereInfo: Record<string, { axe: typeof COLLECTE_RSE_AXES[number]; label: string }> = {}
+    for (const axe of COLLECTE_RSE_AXES) {
+      for (const c of axe.criteres) critereInfo[c.id] = { axe, label: c.label }
+    }
+
+    // ─── Notes & pièces jointes (collecte_rse_notes) ─────────────────────────
+    type NoteRow = { axeLabel: string; axeIcon: string; axeId: string; categorie: string; texte: string }
+    type PieceRow = { axeLabel: string; axeIcon: string; axeId: string; categorie: string; fichier: string }
+    const noteRows: NoteRow[] = []
+    const pieceRows: PieceRow[] = []
+    for (const n of (notesRes.data ?? []) as any[]) {
+      const info = critereInfo[n?.critere_id]
+      const axeLabel = info?.axe.label ?? '—'
+      const axeIcon = info?.axe.icon ?? ''
+      const axeId = info?.axe.id ?? ''
+      const categorie = info?.label ?? (n?.critere_id ?? '—')
+
+      // Note texte (content HTML/texte → texte simple)
+      const texte = htmlToText(n?.content)
+      if (texte) noteRows.push({ axeLabel, axeIcon, axeId, categorie, texte })
+
+      // Sections JSONB : extraction défensive des pièces jointes
+      try {
+        let sections: any = n?.sections
+        if (typeof sections === 'string') { try { sections = JSON.parse(sections) } catch { sections = null } }
+        const sectionArr: any[] = Array.isArray(sections) ? sections : (sections ? [sections] : [])
+        for (const sec of sectionArr) {
+          if (!sec || typeof sec !== 'object') continue
+          // Texte additionnel porté par la section (title / content Tiptap HTML)
+          const secText = [htmlToText(sec.title), htmlToText(sec.content)].filter(Boolean).join(' — ')
+          if (secText) noteRows.push({ axeLabel, axeIcon, axeId, categorie, texte: secText })
+          // Pièces jointes : champ `attachments` (structure variable, on cherche un nom de fichier)
+          const atts: any[] = Array.isArray(sec.attachments) ? sec.attachments : []
+          for (const a of atts) {
+            if (!a || typeof a !== 'object') continue
+            if (a.deleted_at) continue // ignore les pièces supprimées (soft-delete)
+            const fichier = a.name ?? a.fileName ?? a.filename ?? a.title ?? null
+            if (fichier) pieceRows.push({ axeLabel, axeIcon, axeId, categorie, fichier: String(fichier) })
+          }
+        }
+      } catch { /* structure inattendue : on ignore, les notes texte restent affichées */ }
+    }
 
     const scoreGlobal = calculateScore(reponses)
     const badge = BADGE_LEVELS.find(b => scoreGlobal >= b.min)?.label ?? 'Dossier insuffisant'
@@ -262,6 +326,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
       const hdrs = ['Axe', 'Catégorie de documents', 'État', 'Complétude (%)', 'Commentaire']
       hdrs.forEach((h, i) => sc(ws, 4, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
+      ws.autoFilter = { from: { row: 4, column: 2 }, to: { row: 4, column: 6 } }
+      ws.views = [{ state: 'frozen', ySplit: 4, showGridLines: false }]
 
       let row = 5
       for (const axe of COLLECTE_RSE_AXES) {
@@ -292,6 +358,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
       const hdrs = ['Axe', 'Action', 'Priorité', 'Statut', 'Échéance', 'Responsable', 'Description']
       hdrs.forEach((h, i) => sc(ws, 4, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
+      ws.autoFilter = { from: { row: 4, column: 2 }, to: { row: 4, column: 8 } }
+      ws.views = [{ state: 'frozen', ySplit: 4, showGridLines: false }]
 
       let row = 5
       const STATUT_LABELS: Record<string, string> = { a_faire: 'À faire', en_cours: 'En cours', termine: 'Terminé' }
@@ -316,23 +384,107 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       if (actions.length === 0) {
         sc(ws, 5, 2, 'Aucune action créée', { it: true, fg: C.gray, ha: 'center' })
         merge(ws, 5, 2, 5, 8)
+        row = 6
+      }
+
+      // ─── Synthèse du plan d'actions ──────────────────────────────────────
+      const totalAct = actions.length
+      const enCours = (actions as any[]).filter(a => a.statut === 'en_cours').length
+      const termine = (actions as any[]).filter(a => a.statut === 'termine').length
+      const pctTermine = totalAct > 0 ? Math.round((termine / totalAct) * 100) : 0
+
+      row += 1
+      sc(ws, row, 2, 'Synthèse du plan d\'actions', { bold: true, sz: 12, bg: C.indigo, fg: C.white })
+      merge(ws, row, 2, row, 8)
+      ws.getRow(row).height = 24
+      row++
+      const synthese: [string, ExcelJS.CellValue, string][] = [
+        ['Total actions', totalAct, C.grayL],
+        ['En cours',      enCours,  C.blueL],
+        ['Terminées',     termine,  C.greenL],
+        ['% terminées',   `${pctTermine}%`, C.indigoL],
+      ]
+      for (const [label, val, bg] of synthese) {
+        sc(ws, row, 2, label, { bold: true, bg: C.grayL, fg: C.black })
+        merge(ws, row, 2, row, 4)
+        sc(ws, row, 5, val, { bold: true, bg, ha: 'center', fg: C.black })
+        merge(ws, row, 5, row, 8)
+        ws.getRow(row).height = 20
+        row++
       }
     }
 
-    // ─── Onglet 5 : Notes & Annexes (documents déposés) ───────────────────────
+    // ─── Onglet 5 : Notes & Annexes (notes + pièces déposées) ─────────────────
     {
       const ws = wb.addWorksheet('Notes & Annexes', { views: [{ showGridLines: false }] })
-      ws.columns = [{ width: 4 }, { width: 30 }, { width: 20 }]
+      ws.columns = [{ width: 4 }, { width: 34 }, { width: 40 }, { width: 70 }]
 
-      sc(ws, 2, 2, 'Documents déposés', { bold: true, sz: 14, bg: C.indigo, fg: C.white })
-      merge(ws, 2, 2, 2, 3)
+      sc(ws, 2, 2, 'Notes & Annexes — Collecte RSE', { bold: true, sz: 14, bg: C.indigo, fg: C.white })
+      merge(ws, 2, 2, 2, 4)
       ws.getRow(2).height = 30
 
-      sc(ws, 3, 2, 'Note : Les documents sont déposés et stockés dans SharePoint, classés par catégorie. Accédez aux URLs de téléchargement depuis l\'application.', { it: true, fg: C.gray, sz: 9 })
-      merge(ws, 3, 2, 3, 3)
+      sc(ws, 3, 2, 'Les pièces sont déposées et stockées dans SharePoint, classées par catégorie. Accédez aux URLs de téléchargement depuis l\'application.', { it: true, fg: C.gray, sz: 9, wrap: true })
+      merge(ws, 3, 2, 3, 4)
+      ws.getRow(3).height = 24
 
-      sc(ws, 5, 2, 'Consultez l\'application pour accéder aux pièces déposées par catégorie de documents.', { it: true, fg: C.gray, sz: 10 })
-      merge(ws, 5, 2, 5, 3)
+      let row = 5
+
+      // ─── Bloc Notes documentaires ──────────────────────────────────────
+      sc(ws, row, 2, 'Notes documentaires', { bold: true, sz: 12, bg: C.indigoL, fg: C.indigo })
+      merge(ws, row, 2, row, 4)
+      ws.getRow(row).height = 22
+      row++
+      const noteHdrs = ['Axe', 'Catégorie de documents', 'Note']
+      noteHdrs.forEach((h, i) => sc(ws, row, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
+      row++
+      if (noteRows.length > 0) {
+        for (const n of noteRows) {
+          const clr = AXE_COLORS[n.axeId] ?? { l: C.grayL }
+          sc(ws, row, 2, `${n.axeIcon} ${n.axeLabel}`.trim(), { bg: clr.l, sz: 9 })
+          sc(ws, row, 3, n.categorie, { bg: C.white, sz: 9, wrap: true })
+          sc(ws, row, 4, n.texte, { bg: C.white, sz: 9, wrap: true, indent: 1 })
+          const lines = n.texte.split('\n').length
+          ws.getRow(row).height = Math.min(120, Math.max(20, lines * 14, Math.ceil(n.texte.length / 90) * 14))
+          row++
+        }
+      } else {
+        sc(ws, row, 2, 'Aucune note enregistrée', { it: true, fg: C.gray, ha: 'center', sz: 9 })
+        merge(ws, row, 2, row, 4)
+        row++
+      }
+
+      row++
+
+      // ─── Bloc Pièces jointes ────────────────────────────────────────────
+      sc(ws, row, 2, 'Pièces jointes (SharePoint)', { bold: true, sz: 12, bg: C.indigoL, fg: C.indigo })
+      merge(ws, row, 2, row, 4)
+      ws.getRow(row).height = 22
+      row++
+      const pieceHdrs = ['Axe', 'Catégorie de documents', 'Fichier']
+      pieceHdrs.forEach((h, i) => sc(ws, row, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
+      row++
+      if (pieceRows.length > 0) {
+        for (const p of pieceRows) {
+          const clr = AXE_COLORS[p.axeId] ?? { l: C.grayL }
+          sc(ws, row, 2, `${p.axeIcon} ${p.axeLabel}`.trim(), { bg: clr.l, sz: 9 })
+          sc(ws, row, 3, p.categorie, { bg: C.white, sz: 9, wrap: true })
+          sc(ws, row, 4, `📎 ${p.fichier}`, { bg: C.white, sz: 9 })
+          ws.getRow(row).height = 20
+          row++
+        }
+      } else {
+        sc(ws, row, 2, 'Aucune pièce jointe enregistrée', { it: true, fg: C.gray, ha: 'center', sz: 9 })
+        merge(ws, row, 2, row, 4)
+        row++
+      }
+
+      // ─── Message global si rien ─────────────────────────────────────────
+      if (noteRows.length === 0 && pieceRows.length === 0) {
+        row++
+        sc(ws, row, 2, 'Aucune note ni pièce jointe enregistrée. Consultez l\'application pour déposer des pièces par catégorie de documents sur SharePoint.', { it: true, fg: C.gray, sz: 10, wrap: true })
+        merge(ws, row, 2, row, 4)
+        ws.getRow(row).height = 28
+      }
     }
 
     // ─── Onglet 6 : Correspondances ───────────────────────────────────────────
