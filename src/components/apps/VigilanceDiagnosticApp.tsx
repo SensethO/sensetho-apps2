@@ -7,11 +7,18 @@ import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
+import type { VigilancePdfData } from '@/components/apps/VigilancePDFReport'
 
 // GuidedActionNotePanel chargé en lazy — même pattern que les autres apps RSE
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
   ssr: false,
   loading: () => <div className="py-3 text-xs text-gray-400 animate-pulse">Chargement éditeur…</div>
+})
+
+// Rapport PDF chargé en lazy (html2canvas + jspdf hors du bundle principal)
+const VigilancePDFReport = dynamic(() => import('@/components/apps/VigilancePDFReport'), {
+  ssr: false,
+  loading: () => null,
 })
 
 // ─── Données statiques Vigilance ─────────────────────────────────────────────
@@ -1098,16 +1105,41 @@ function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSectio
 
 // ─── Vue Plan d'actions ───────────────────────────────────────────────────────
 
+// Helpers d'échéance (fr-FR + alertes retard / bientôt)
+const PRIORITE_RANK: Record<Action['priorite'], number> = { haute: 0, moyenne: 1, basse: 2 }
+const STATUT_RANK: Record<Action['statut'], number> = { a_faire: 0, en_cours: 1, termine: 2 }
+
+function axeOf(critereId: string) {
+  return VIGILANCE_AXES.find(x => x.criteres.some(c => c.id === critereId))
+}
+
+function echeanceInfo(a: Action): { kind: 'retard' | 'bientot' | 'normal' | 'none'; label: string; cls: string } {
+  if (!a.echeance) return { kind: 'none', label: '', cls: '' }
+  const d = new Date(a.echeance)
+  if (isNaN(d.getTime())) return { kind: 'none', label: a.echeance, cls: '' }
+  const fr = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+  if (a.statut === 'termine') return { kind: 'normal', label: fr, cls: 'text-gray-400' }
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diffDays = Math.ceil((d.getTime() - today.getTime()) / 86400000)
+  if (diffDays < 0) return { kind: 'retard', label: fr, cls: 'text-red-600 dark:text-red-400 font-semibold' }
+  if (diffDays < 7) return { kind: 'bientot', label: fr, cls: 'text-orange-600 dark:text-orange-400 font-medium' }
+  return { kind: 'normal', label: fr, cls: 'text-gray-400' }
+}
+
+type SortKey = 'priorite' | 'echeance' | 'statut' | 'axe'
+
 function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: DiagnosticData; actions: Action[]; onActionsChange: (a: Action[]) => void }) {
   const [filterAxe, setFilterAxe] = useState<string>('all')
   const [filterPriorite, setFilterPriorite] = useState<string>('all')
   const [filterStatut, setFilterStatut] = useState<string>('all')
+  const [sortKey, setSortKey] = useState<SortKey>('priorite')
   const [editId, setEditId] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<Action>>({})
   const [saving, setSaving] = useState(false)
+  const [collapsedAxes, setCollapsedAxes] = useState<Record<string, boolean>>({})
 
   const filtered = actions.filter(a => {
-    const axe = VIGILANCE_AXES.find(x => x.criteres.some(c => c.id === a.critere_id))
+    const axe = axeOf(a.critere_id)
     if (filterAxe !== 'all' && axe?.id !== filterAxe) return false
     if (filterPriorite !== 'all' && a.priorite !== filterPriorite) return false
     if (filterStatut !== 'all' && a.statut !== filterStatut) return false
@@ -1116,6 +1148,37 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
 
   const total = actions.length
   const termines = actions.filter(a => a.statut === 'termine').length
+  const aFaire = actions.filter(a => a.statut === 'a_faire').length
+  const enCours = actions.filter(a => a.statut === 'en_cours').length
+  const enRetard = actions.filter(a => echeanceInfo(a).kind === 'retard').length
+
+  // Tri commun (appliqué à l'intérieur de chaque groupe d'axe)
+  function sortActions(list: Action[]): Action[] {
+    const arr = [...list]
+    const byEcheance = (a: Action) => (a.echeance ? new Date(a.echeance).getTime() : Number.POSITIVE_INFINITY)
+    arr.sort((a, b) => {
+      switch (sortKey) {
+        case 'echeance': return byEcheance(a) - byEcheance(b)
+        case 'statut': return STATUT_RANK[a.statut] - STATUT_RANK[b.statut]
+        case 'axe': {
+          const ia = VIGILANCE_AXES.findIndex(x => x.id === axeOf(a.critere_id)?.id)
+          const ib = VIGILANCE_AXES.findIndex(x => x.id === axeOf(b.critere_id)?.id)
+          return ia - ib
+        }
+        case 'priorite':
+        default:
+          // priorité haute puis échéance la plus proche
+          if (PRIORITE_RANK[a.priorite] !== PRIORITE_RANK[b.priorite]) return PRIORITE_RANK[a.priorite] - PRIORITE_RANK[b.priorite]
+          return byEcheance(a) - byEcheance(b)
+      }
+    })
+    return arr
+  }
+
+  // Regroupement par axe (ordre des axes), chaque groupe trié
+  const groups = VIGILANCE_AXES
+    .map(axe => ({ axe, items: sortActions(filtered.filter(a => axeOf(a.critere_id)?.id === axe.id)) }))
+    .filter(g => g.items.length > 0)
 
   async function saveEdit(id: string) {
     setSaving(true)
@@ -1131,6 +1194,18 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
     setSaving(false)
   }
 
+  async function toggleStatut(action: Action) {
+    const next = action.statut === 'a_faire' ? 'en_cours' : action.statut === 'en_cours' ? 'termine' : 'a_faire'
+    const res = await fetch(`/api/vigilance/${diagnostic.id}/actions?action_id=${action.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ statut: next }),
+    })
+    if (res.ok) {
+      const { data } = await res.json()
+      onActionsChange(actions.map(a => a.id === action.id ? data : a))
+    }
+  }
+
   const [actionToDelete, setActionToDelete] = useState<string | null>(null)
   async function deleteAction(id: string) {
     await fetch(`/api/vigilance/${diagnostic.id}/actions?action_id=${id}`, { method: 'DELETE' })
@@ -1139,21 +1214,35 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
 
   return (
     <div className="space-y-4">
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Barre de progression globale */}
+      <div className={card('p-4')}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">Avancement du plan d&apos;actions</div>
+          <div className="text-sm font-bold text-green-600 dark:text-green-400">{total ? Math.round(termines / total * 100) : 0}%</div>
+        </div>
+        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+          <div className="h-2.5 rounded-full bg-green-500 transition-all duration-500" style={{ width: `${total ? Math.round(termines / total * 100) : 0}%` }} />
+        </div>
+        <div className="text-xs text-gray-400 mt-1">{termines} terminée{termines !== 1 ? 's' : ''} sur {total}</div>
+      </div>
+
+      {/* Compteurs enrichis */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
-          { label: 'Total actions', value: total,    color: 'text-gray-700 dark:text-gray-300' },
-          { label: 'En cours',      value: actions.filter(a => a.statut === 'en_cours').length, color: 'text-blue-600 dark:text-blue-400' },
-          { label: 'Terminées',     value: `${termines} (${total ? Math.round(termines / total * 100) : 0}%)`, color: 'text-green-600 dark:text-green-400' },
+          { label: 'Total',     value: total,    color: 'text-gray-700 dark:text-gray-300' },
+          { label: 'À faire',   value: aFaire,   color: 'text-gray-600 dark:text-gray-400' },
+          { label: 'En cours',  value: enCours,  color: 'text-blue-600 dark:text-blue-400' },
+          { label: 'Terminées', value: termines, color: 'text-green-600 dark:text-green-400' },
+          { label: 'En retard', value: enRetard, color: 'text-red-600 dark:text-red-400' },
         ].map(({ label, value, color }) => (
-          <div key={label} className={card('p-4 text-center')}>
+          <div key={label} className={card('p-3 text-center')}>
             <div className={`text-2xl font-bold ${color}`}>{value}</div>
             <div className="text-xs text-gray-400 mt-0.5">{label}</div>
           </div>
         ))}
       </div>
 
-      {/* Filtres */}
+      {/* Filtres + Tri */}
       <div className="flex flex-wrap gap-2">
         <select value={filterAxe} onChange={e => setFilterAxe(e.target.value)}
           className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 dark:bg-gray-700 dark:text-white focus:outline-none">
@@ -1174,68 +1263,108 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
           <option value="en_cours">En cours</option>
           <option value="termine">Terminé</option>
         </select>
+        <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
+          className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 dark:bg-gray-700 dark:text-white focus:outline-none">
+          <option value="priorite">↕ Tri : priorité + échéance</option>
+          <option value="echeance">↕ Tri : échéance</option>
+          <option value="statut">↕ Tri : statut</option>
+          <option value="axe">↕ Tri : axe</option>
+        </select>
         <div className="text-xs text-gray-400 flex items-center">{filtered.length} action{filtered.length !== 1 ? 's' : ''}</div>
       </div>
 
-      {/* Liste */}
+      {/* Liste regroupée par axe */}
       {filtered.length === 0 && (
         <div className={card('p-8 text-center')}>
           <p className="text-gray-400 text-sm">Aucune action — créez-en depuis la vue Plan de vigilance, critère par critère</p>
         </div>
       )}
-      <div className="space-y-2">
-        {filtered.map(a => {
-          const axe = VIGILANCE_AXES.find(x => x.criteres.some(c => c.id === a.critere_id))
-          const isEditing = editId === a.id
+
+      <div className="space-y-4">
+        {groups.map(({ axe, items }) => {
+          const grpTermines = items.filter(a => a.statut === 'termine').length
+          const collapsed = collapsedAxes[axe.id]
           return (
-            <div key={a.id} className={card('p-4')}>
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-0.5 text-base">{axe?.icon}</div>
-                <div className="flex-1 min-w-0">
-                  {isEditing ? (
-                    <div className="space-y-2">
-                      <input className={inputCls()} value={editData.titre ?? a.titre} onChange={e => setEditData(d => ({ ...d, titre: e.target.value }))} />
-                      <textarea className={`${inputCls()} resize-none`} rows={2} value={editData.description ?? a.description ?? ''} onChange={e => setEditData(d => ({ ...d, description: e.target.value }))} />
-                      <div className="grid grid-cols-3 gap-2">
-                        <select className={inputCls()} value={editData.priorite ?? a.priorite} onChange={e => setEditData(d => ({ ...d, priorite: e.target.value as Action['priorite'] }))}>
-                          <option value="haute">🔴 Haute</option><option value="moyenne">🟡 Moyenne</option><option value="basse">🟢 Basse</option>
-                        </select>
-                        <select className={inputCls()} value={editData.statut ?? a.statut} onChange={e => setEditData(d => ({ ...d, statut: e.target.value as Action['statut'] }))}>
-                          <option value="a_faire">À faire</option><option value="en_cours">En cours</option><option value="termine">Terminé</option>
-                        </select>
-                        <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
+            <div key={axe.id} className="space-y-2">
+              {/* En-tête d'axe repliable */}
+              <button
+                onClick={() => setCollapsedAxes(prev => ({ ...prev, [axe.id]: !prev[axe.id] }))}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left"
+                style={{ background: axe.colorLight }}
+              >
+                <span className="text-base">{axe.icon}</span>
+                <span className="text-sm font-semibold flex-1" style={{ color: axe.color }}>{axe.label}</span>
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/70 dark:bg-gray-800/70" style={{ color: axe.color }}>
+                  {grpTermines}/{items.length} terminées
+                </span>
+                <span className="text-xs" style={{ color: axe.color }}>{collapsed ? '›' : '▾'}</span>
+              </button>
+
+              {!collapsed && items.map(a => {
+                const isEditing = editId === a.id
+                const ech = echeanceInfo(a)
+                return (
+                  <div key={a.id} className={card('p-4')}>
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 mt-0.5 text-base">{axe.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        {isEditing ? (
+                          <div className="space-y-2">
+                            <input className={inputCls()} value={editData.titre ?? a.titre} onChange={e => setEditData(d => ({ ...d, titre: e.target.value }))} />
+                            <textarea className={`${inputCls()} resize-none`} rows={2} value={editData.description ?? a.description ?? ''} onChange={e => setEditData(d => ({ ...d, description: e.target.value }))} />
+                            <div className="grid grid-cols-3 gap-2">
+                              <select className={inputCls()} value={editData.priorite ?? a.priorite} onChange={e => setEditData(d => ({ ...d, priorite: e.target.value as Action['priorite'] }))}>
+                                <option value="haute">🔴 Haute</option><option value="moyenne">🟡 Moyenne</option><option value="basse">🟢 Basse</option>
+                              </select>
+                              <select className={inputCls()} value={editData.statut ?? a.statut} onChange={e => setEditData(d => ({ ...d, statut: e.target.value as Action['statut'] }))}>
+                                <option value="a_faire">À faire</option><option value="en_cours">En cours</option><option value="termine">Terminé</option>
+                              </select>
+                              <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
+                            </div>
+                            <input className={inputCls()} placeholder="Responsable" value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
+                            <div className="flex gap-2">
+                              <button className={btnS()} onClick={() => setEditId(null)}>Annuler</button>
+                              <button className={btnP()} onClick={() => saveEdit(a.id)} disabled={saving}>{saving ? '…' : '✓ Sauvegarder'}</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className={`text-sm font-semibold ${a.statut === 'termine' ? 'line-through text-gray-400' : 'text-gray-900 dark:text-white'}`}>{a.titre}</div>
+                            {a.description && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{a.description}</div>}
+                            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PRIORITE_COLORS[a.priorite]}`}>{PRIORITE_LABELS[a.priorite]}</span>
+                              {/* Toggle statut en un clic */}
+                              <button onClick={() => toggleStatut(a)} title="Changer le statut (clic)"
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium hover:ring-2 hover:ring-offset-1 hover:ring-red-300 transition ${STATUT_COLORS[a.statut]}`}>
+                                {STATUT_LABELS[a.statut]}
+                              </button>
+                              <span className="text-[10px] text-gray-400">{critereLabel(a.critere_id)}</span>
+                              {ech.kind !== 'none' && (
+                                <span className={`text-[10px] ${ech.cls}`}>📅 {ech.label}
+                                  {ech.kind === 'retard' && <span className="ml-1 px-1 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 font-semibold">En retard</span>}
+                                  {ech.kind === 'bientot' && <span className="ml-1 px-1 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 font-medium">Bientôt</span>}
+                                </span>
+                              )}
+                              {a.responsable && <span className="text-[10px] text-gray-400">👤 {a.responsable}</span>}
+                            </div>
+                          </>
+                        )}
                       </div>
-                      <input className={inputCls()} placeholder="Responsable" value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
-                      <div className="flex gap-2">
-                        <button className={btnS()} onClick={() => setEditId(null)}>Annuler</button>
-                        <button className={btnP()} onClick={() => saveEdit(a.id)} disabled={saving}>{saving ? '…' : '✓ Sauvegarder'}</button>
-                      </div>
+                      {!isEditing && (
+                        <div className="flex gap-1 flex-shrink-0">
+                          <button onClick={() => { setEditId(a.id); setEditData({}) }} className="text-xs text-gray-400 hover:text-blue-500 px-1" title="Modifier">✏️</button>
+                          <button onClick={() => setActionToDelete(a.id)} className="text-xs text-gray-400 hover:text-red-500 px-1" title="Supprimer">✕</button>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      <div className={`text-sm font-semibold ${a.statut === 'termine' ? 'line-through text-gray-400' : 'text-gray-900 dark:text-white'}`}>{a.titre}</div>
-                      {a.description && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{a.description}</div>}
-                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PRIORITE_COLORS[a.priorite]}`}>{PRIORITE_LABELS[a.priorite]}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUT_COLORS[a.statut]}`}>{STATUT_LABELS[a.statut]}</span>
-                        <span className="text-[10px] text-gray-400">{critereLabel(a.critere_id)}</span>
-                        {a.echeance && <span className="text-[10px] text-gray-400">📅 {a.echeance}</span>}
-                        {a.responsable && <span className="text-[10px] text-gray-400">👤 {a.responsable}</span>}
-                      </div>
-                    </>
-                  )}
-                </div>
-                {!isEditing && (
-                  <div className="flex gap-1 flex-shrink-0">
-                    <button onClick={() => { setEditId(a.id); setEditData({}) }} className="text-xs text-gray-400 hover:text-blue-500 px-1">✏️</button>
-                    <button onClick={() => setActionToDelete(a.id)} className="text-xs text-gray-400 hover:text-red-500 px-1">✕</button>
                   </div>
-                )}
-              </div>
+                )
+              })}
             </div>
           )
         })}
       </div>
+
       <ConfirmModal
         open={!!actionToDelete}
         title="Supprimer l'action"
@@ -1268,6 +1397,8 @@ export default function VigilanceDiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
+  const [exportingPDF, setExportingPDF] = useState(false)
+  const [pdfData, setPdfData] = useState<VigilancePdfData | null>(null)
   const [showShare, setShowShare] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
   const [sharePermission, setSharePermission] = useState<'read'|'edit'>('read')
@@ -1373,14 +1504,69 @@ export default function VigilanceDiagnosticApp({ ctx }: { ctx: RseContext }) {
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url; a.download = `DevoirVigilance_${org?.nom ?? 'diagnostic'}_${year}.xlsx`; a.click()
+      a.href = url; a.download = `DevoirVigilance_${org?.denomination ?? 'diagnostic'}_${year}.xlsx`; a.click()
       URL.revokeObjectURL(url)
     } catch (e) { alert('Erreur export Excel : ' + String(e)) }
     finally { setExportingExcel(false) }
   }
 
-  function handleExportPDF() {
-    window.print()
+  function buildPdfData(): VigilancePdfData {
+    const niveaux: Record<string, number> = {}
+    const commentaires: Record<string, string> = {}
+    for (const [k, v] of Object.entries(reponses)) {
+      niveaux[k] = v.niveau
+      if (v.commentaire) commentaires[k] = v.commentaire
+    }
+    const scoreValue = diagnostic?.score_global ?? calculateVigilanceScore(niveaux)
+    const b = getBadge(scoreValue)
+    return {
+      organisation: org?.denomination ?? null,
+      siren: org?.siren ?? null,
+      ville: org?.ville ?? null,
+      year,
+      date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      scoreLabel: 'Score de maturité',
+      scoreValue,
+      badge: { label: b.label, emoji: b.icon, color: b.color },
+      axes: VIGILANCE_AXES,
+      niveaux: VIGILANCE_NIVEAUX,
+      reponses: niveaux,
+      commentaires,
+      actions,
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!diagnostic || exportingPDF) return
+    setExportingPDF(true)
+    try {
+      const data = buildPdfData()
+      // 1. Pré-charger le moteur PDF pendant que le composant se monte
+      const enginePromise = import('@/lib/pdf/exportReport')
+      setPdfData(data)
+      // 2. Attendre que les éléments DOM du rapport soient présents
+      await new Promise<void>(resolve => {
+        if (document.querySelector('#vigilance-pdf-root [data-pdf-page]')) { resolve(); return }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('#vigilance-pdf-root [data-pdf-page]')) {
+            observer.disconnect()
+            resolve()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => { observer.disconnect(); resolve() }, 4000)
+      })
+      // 3. Laisser le navigateur peindre (RAF x2)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const { exportReport } = await enginePromise
+      const orgSlug = (org?.denomination ?? 'diagnostic').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      await exportReport('vigilance-pdf-root', `Plan-de-vigilance-${orgSlug}-${year}.pdf`)
+    } catch (e) {
+      console.error('[vigilance/exportPDF]', e)
+    } finally {
+      setExportingPDF(false)
+      setPdfData(null)
+    }
   }
 
   const loadShares = useCallback(async () => {
@@ -1432,9 +1618,9 @@ export default function VigilanceDiagnosticApp({ ctx }: { ctx: RseContext }) {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
           {exportingExcel ? '⟳' : '⬇'} Excel
         </button>
-        <button onClick={handleExportPDF}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-          📄 PDF
+        <button onClick={handleExportPDF} disabled={exportingPDF}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
+          {exportingPDF ? '⟳' : '📄'} PDF
         </button>
         <button onClick={() => setShowShare(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium transition-colors">
@@ -1443,7 +1629,7 @@ export default function VigilanceDiagnosticApp({ ctx }: { ctx: RseContext }) {
       </div>
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diagnostic, exportingExcel])
+  }, [diagnostic, exportingExcel, exportingPDF])
 
   const lockedTabs = !org || !diagnostic ? ['dashboard', 'diagnostic', 'actions'] : []
 
@@ -1455,6 +1641,13 @@ export default function VigilanceDiagnosticApp({ ctx }: { ctx: RseContext }) {
 
   return (
     <div className="space-y-4">
+
+      {/* ── Rapport PDF (monté hors-écran le temps de l'export) ─────────────── */}
+      {pdfData && (
+        <div style={{ position: 'absolute', left: -9999, top: 0 }} aria-hidden="true">
+          <VigilancePDFReport id="vigilance-pdf-root" data={pdfData} />
+        </div>
+      )}
 
       {/* ── Modale Partage ──────────────────────────────────────────────────── */}
       {showShare && (

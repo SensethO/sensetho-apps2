@@ -1336,7 +1336,7 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url; a.download = `EcoVadis_${org?.nom ?? 'diagnostic'}_${year}.xlsx`; a.click()
+      a.href = url; a.download = `EcoVadis_${org?.denomination ?? 'diagnostic'}_${year}.xlsx`; a.click()
       URL.revokeObjectURL(url)
     } catch (e) { alert('Erreur export Excel : ' + String(e)) }
     finally { setExportingExcel(false) }
