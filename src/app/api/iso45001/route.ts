@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { findSharedDiagnostic } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
+
+const APP_SLUG = 'iso45001'
+const TABLE = 'iso45001_diagnostics'
 
 async function checkSubscription(userId: string): Promise<boolean> {
   const admin = createAdminClient()
@@ -33,18 +37,22 @@ export async function GET(req: NextRequest) {
     if (!org_id || isNaN(annee)) {
       return NextResponse.json({ error: 'org_id et annee requis' }, { status: 400 })
     }
-    if (!await checkSubscription(user.id)) {
-      return NextResponse.json({ error: 'Abonnement requis' }, { status: 403 })
-    }
 
+    const subscribed = await checkSubscription(user.id)
     const admin = createAdminClient()
-    const { data } = await admin
-      .from('iso45001_diagnostics')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('org_id', org_id)
-      .eq('annee', annee)
-      .maybeSingle()
+    let data = null
+    if (subscribed) {
+      const own = await admin
+        .from(TABLE)
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('org_id', org_id)
+        .eq('annee', annee)
+        .maybeSingle()
+      data = own.data
+    }
+    if (!data) { data = await findSharedDiagnostic(APP_SLUG, TABLE, user.id, org_id, annee) }
+    if (!data && !subscribed) return NextResponse.json({ error: 'Abonnement requis' }, { status: 403 })
 
     return NextResponse.json({ data })
   } catch (err) {

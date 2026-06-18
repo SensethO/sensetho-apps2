@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { canAccessDiagnostic } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
 
-async function canWrite(userId: string, diagnosticId: string): Promise<boolean> {
-  const admin = createAdminClient()
-  const { data: profile } = await admin.from('profiles').select('role').eq('id', userId).single()
-  if (profile?.role === 'admin') return true
-  const { data } = await admin
-    .from('gpsr_diagnostics').select('user_id').eq('id', diagnosticId).single()
-  return data?.user_id === userId
-}
+const APP_SLUG = 'gpsr'
+const TABLE = 'gpsr_diagnostics'
+
+const canWrite = (userId: string, diagnosticId: string, requireEdit = false) =>
+  canAccessDiagnostic(APP_SLUG, TABLE, userId, diagnosticId, { requireEdit })
 
 /** GET /api/gpsr/[id]/reponses */
 export async function GET(
@@ -49,7 +47,7 @@ export async function POST(
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canWrite(user.id, params.id)) {
+    if (!await canWrite(user.id, params.id, true)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { canAccessDiagnostic } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
 
-async function canAccess(userId: string, diagnosticId: string): Promise<boolean> {
-  const admin = createAdminClient()
-  const { data: profile } = await admin.from('profiles').select('role').eq('id', userId).single()
-  if (profile?.role === 'admin') return true
-  const { data } = await admin.from('iso45001_diagnostics').select('user_id').eq('id', diagnosticId).single()
-  return data?.user_id === userId
-}
+const APP_SLUG = 'iso45001'
+const TABLE = 'iso45001_diagnostics'
+
+const canAccess = (userId: string, diagnosticId: string, requireEdit = false) =>
+  canAccessDiagnostic(APP_SLUG, TABLE, userId, diagnosticId, { requireEdit })
 
 /**
  * GET /api/iso45001/[id]/notes
@@ -51,7 +50,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canAccess(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canAccess(user.id, params.id, true)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const body = await req.json() as { action_key?: string; sections?: unknown[]; content?: string }
     const { action_key, sections, content } = body

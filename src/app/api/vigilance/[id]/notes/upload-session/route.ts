@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp, getConfigForApp } from '@/lib/sharepointMulti'
+import { canAccessDiagnostic } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
 
-async function canWrite(userId: string, diagnosticId: string): Promise<boolean> {
-  const admin = createAdminClient()
-  const { data: profile } = await admin.from('profiles').select('role').eq('id', userId).single()
-  if (profile?.role === 'admin') return true
-  const { data } = await admin.from('vigilance_diagnostics').select('user_id').eq('id', diagnosticId).single()
-  return data?.user_id === userId
-}
+const APP_SLUG = 'vigilance'
+const TABLE = 'vigilance_diagnostics'
+
+const canWrite = (userId: string, diagnosticId: string) =>
+  canAccessDiagnostic(APP_SLUG, TABLE, userId, diagnosticId, { requireEdit: true })
 
 /**
  * POST /api/vigilance/[id]/notes/upload-session

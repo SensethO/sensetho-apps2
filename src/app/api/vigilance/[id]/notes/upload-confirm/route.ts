@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { canAccessDiagnostic } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
 
-async function canWrite(userId: string, diagnosticId: string): Promise<boolean> {
-  const admin = createAdminClient()
-  const { data: profile } = await admin.from('profiles').select('role').eq('id', userId).single()
-  if (profile?.role === 'admin') return true
-  const { data } = await admin.from('vigilance_diagnostics').select('user_id').eq('id', diagnosticId).single()
-  return data?.user_id === userId
-}
+const APP_SLUG = 'vigilance'
+const TABLE = 'vigilance_diagnostics'
+
+const canWrite = (userId: string, diagnosticId: string) =>
+  canAccessDiagnostic(APP_SLUG, TABLE, userId, diagnosticId, { requireEdit: true })
 
 /**
  * POST /api/vigilance/[id]/notes/upload-confirm
@@ -38,7 +36,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!spItemId) return NextResponse.json({ error: 'spItemId requis' }, { status: 400 })
     if (!name) return NextResponse.json({ error: 'name requis' }, { status: 400 })
 
-    void createAdminClient() // réservé pour usage futur (RLS bypass si nécessaire)
     const id = attachmentId ?? crypto.randomUUID()
 
     // Upsert dans vigilance_notes avec sp_item_id stocké dans sections JSONB
