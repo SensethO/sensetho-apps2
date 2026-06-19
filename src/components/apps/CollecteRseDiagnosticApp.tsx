@@ -1058,6 +1058,9 @@ function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSectio
             {COLLECTE_RSE_AXES.map(axe => {
               const isOpen = activeAxe === axe.id
               const renseignes = axe.criteres.filter(c => (niveaux[c.id] ?? 0) > 0).length
+              const axePct = Math.round(
+                axe.criteres.reduce((s, c) => s + (niveaux[c.id] ?? 0) / 4, 0) / axe.criteres.length * 100
+              )
               return (
                 <div key={axe.id}>
                   <button
@@ -1068,7 +1071,7 @@ function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSectio
                     <span className="text-base">{axe.icon}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold truncate">{axe.label}</div>
-                      <div className="text-[10px] text-gray-400">{renseignes}/{axe.criteres.length} catégories · {Math.round(axe.weight * 100)}%</div>
+                      <div className="text-[10px] text-gray-400">{renseignes}/{axe.criteres.length} catégories · complétude {axePct}%</div>
                     </div>
                     <span className="text-xs">{isOpen ? '▾' : '›'}</span>
                   </button>

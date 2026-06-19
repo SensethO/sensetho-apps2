@@ -968,7 +968,7 @@ function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSectio
                     <span className="text-base">{theme.icon}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold truncate">{theme.label}</div>
-                      <div className="text-[10px] text-gray-400">{renseignes}/{theme.criteres.length} critères · {Math.round(theme.poids * 100)}%</div>
+                      <div className="text-[10px] text-gray-400">{renseignes}/{theme.criteres.length} critères · complétude {Math.round(theme.criteres.reduce((s, c) => s + (niveaux[c.id] ?? 0) / 4, 0) / theme.criteres.length * 100)}%</div>
                     </div>
                     <span className="text-xs">{isOpen ? '▾' : '›'}</span>
                   </button>

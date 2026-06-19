@@ -1088,7 +1088,7 @@ function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSectio
                     <span className="text-base">{axe.icon}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold truncate">{axe.label}</div>
-                      <div className="text-[10px] text-gray-400">{renseignes}/{axe.criteres.length} critères · {Math.round(axe.weight * 100)}%</div>
+                      <div className="text-[10px] text-gray-400">{renseignes}/{axe.criteres.length} critères · complétude {Math.round(axe.criteres.reduce((s, c) => s + (niveaux[c.id] ?? 0) / 4, 0) / axe.criteres.length * 100)}%</div>
                     </div>
                     <span className="text-xs">{isOpen ? '▾' : '›'}</span>
                   </button>
