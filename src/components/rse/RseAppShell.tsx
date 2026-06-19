@@ -18,6 +18,8 @@ import type { Organisation } from '@/types/organisation'
 export interface RseContext {
   org: Organisation | null
   year: number
+  /** true si l'organisation sélectionnée est partagée avec l'utilisateur (non propriétaire). */
+  isShared: boolean
   /** Slot pour injecter le bouton Enregistrer dans le header */
   setActions: (node: React.ReactNode) => void
   /**
@@ -206,6 +208,7 @@ export default function RseAppShell({ appSlug, title, requireYear = true, childr
   const ctx: RseContext = {
     org: selectedOrg,
     year: effectiveYear,
+    isShared: isSharedOrg,
     setActions: setHeaderActions,
     setYearShiftHandler: (fn) => { yearShiftHandlerRef.current = fn },
   }

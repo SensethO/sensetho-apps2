@@ -228,12 +228,14 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
     if (!orgId) { ctx.setActions(null); return }
     ctx.setActions(
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => setShowShare(true)}
-          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
-        >
-          👥 Partager
-        </button>
+        {!ctx.isShared && (
+          <button
+            onClick={() => setShowShare(true)}
+            className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
+          >
+            👥 Partager
+          </button>
+        )}
         <button
           onClick={handleExport}
           disabled={exporting}
