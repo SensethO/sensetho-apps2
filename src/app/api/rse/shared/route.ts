@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { findSharedOrgs } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
+
+// Apps métier scopées par organisation : le partage utilise diagnostic_id = org_id (pas de table de diagnostic).
+const ORG_KEYED = new Set(['eudr-fournisseurs'])
 
 /**
  * GET /api/rse/shared?app=<slug>
@@ -34,6 +38,13 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const app = req.nextUrl.searchParams.get('app') ?? ''
+
+    // Apps métier org-scopées (ex. eudr-fournisseurs) : org partagée directement, sans année ni diagnostic.
+    if (ORG_KEYED.has(app)) {
+      const organisations = await findSharedOrgs(app, user.id)
+      return NextResponse.json({ organisations, yearsByOrg: {}, permissionByOrg: {} })
+    }
+
     const table = SLUG_TABLE[app]
     if (!table) return NextResponse.json({ organisations: [], yearsByOrg: {}, permissionByOrg: {} })
 

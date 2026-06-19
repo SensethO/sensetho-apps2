@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { canAccessOrgDossier } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,12 +56,11 @@ export async function GET(req: NextRequest) {
     const org_id = searchParams.get('org_id')
     if (!org_id) return NextResponse.json({ error: 'org_id requis' }, { status: 400 })
 
+    if (!await canAccessOrgDossier('eudr-fournisseurs', user.id, org_id)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
     const admin = createAdminClient()
-    const role = await getRole(user.id)
-    let q = admin.from(TABLE).select('*').eq('org_id', org_id).order('created_at', { ascending: false })
-    if (role !== 'admin') q = q.eq('user_id', user.id)
-
-    const { data, error } = await q
+    const { data, error } = await admin.from(TABLE).select('*').eq('org_id', org_id).order('created_at', { ascending: false })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ data: data ?? [] })
   } catch (err) {
@@ -81,6 +81,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const org_id = body.org_id
     if (!org_id) return NextResponse.json({ error: 'org_id requis' }, { status: 400 })
+    if (!await canAccessOrgDossier('eudr-fournisseurs', user.id, org_id, { requireEdit: true })) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const admin = createAdminClient()
     const { data, error } = await admin
@@ -111,10 +114,9 @@ export async function PATCH(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'id requis' }, { status: 400 })
 
     const admin = createAdminClient()
-    const role = await getRole(user.id)
-    const { data: existing } = await admin.from(TABLE).select('user_id').eq('id', id).single()
+    const { data: existing } = await admin.from(TABLE).select('org_id').eq('id', id).single()
     if (!existing) return NextResponse.json({ error: 'Introuvable' }, { status: 404 })
-    if (role !== 'admin' && existing.user_id !== user.id) {
+    if (!await canAccessOrgDossier('eudr-fournisseurs', user.id, existing.org_id as string, { requireEdit: true })) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -143,10 +145,9 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'id requis' }, { status: 400 })
 
     const admin = createAdminClient()
-    const role = await getRole(user.id)
-    const { data: existing } = await admin.from(TABLE).select('user_id').eq('id', id).single()
+    const { data: existing } = await admin.from(TABLE).select('org_id').eq('id', id).single()
     if (!existing) return NextResponse.json({ error: 'Introuvable' }, { status: 404 })
-    if (role !== 'admin' && existing.user_id !== user.id) {
+    if (!await canAccessOrgDossier('eudr-fournisseurs', user.id, existing.org_id as string, { requireEdit: true })) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
