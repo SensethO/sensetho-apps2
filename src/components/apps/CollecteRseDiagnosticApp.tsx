@@ -1197,7 +1197,7 @@ function echeanceInfo(a: Action): { kind: 'retard' | 'bientot' | 'normal' | 'non
   return { kind: 'normal', label: fr, cls: 'text-gray-400' }
 }
 
-type SortKey = 'priorite' | 'echeance' | 'statut' | 'axe'
+type SortKey = 'priorite' | 'echeance' | 'statut' | 'axe' | 'responsable'
 
 function ActionsView({ diagnostic, actions, members, onActionsChange }: { diagnostic: DiagnosticData; actions: Action[]; members: Member[]; onActionsChange: (a: Action[]) => void }) {
   const [filterAxe, setFilterAxe] = useState<string>('all')
@@ -1231,6 +1231,14 @@ function ActionsView({ diagnostic, actions, members, onActionsChange }: { diagno
       switch (sortKey) {
         case 'echeance': return byEcheance(a) - byEcheance(b)
         case 'statut': return STATUT_RANK[a.statut] - STATUT_RANK[b.statut]
+        case 'responsable': {
+          const ra = (a.responsable ?? '').trim()
+          const rb = (b.responsable ?? '').trim()
+          if (!ra && !rb) return 0
+          if (!ra) return 1   // non assignés en dernier
+          if (!rb) return -1
+          return ra.localeCompare(rb, 'fr', { sensitivity: 'base' })
+        }
         case 'axe': {
           const ia = COLLECTE_RSE_AXES.findIndex(x => x.id === axeOf(a.critere_id)?.id)
           const ib = COLLECTE_RSE_AXES.findIndex(x => x.id === axeOf(b.critere_id)?.id)
@@ -1340,6 +1348,7 @@ function ActionsView({ diagnostic, actions, members, onActionsChange }: { diagno
           <option value="echeance">↕ Tri : échéance</option>
           <option value="statut">↕ Tri : statut</option>
           <option value="axe">↕ Tri : axe</option>
+          <option value="responsable">↕ Tri : responsable</option>
         </select>
         <div className="text-xs text-gray-400 flex items-center">{filtered.length} action{filtered.length !== 1 ? 's' : ''}</div>
       </div>
@@ -1365,7 +1374,7 @@ function ActionsView({ diagnostic, actions, members, onActionsChange }: { diagno
               >
                 <span className="text-base">{axe.icon}</span>
                 <span className="text-sm font-semibold flex-1" style={{ color: axe.color }}>{axe.label}</span>
-                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/70 dark:bg-gray-800/70" style={{ color: axe.color }}>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: axe.color, color: '#fff' }}>
                   {grpTermines}/{items.length} terminées
                 </span>
                 <span className="text-xs" style={{ color: axe.color }}>{collapsed ? '›' : '▾'}</span>
