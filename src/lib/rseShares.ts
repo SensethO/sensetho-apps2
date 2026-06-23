@@ -92,6 +92,52 @@ export async function findSharedOrgs(appSlug: string, userId: string): Promise<R
   return (data as Record<string, unknown>[]) ?? []
 }
 
+export interface DiagnosticMember {
+  user_id: string
+  email: string
+  full_name: string | null
+  isOwner: boolean
+  permission: 'read' | 'edit' | null  // null pour le propriétaire
+}
+
+/**
+ * Liste des membres d'un diagnostic : propriétaire + utilisateurs avec qui il est partagé.
+ * Sert notamment à proposer une liste de responsables d'actions.
+ * Propriétaire d'abord, puis partagés dans l'ordre de récupération.
+ */
+export async function listDiagnosticMembers(
+  appSlug: string,
+  table: string,
+  diagnosticId: string,
+): Promise<DiagnosticMember[]> {
+  const admin = createAdminClient()
+  const { data: diag } = await admin.from(table).select('user_id').eq('id', diagnosticId).single()
+  if (!diag) return []
+
+  const { data: shares } = await admin
+    .from('rse_diagnostic_shares')
+    .select('shared_with_user_id, permission')
+    .eq('app_slug', appSlug)
+    .eq('diagnostic_id', diagnosticId)
+
+  const permById = new Map<string, 'read' | 'edit'>()
+  for (const s of shares ?? []) permById.set(s.shared_with_user_id as string, s.permission as 'read' | 'edit')
+
+  const ids = Array.from(new Set<string>([diag.user_id as string, ...Array.from(permById.keys())]))
+  const { data: profiles } = await admin.from('profiles').select('id, email, full_name').in('id', ids)
+  const byId = Object.fromEntries((profiles ?? []).map(p => [p.id, p as { id: string; email: string; full_name: string | null }]))
+
+  return ids
+    .map(id => ({
+      user_id: id,
+      email: byId[id]?.email ?? '—',
+      full_name: byId[id]?.full_name ?? null,
+      isOwner: id === diag.user_id,
+      permission: id === diag.user_id ? null : (permById.get(id) ?? null),
+    }))
+    .sort((a, b) => (a.isOwner === b.isOwner ? 0 : a.isOwner ? -1 : 1))
+}
+
 /**
  * Trouve un diagnostic partagé avec l'utilisateur pour une org + année données.
  * Renvoie la ligne complète ou null.

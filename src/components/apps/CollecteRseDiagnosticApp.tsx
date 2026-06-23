@@ -125,6 +125,7 @@ interface Action {
   priorite: 'haute' | 'moyenne' | 'basse'; statut: 'a_faire' | 'en_cours' | 'termine'
   echeance: string | null; responsable: string | null; created_at: string
 }
+interface Member { user_id: string; email: string; full_name: string | null; isOwner: boolean; permission: 'read' | 'edit' | null }
 
 // ─── Helpers UI ───────────────────────────────────────────────────────────────
 
@@ -146,6 +147,36 @@ const STATUT_COLORS = {
 }
 const STATUT_LABELS = { a_faire: 'À faire', en_cours: 'En cours', termine: 'Terminé' }
 const PRIORITE_LABELS = { haute: '🔴 Haute', moyenne: '🟡 Moyenne', basse: '🟢 Basse' }
+
+function memberLabel(m: Member): string {
+  return (m.full_name && m.full_name.trim()) || m.email
+}
+
+/**
+ * Sélecteur de responsable d'action : liste stricte des membres du dossier
+ * (propriétaire + utilisateurs partagés). La valeur stockée est le libellé affiché
+ * (full_name, sinon email). Une valeur déjà saisie absente de la liste est
+ * conservée en tant qu'« ancienne valeur » pour ne pas perdre l'existant.
+ */
+function ResponsableSelect({ value, members, onChange, className }: {
+  value: string
+  members: Member[]
+  onChange: (v: string) => void
+  className?: string
+}) {
+  const labels = members.map(memberLabel)
+  const hasLegacy = value.trim() !== '' && !labels.includes(value)
+  return (
+    <select className={className} value={value} onChange={e => onChange(e.target.value)}>
+      <option value="">— Non assigné —</option>
+      {members.map(m => {
+        const lbl = memberLabel(m)
+        return <option key={m.user_id} value={lbl}>{lbl}{m.isOwner ? ' (propriétaire)' : ''}</option>
+      })}
+      {hasLegacy && <option value={value}>{value} (ancienne valeur)</option>}
+    </select>
+  )
+}
 
 function critereLabel(id: string): string {
   for (const axe of COLLECTE_RSE_AXES) {
@@ -690,6 +721,7 @@ interface CriterePanelProps {
   critere: ECritere
   reponse: Reponse | null
   actions: Action[]
+  members: Member[]
   diagnosticId: string
   allNotes: Record<string, string>
   allNoteSections: Record<string, NoteSection[]>
@@ -700,7 +732,7 @@ interface CriterePanelProps {
 }
 
 function CriterePanel({
-  axe, critere, reponse, actions,
+  axe, critere, reponse, actions, members,
   diagnosticId, allNotes, allNoteSections,
   onReponseChange, onActionsChange, onNoteChange, onNoteSectionsChange,
 }: CriterePanelProps) {
@@ -875,7 +907,7 @@ function CriterePanel({
                 <input type="date" className={inputCls()} value={actionForm.echeance} onChange={e => setActionForm(f => ({ ...f, echeance: e.target.value }))} />
               </div>
               <div><label className={labelCls()}>Responsable</label>
-                <input className={inputCls()} value={actionForm.responsable} onChange={e => setActionForm(f => ({ ...f, responsable: e.target.value }))} placeholder="Prénom Nom" />
+                <ResponsableSelect className={inputCls()} value={actionForm.responsable} members={members} onChange={v => setActionForm(f => ({ ...f, responsable: v }))} />
               </div>
             </div>
             <div className="flex gap-2 justify-end">
@@ -919,7 +951,7 @@ function CriterePanel({
                         <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
                       </div>
                       <div><label className={labelCls()}>Responsable</label>
-                        <input className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
+                        <ResponsableSelect className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} members={members} onChange={v => setEditData(d => ({ ...d, responsable: v }))} />
                       </div>
                     </div>
                     <div className="flex gap-2 justify-end">
@@ -999,6 +1031,7 @@ interface DiagViewProps {
   diagnostic: DiagnosticData
   reponses: Record<string, Reponse>
   actions: Action[]
+  members: Member[]
   allNotes: Record<string, string>
   allNoteSections: Record<string, NoteSection[]>
   onReponseChange: (critere_id: string, niveau: number, commentaire: string) => void
@@ -1007,7 +1040,7 @@ interface DiagViewProps {
   onNoteSectionsChange: (key: string, s: NoteSection[]) => void
 }
 
-function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSections, onReponseChange, onActionsChange, onNoteChange, onNoteSectionsChange }: DiagViewProps) {
+function DiagnosticView({ diagnostic, reponses, actions, members, allNotes, allNoteSections, onReponseChange, onActionsChange, onNoteChange, onNoteSectionsChange }: DiagViewProps) {
   const [activeAxe, setActiveAxe] = useState(COLLECTE_RSE_AXES[0].id)
   const [activeCritere, setActiveCritere] = useState<string | null>(COLLECTE_RSE_AXES[0].criteres[0].id)
 
@@ -1120,6 +1153,7 @@ function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSectio
                 critere={critere}
                 reponse={reponses[activeCritere] ?? null}
                 actions={actions}
+                members={members}
                 diagnosticId={diagnostic.id}
                 allNotes={allNotes}
                 allNoteSections={allNoteSections}
@@ -1165,7 +1199,7 @@ function echeanceInfo(a: Action): { kind: 'retard' | 'bientot' | 'normal' | 'non
 
 type SortKey = 'priorite' | 'echeance' | 'statut' | 'axe'
 
-function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: DiagnosticData; actions: Action[]; onActionsChange: (a: Action[]) => void }) {
+function ActionsView({ diagnostic, actions, members, onActionsChange }: { diagnostic: DiagnosticData; actions: Action[]; members: Member[]; onActionsChange: (a: Action[]) => void }) {
   const [filterAxe, setFilterAxe] = useState<string>('all')
   const [filterPriorite, setFilterPriorite] = useState<string>('all')
   const [filterStatut, setFilterStatut] = useState<string>('all')
@@ -1358,7 +1392,7 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
                               </select>
                               <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
                             </div>
-                            <input className={inputCls()} placeholder="Responsable" value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
+                            <ResponsableSelect className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} members={members} onChange={v => setEditData(d => ({ ...d, responsable: v }))} />
                             <div className="flex gap-2">
                               <button className={btnS()} onClick={() => setEditId(null)}>Annuler</button>
                               <button className={btnP()} onClick={() => saveEdit(a.id)} disabled={saving}>{saving ? '…' : '✓ Sauvegarder'}</button>
@@ -1442,6 +1476,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [shareSaving, setShareSaving] = useState(false)
   const [shareError, setShareError] = useState('')
   const [shareList, setShareList] = useState<{ id: string; email: string; permission: 'read'|'edit' }[]>([])
+  const [members, setMembers] = useState<Member[]>([])
 
   const load = useCallback(async () => {
     if (!org || !year) return
@@ -1614,6 +1649,18 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
 
   useEffect(() => { if (showShare) loadShares() }, [showShare, loadShares])
 
+  // Membres du dossier (propriétaire + partagés) — pour la liste des responsables d'actions
+  const loadMembers = useCallback(async () => {
+    if (!diagnostic) { setMembers([]); return }
+    try {
+      const res = await fetch(`/api/collecte-rse/${diagnostic.id}/members`)
+      const { data } = await res.json()
+      setMembers(data ?? [])
+    } catch { /* ignore */ }
+  }, [diagnostic])
+
+  useEffect(() => { loadMembers() }, [loadMembers])
+
   async function handleAddShare() {
     if (!diagnostic || !shareEmail.trim()) return
     setShareSaving(true); setShareError('')
@@ -1630,6 +1677,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
       }
       setShareEmail('')
       await loadShares()
+      await loadMembers()
     } catch {
       setShareError('Erreur de partage')
     } finally { setShareSaving(false) }
@@ -1640,6 +1688,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
     try {
       await fetch(`/api/collecte-rse/${diagnostic.id}/shares?shareId=${shareId}`, { method: 'DELETE' })
       await loadShares()
+      await loadMembers()
     } catch { /* ignore */ }
   }
 
@@ -1781,6 +1830,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
           diagnostic={diagnostic}
           reponses={reponses}
           actions={actions}
+          members={members}
           allNotes={notes}
           allNoteSections={noteSections}
           onReponseChange={handleReponseChange}
@@ -1790,7 +1840,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
         />
       )}
       {view === 'actions' && diagnostic && (
-        <ActionsView diagnostic={diagnostic} actions={actions} onActionsChange={setActions} />
+        <ActionsView diagnostic={diagnostic} actions={actions} members={members} onActionsChange={setActions} />
       )}
     </div>
   )
