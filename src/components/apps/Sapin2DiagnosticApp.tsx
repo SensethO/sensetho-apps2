@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
+import ResponsableSelect, { useDiagnosticMembers } from '@/components/rse/ResponsableSelect'
 
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
   ssr: false,
@@ -677,6 +678,8 @@ function CriterePanel({ axe, critere, reponse, actions, diagnosticId, allNotes, 
   const [savingEdit, setSavingEdit] = useState(false)
   const [expandedActionNoteId, setExpandedActionNoteId] = useState<string | null>(null)
 
+  const members = useDiagnosticMembers('sapin2', diagnosticId)
+
   const critereActions = actions.filter(a => a.critere_id === critere.id)
 
   useEffect(() => {
@@ -828,7 +831,7 @@ function CriterePanel({ axe, critere, reponse, actions, diagnosticId, allNotes, 
                 <input type="date" className={inputCls()} value={actionForm.echeance} onChange={e => setActionForm(f => ({ ...f, echeance: e.target.value }))} />
               </div>
               <div><label className={labelCls()}>Responsable</label>
-                <input className={inputCls()} value={actionForm.responsable} onChange={e => setActionForm(f => ({ ...f, responsable: e.target.value }))} placeholder="Compliance Officer" />
+                <ResponsableSelect className={inputCls()} value={actionForm.responsable} members={members} onChange={v => setActionForm(f => ({ ...f, responsable: v }))} />
               </div>
             </div>
             <div className="flex gap-2 justify-end">
@@ -847,8 +850,9 @@ function CriterePanel({ axe, critere, reponse, actions, diagnosticId, allNotes, 
             const actionNoteKey = `${critere.id}_action_${a.id}`
             const isEditing = editingActionId === a.id
             const isExpanded = expandedActionNoteId === a.id
+            const incomplete = !a.responsable && !a.echeance
             return (
-              <div key={a.id} className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div key={a.id} className={`rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden${incomplete ? ' ring-1 ring-amber-300 dark:ring-amber-500/40' : ''}`}>
                 {isEditing ? (
                   <div className="p-3 space-y-2 bg-gray-50 dark:bg-gray-900/50">
                     <div><label className={labelCls()}>Titre *</label>
@@ -872,7 +876,7 @@ function CriterePanel({ axe, critere, reponse, actions, diagnosticId, allNotes, 
                         <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
                       </div>
                       <div><label className={labelCls()}>Responsable</label>
-                        <input className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
+                        <ResponsableSelect className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} members={members} onChange={v => setEditData(d => ({ ...d, responsable: v }))} />
                       </div>
                     </div>
                     <div className="flex gap-2 justify-end">
@@ -893,6 +897,7 @@ function CriterePanel({ axe, critere, reponse, actions, diagnosticId, allNotes, 
                         <span className={`text-[9px] px-1 py-0.5 rounded ${PRIORITE_COLORS[a.priorite]}`}>{PRIORITE_LABELS[a.priorite]}</span>
                         {a.echeance && <span className="text-[9px] text-gray-400">📅 {a.echeance}</span>}
                         {a.responsable && <span className="text-[9px] text-gray-400">👤 {a.responsable}</span>}
+                        {incomplete && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">⚠ À compléter</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -1075,6 +1080,8 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
   const [editData, setEditData] = useState<Partial<Action>>({})
   const [saving, setSaving] = useState(false)
 
+  const members = useDiagnosticMembers('sapin2', diagnostic.id)
+
   const filtered = actions.filter(a => {
     const axe = SAPIN2_AXES.find(x => x.criteres.some(c => c.id === a.critere_id))
     if (filterAxe !== 'all' && axe?.id !== filterAxe) return false
@@ -1170,8 +1177,9 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
             const axe = SAPIN2_AXES.find(x => x.criteres.some(c => c.id === a.critere_id))
             const critere = axe?.criteres.find(c => c.id === a.critere_id)
             const isEditing = editId === a.id
+            const incomplete = !a.responsable && !a.echeance
             return (
-              <div key={a.id} className={card('p-4')}>
+              <div key={a.id} className={card(`p-4${incomplete ? ' ring-1 ring-amber-300 dark:ring-amber-500/40' : ''}`)}>
                 {isEditing ? (
                   <div className="space-y-2">
                     <input className={inputCls()} value={editData.titre ?? a.titre} onChange={e => setEditData(d => ({ ...d, titre: e.target.value }))} />
@@ -1191,7 +1199,7 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
                         <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
                       </div>
                       <div><label className={labelCls()}>Responsable</label>
-                        <input className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
+                        <ResponsableSelect className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} members={members} onChange={v => setEditData(d => ({ ...d, responsable: v }))} />
                       </div>
                     </div>
                     <div className="flex gap-2 justify-end">
@@ -1213,6 +1221,7 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${PRIORITE_COLORS[a.priorite]}`}>{PRIORITE_LABELS[a.priorite]}</span>
                         {a.echeance && <span className="text-[10px] text-gray-400">📅 {a.echeance}</span>}
                         {a.responsable && <span className="text-[10px] text-gray-400">👤 {a.responsable}</span>}
+                        {incomplete && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">⚠ À compléter</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">

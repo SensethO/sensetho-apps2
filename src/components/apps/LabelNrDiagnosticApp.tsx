@@ -8,6 +8,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
 import type { LabelNrPdfData } from '@/components/apps/LabelNrPDFReport'
+import ResponsableSelect, { useDiagnosticMembers } from '@/components/rse/ResponsableSelect'
 
 // GuidedActionNotePanel chargé en lazy — même pattern que les autres apps RSE
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
@@ -740,6 +741,8 @@ function CriterePanel({
 
   const [expandedActionNoteId, setExpandedActionNoteId] = useState<string | null>(null)
 
+  const members = useDiagnosticMembers('label-nr', diagnosticId)
+
   const critereActions = actions.filter(a => a.critere_id === critere.id)
 
   useEffect(() => {
@@ -895,7 +898,7 @@ function CriterePanel({
                 <input type="date" className={inputCls()} value={actionForm.echeance} onChange={e => setActionForm(f => ({ ...f, echeance: e.target.value }))} />
               </div>
               <div><label className={labelCls()}>Responsable</label>
-                <input className={inputCls()} value={actionForm.responsable} onChange={e => setActionForm(f => ({ ...f, responsable: e.target.value }))} placeholder="Prénom Nom" />
+                <ResponsableSelect className={inputCls()} value={actionForm.responsable} members={members} onChange={v => setActionForm(f => ({ ...f, responsable: v }))} />
               </div>
             </div>
             <div className="flex gap-2 justify-end">
@@ -914,8 +917,9 @@ function CriterePanel({
             const actionNoteKey = `${critere.id}_action_${a.id}`
             const isEditing = editingActionId === a.id
             const isExpanded = expandedActionNoteId === a.id
+            const incomplete = !a.responsable && !a.echeance
             return (
-              <div key={a.id} className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div key={a.id} className={`rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden ${incomplete ? 'ring-1 ring-amber-300 dark:ring-amber-500/40' : ''}`}>
                 {isEditing ? (
                   <div className="p-3 space-y-2 bg-gray-50 dark:bg-gray-900/50">
                     <div><label className={labelCls()}>Titre *</label>
@@ -939,7 +943,7 @@ function CriterePanel({
                         <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
                       </div>
                       <div><label className={labelCls()}>Responsable</label>
-                        <input className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
+                        <ResponsableSelect className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} members={members} onChange={v => setEditData(d => ({ ...d, responsable: v }))} />
                       </div>
                     </div>
                     <div className="flex gap-2 justify-end">
@@ -960,6 +964,7 @@ function CriterePanel({
                         <span className={`text-[9px] px-1 py-0.5 rounded ${PRIORITE_COLORS[a.priorite]}`}>{PRIORITE_LABELS[a.priorite]}</span>
                         {a.echeance && <span className="text-[9px] text-gray-400">📅 {a.echeance}</span>}
                         {a.responsable && <span className="text-[9px] text-gray-400">👤 {a.responsable}</span>}
+                        {incomplete && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">⚠ À compléter</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -1191,6 +1196,7 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
   const [editData, setEditData] = useState<Partial<Action>>({})
   const [saving, setSaving] = useState(false)
   const [collapsedAxes, setCollapsedAxes] = useState<Record<string, boolean>>({})
+  const members = useDiagnosticMembers('label-nr', diagnostic.id)
 
   const filtered = actions.filter(a => {
     const axe = axeOf(a.critere_id)
@@ -1357,8 +1363,9 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
               {!collapsed && items.map(a => {
                 const isEditing = editId === a.id
                 const ech = echeanceInfo(a)
+                const incomplete = !a.responsable && !a.echeance
                 return (
-                  <div key={a.id} className={card('p-4')}>
+                  <div key={a.id} className={`${card('p-4')} ${incomplete ? 'ring-1 ring-amber-300 dark:ring-amber-500/40' : ''}`}>
                     <div className="flex items-start gap-3">
                       <div className="flex-shrink-0 mt-0.5 text-base">{axe.icon}</div>
                       <div className="flex-1 min-w-0">
@@ -1375,7 +1382,7 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
                               </select>
                               <input type="date" className={inputCls()} value={editData.echeance ?? a.echeance ?? ''} onChange={e => setEditData(d => ({ ...d, echeance: e.target.value }))} />
                             </div>
-                            <input className={inputCls()} placeholder="Responsable" value={editData.responsable ?? a.responsable ?? ''} onChange={e => setEditData(d => ({ ...d, responsable: e.target.value }))} />
+                            <ResponsableSelect className={inputCls()} value={editData.responsable ?? a.responsable ?? ''} members={members} onChange={v => setEditData(d => ({ ...d, responsable: v }))} />
                             <div className="flex gap-2">
                               <button className={btnS()} onClick={() => setEditId(null)}>Annuler</button>
                               <button className={btnP()} onClick={() => saveEdit(a.id)} disabled={saving}>{saving ? '…' : '✓ Sauvegarder'}</button>
@@ -1400,6 +1407,7 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
                                 </span>
                               )}
                               {a.responsable && <span className="text-[10px] text-gray-400">👤 {a.responsable}</span>}
+                              {incomplete && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">⚠ À compléter</span>}
                             </div>
                           </>
                         )}
