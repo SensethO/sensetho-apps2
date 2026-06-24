@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
-import ResponsableSelect, { useDiagnosticMembers } from '@/components/rse/ResponsableSelect'
+import ResponsableSelect, { useDiagnosticMembers, notifyMembersChanged } from '@/components/rse/ResponsableSelect'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
@@ -1414,6 +1414,7 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
       }
       setShareEmail('')
       await loadShares()
+      notifyMembersChanged('sapin2', diagnostic.id)
     } catch {
       setShareError('Erreur de partage')
     } finally { setShareSaving(false) }
@@ -1424,6 +1425,7 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
     try {
       await fetch(`/api/sapin2/${diagnostic.id}/shares?shareId=${shareId}`, { method: 'DELETE' })
       await loadShares()
+      notifyMembersChanged('sapin2', diagnostic.id)
     } catch { /* ignore */ }
   }
 

@@ -7,7 +7,7 @@ import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
-import ResponsableSelect, { useDiagnosticMembers } from '@/components/rse/ResponsableSelect'
+import ResponsableSelect, { useDiagnosticMembers, notifyMembersChanged } from '@/components/rse/ResponsableSelect'
 
 // GuidedActionNotePanel chargé en lazy — même pattern que les autres apps RSE
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
@@ -1466,6 +1466,7 @@ export default function AfnorRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
       }
       setShareEmail('')
       await loadShares()
+      notifyMembersChanged('afnor-rse', diagnostic.id)
     } catch {
       setShareError('Erreur de partage')
     } finally { setShareSaving(false) }
@@ -1476,6 +1477,7 @@ export default function AfnorRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
     try {
       await fetch(`/api/afnor-rse/${diagnostic.id}/shares?shareId=${shareId}`, { method: 'DELETE' })
       await loadShares()
+      notifyMembersChanged('afnor-rse', diagnostic.id)
     } catch { /* ignore */ }
   }
 
