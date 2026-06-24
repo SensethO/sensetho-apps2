@@ -387,6 +387,10 @@ Informations légales/réglementaires (si applicable) :
 | **5 onglets** | Présentation → Tableau de bord → Diagnostic → Plan d'actions → Correspondances |
 | **setHeaderActions** | Boutons Excel + PDF + Partager dans le header RseAppShell |
 | **GuidedActionNotePanel** | Sur CHAQUE critère + sur chaque action (clé = critère_id_action_actionId) |
+| **Champ Responsable** | Liste déroulante des membres (proprio + partagés) via `ResponsableSelect` — JAMAIS un input texte libre (cf. §14.A) |
+| **Route `members`** | `GET /api/<slug>/[id]/members` protégée par `canAccessDiagnostic` (lecture), PAS `canManage` (cf. §14.A) |
+| **Highlight actions** | Action sans responsable ET sans échéance → anneau ambre + pastille « À compléter » (couleur + texte) (cf. §14.B) |
+| **Registry récap** | Toute table `<slug>_actions` DOIT être déclarée dans `src/lib/rseActionSources.ts` (cf. §14.C) |
 
 ---
 
@@ -424,7 +428,64 @@ gh run list --limit 1  # Doit être "success"
 | EUDR Sans Déforestation | `eudr` | `/rse/eudr` | Règlement (UE) 2023/1115 | 2026-06 |
 | Label Engagé RSE AFNOR | `afnor-rse` | `/rse/afnor-rse` | Label AFNOR / ISO 26000 | 2026-06 |
 | Label Numérique Responsable | `label-nr` | `/rse/label-nr` | Label NR LUCIE/INR — GR491/RGESN | 2026-06 |
+| Collecte documentaire RSE | `collecte-rse` | `/rse/collecte-rse` | ISO 26000 — préparation diagnostic | 2026-06 |
 
 ---
 
-*Mis à jour : juin 2026 — validé sur 4 applications RSE en production*
+## 14. Actions — responsable, highlight & email récap (gravé 2026-06-24)
+
+> S'applique à **toute app RSE qui utilise la table `<slug>_actions`** (actuelles et futures).
+> Validé sur `collecte-rse`. Ne pas dévier sans validation explicite.
+
+La colonne reste `responsable TEXT` (cf. §2) : on y stocke le **nom affiché** (pas de FK), pour rester
+compatible avec les valeurs historiques et les responsables hors plateforme.
+
+### A. Champ « Responsable » = liste déroulante des membres (JAMAIS un input texte libre)
+
+- **Contenu de la liste** : **propriétaire du diagnostic + utilisateurs avec qui il est partagé**.
+- **Valeur stockée** : le **nom affiché** = `full_name` sinon `email`.
+- **Liste stricte** : option `— Non assigné —` (valeur vide) + les membres. Une valeur déjà saisie
+  absente de la liste est **conservée** en option « (ancienne valeur) » (zéro perte de données).
+- **Helper générique** (réutilisable par toutes les apps) — `src/lib/rseShares.ts` :
+  ```typescript
+  export interface DiagnosticMember { user_id: string; email: string; full_name: string | null; isOwner: boolean; permission: 'read'|'edit'|null }
+  listDiagnosticMembers(appSlug, table, diagnosticId): Promise<DiagnosticMember[]>  // propriétaire d'abord
+  ```
+- **Route obligatoire** : `GET /api/<slug>/[id]/members` protégée par **`canAccessDiagnostic`**
+  (lecture suffit) — ⚠️ **PAS `canManage`** : un collaborateur en **édition** doit pouvoir choisir
+  un responsable, or `canManage`/`shares` est réservé au propriétaire (→ 403, liste vide).
+- **Composant** `ResponsableSelect` (membres en prop) appliqué à **TOUS** les champs Responsable
+  (formulaire de création **et** éditions inline, dans le panneau Diagnostic comme dans le Plan d'actions).
+- Recharger la liste après **ajout/retrait d'un partage**.
+
+### B. Highlight des actions « à compléter » (sans responsable ni date)
+
+- **Condition** : `!action.responsable && !action.echeance`.
+- **Repère DOUBLE** (couleur **+** texte — accessibilité/contraste, jamais la couleur seule) :
+  anneau/bordure **ambre** + pastille `⚠ À compléter`.
+  ```tsx
+  const incomplete = !a.responsable && !a.echeance
+  // conteneur : ring-1 ring-amber-300 dark:ring-amber-500/40 + bordure ambre
+  {incomplete && <span className="… bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">⚠ À compléter</span>}
+  ```
+- À appliquer sur **les deux vues** (panneau Diagnostic + Plan d'actions). Disparaît dès qu'**un**
+  des deux champs (responsable **ou** échéance) est renseigné.
+
+### C. Email récap quotidien des actions, par responsable
+
+- **Cron Vercel** lun→ven, **9h Europe/Paris** : déclaré dans `vercel.json`
+  (`"schedule": "0 7,8 * * 1-5"`) + **gate horaire interne** via `Intl`/`Europe/Paris`
+  pour n'envoyer **qu'une fois** à 9h pile (gère été/hiver).
+- **Endpoint** : `src/app/api/cron/rse-actions-digest/route.ts`, protégé par `CRON_SECRET`
+  (`Authorization: Bearer …`). Mode **`?dry=1`** = prévisualise les destinataires **sans envoyer**.
+- **Registry centralisée** : `src/lib/rseActionSources.ts` liste **toutes** les tables `<slug>_actions`.
+  → **Toute nouvelle app avec actions DOIT s'y déclarer** (table + libellé), sinon ses actions
+  sont absentes du récap.
+- **Résolution responsable → compte** : match exact `email` ou `full_name` (insensible à la casse).
+  Les responsables **non résolus** (texte libre sans compte) sont **ignorés** — jamais d'email vide.
+- Agrégation **par destinataire** (cumul des actions ouvertes sur toutes les apps), envoi via
+  `sendEmail()` (Graph). **Lecture seule, aucune migration DB, aucune nouvelle variable d'env.**
+
+---
+
+*Mis à jour : 24 juin 2026 — validé sur 5 applications RSE en production. §14 (actions) gravé le 2026-06-24.*
