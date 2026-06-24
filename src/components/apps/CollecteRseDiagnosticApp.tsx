@@ -926,8 +926,9 @@ function CriterePanel({
             const actionNoteKey = `${critere.id}_action_${a.id}`
             const isEditing = editingActionId === a.id
             const isExpanded = expandedActionNoteId === a.id
+            const incomplete = !a.responsable && !a.echeance
             return (
-              <div key={a.id} className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div key={a.id} className={`rounded-lg border overflow-hidden ${incomplete ? 'border-amber-300 dark:border-amber-500/50 ring-1 ring-amber-300 dark:ring-amber-500/40 bg-amber-50/40 dark:bg-amber-900/10' : 'border-gray-200 dark:border-gray-700'}`}>
                 {isEditing ? (
                   <div className="p-3 space-y-2 bg-gray-50 dark:bg-gray-900/50">
                     <div><label className={labelCls()}>Titre *</label>
@@ -972,6 +973,7 @@ function CriterePanel({
                         <span className={`text-[9px] px-1 py-0.5 rounded ${PRIORITE_COLORS[a.priorite]}`}>{PRIORITE_LABELS[a.priorite]}</span>
                         {a.echeance && <span className="text-[9px] text-gray-400">📅 {a.echeance}</span>}
                         {a.responsable && <span className="text-[9px] text-gray-400">👤 {a.responsable}</span>}
+                        {incomplete && <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">⚠ À compléter</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -1383,8 +1385,9 @@ function ActionsView({ diagnostic, actions, members, onActionsChange }: { diagno
               {!collapsed && items.map(a => {
                 const isEditing = editId === a.id
                 const ech = echeanceInfo(a)
+                const incomplete = !a.responsable && !a.echeance
                 return (
-                  <div key={a.id} className={card('p-4')}>
+                  <div key={a.id} className={`${card('p-4')} ${incomplete ? 'ring-1 ring-amber-300 dark:ring-amber-500/40 border-l-4 !border-l-amber-400 dark:!border-l-amber-500' : ''}`}>
                     <div className="flex items-start gap-3">
                       <div className="flex-shrink-0 mt-0.5 text-base">{axe.icon}</div>
                       <div className="flex-1 min-w-0">
@@ -1426,6 +1429,7 @@ function ActionsView({ diagnostic, actions, members, onActionsChange }: { diagno
                                 </span>
                               )}
                               {a.responsable && <span className="text-[10px] text-gray-400">👤 {a.responsable}</span>}
+                              {incomplete && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">⚠ À compléter</span>}
                             </div>
                           </>
                         )}
