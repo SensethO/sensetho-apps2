@@ -7,6 +7,7 @@ import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
 import ResponsableSelect, { useDiagnosticMembers } from '@/components/rse/ResponsableSelect'
+import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
   ssr: false,
@@ -1268,6 +1269,11 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showShare, setShowShare] = useState(false)
+  const [shareEmail, setShareEmail] = useState('')
+  const [sharePermission, setSharePermission] = useState<'read'|'edit'>('read')
+  const [shareSaving, setShareSaving] = useState(false)
+  const [shareError, setShareError] = useState('')
+  const [shareList, setShareList] = useState<{ id: string; email: string; permission: 'read'|'edit' }[]>([])
 
   // Charger/créer le diagnostic
   useEffect(() => {
@@ -1381,6 +1387,46 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
     }
   }, [diagnostic])
 
+  const loadShares = useCallback(async () => {
+    if (!diagnostic) return
+    try {
+      const res = await fetch(`/api/sapin2/${diagnostic.id}/shares`)
+      const { data } = await res.json()
+      setShareList(data ?? [])
+    } catch { /* ignore */ }
+  }, [diagnostic])
+
+  useEffect(() => { if (showShare) loadShares() }, [showShare, loadShares])
+
+  async function handleAddShare() {
+    if (!diagnostic || !shareEmail.trim()) return
+    setShareSaving(true); setShareError('')
+    try {
+      const res = await fetch(`/api/sapin2/${diagnostic.id}/shares`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: shareEmail.trim(), permission: sharePermission }),
+      })
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: 'Erreur de partage' }))
+        setShareError(error || 'Erreur de partage')
+        return
+      }
+      setShareEmail('')
+      await loadShares()
+    } catch {
+      setShareError('Erreur de partage')
+    } finally { setShareSaving(false) }
+  }
+
+  async function handleRemoveShare(shareId: string) {
+    if (!diagnostic) return
+    try {
+      await fetch(`/api/sapin2/${diagnostic.id}/shares?shareId=${shareId}`, { method: 'DELETE' })
+      await loadShares()
+    } catch { /* ignore */ }
+  }
+
   const niveaux: Record<string, number> = {}
   for (const [k, v] of Object.entries(reponses)) niveaux[k] = v.niveau
   const score = calculateSapin2Score(niveaux)
@@ -1448,28 +1494,55 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
         </>
       )}
 
-      {/* Modal partage */}
+      {/* ── Modale Partage ──────────────────────────────────────────────────── */}
       {showShare && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-gray-900 dark:text-white">👥 Partager le diagnostic</h3>
-              <button onClick={() => setShowShare(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setShowShare(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="font-bold text-gray-900 dark:text-white">👥 Partager le diagnostic Sapin II</h2>
+              <button onClick={() => setShowShare(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
             </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Partagez l&apos;accès à ce diagnostic Sapin II avec votre Compliance Officer ou vos auditeurs.
-            </p>
-            <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
-              <div className="text-xs text-gray-400 mb-1">Lien du diagnostic</div>
-              <div className="text-xs font-mono text-gray-600 dark:text-gray-300 break-all">
-                {typeof window !== 'undefined' ? window.location.href : ''}
+            <div className="p-5 space-y-4">
+              <div className="space-y-3">
+                <div>
+                  <label className={labelCls()}>Email de l&apos;utilisateur</label>
+                  <ShareAutocomplete value={shareEmail} onChange={setShareEmail} onEnter={handleAddShare} inputClassName={inputCls()} />
+                </div>
+                <div>
+                  <label className={labelCls()}>Niveau d&apos;accès</label>
+                  <select value={sharePermission} onChange={e => setSharePermission(e.target.value as 'read'|'edit')}
+                    className={inputCls()}>
+                    <option value="read">Lecture seule</option>
+                    <option value="edit">Édition</option>
+                  </select>
+                </div>
+                {shareError && <p className="text-xs text-red-500">{shareError}</p>}
+                <button onClick={handleAddShare} disabled={shareSaving || !shareEmail.trim()}
+                  className={btnP('w-full text-center')}>
+                  {shareSaving ? 'Partage en cours…' : '+ Partager'}
+                </button>
               </div>
+
+              {shareList.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Personnes ayant accès</p>
+                  {shareList.map(s => (
+                    <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/40 text-sm">
+                      <span className="truncate text-gray-700 dark:text-gray-200">{s.email}</span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
+                          {s.permission === 'edit' ? 'Édition' : 'Lecture'}
+                        </span>
+                        <button onClick={() => handleRemoveShare(s.id)} title="Retirer l'accès"
+                          className="text-gray-400 hover:text-red-500 transition-colors">✕</button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-xs text-gray-400 text-center">Le collaborateur doit avoir un compte Sens&apos;ethO. Il retrouvera le dossier en sélectionnant la même organisation et la même année.</p>
             </div>
-            <button
-              onClick={() => { navigator.clipboard.writeText(window.location.href); setShowShare(false) }}
-              className="w-full py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium transition-colors">
-              📋 Copier le lien
-            </button>
           </div>
         </div>
       )}

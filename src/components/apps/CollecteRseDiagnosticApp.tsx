@@ -8,6 +8,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
 import type { CollectePdfData } from '@/components/apps/CollecteRsePDFReport'
+import ResponsableSelect, { type Member } from '@/components/rse/ResponsableSelect'
 
 // GuidedActionNotePanel chargé en lazy — même pattern que les autres apps RSE
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
@@ -125,7 +126,6 @@ interface Action {
   priorite: 'haute' | 'moyenne' | 'basse'; statut: 'a_faire' | 'en_cours' | 'termine'
   echeance: string | null; responsable: string | null; created_at: string
 }
-interface Member { user_id: string; email: string; full_name: string | null; isOwner: boolean; permission: 'read' | 'edit' | null }
 
 // ─── Helpers UI ───────────────────────────────────────────────────────────────
 
@@ -147,36 +147,6 @@ const STATUT_COLORS = {
 }
 const STATUT_LABELS = { a_faire: 'À faire', en_cours: 'En cours', termine: 'Terminé' }
 const PRIORITE_LABELS = { haute: '🔴 Haute', moyenne: '🟡 Moyenne', basse: '🟢 Basse' }
-
-function memberLabel(m: Member): string {
-  return (m.full_name && m.full_name.trim()) || m.email
-}
-
-/**
- * Sélecteur de responsable d'action : liste stricte des membres du dossier
- * (propriétaire + utilisateurs partagés). La valeur stockée est le libellé affiché
- * (full_name, sinon email). Une valeur déjà saisie absente de la liste est
- * conservée en tant qu'« ancienne valeur » pour ne pas perdre l'existant.
- */
-function ResponsableSelect({ value, members, onChange, className }: {
-  value: string
-  members: Member[]
-  onChange: (v: string) => void
-  className?: string
-}) {
-  const labels = members.map(memberLabel)
-  const hasLegacy = value.trim() !== '' && !labels.includes(value)
-  return (
-    <select className={className} value={value} onChange={e => onChange(e.target.value)}>
-      <option value="">— Non assigné —</option>
-      {members.map(m => {
-        const lbl = memberLabel(m)
-        return <option key={m.user_id} value={lbl}>{lbl}{m.isOwner ? ' (propriétaire)' : ''}</option>
-      })}
-      {hasLegacy && <option value={value}>{value} (ancienne valeur)</option>}
-    </select>
-  )
-}
 
 function critereLabel(id: string): string {
   for (const axe of COLLECTE_RSE_AXES) {

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { findSharedDiagnostic } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
+
+const APP_SLUG = 'sapin2'
+const TABLE = 'sapin2_diagnostics'
 
 async function checkSubscription(userId: string): Promise<boolean> {
   const admin = createAdminClient()
@@ -33,18 +37,29 @@ export async function GET(req: NextRequest) {
     if (!org_id || isNaN(annee)) {
       return NextResponse.json({ error: 'org_id et annee requis' }, { status: 400 })
     }
-    if (!await checkSubscription(user.id)) {
-      return NextResponse.json({ error: 'Abonnement requis' }, { status: 403 })
+
+    const subscribed = await checkSubscription(user.id)
+    const admin = createAdminClient()
+
+    // 1. Diagnostic propre (nécessite un abonnement)
+    let data = null
+    if (subscribed) {
+      const own = await admin
+        .from(TABLE).select('*')
+        .eq('user_id', user.id).eq('org_id', org_id).eq('annee', annee)
+        .maybeSingle()
+      data = own.data
     }
 
-    const admin = createAdminClient()
-    const { data } = await admin
-      .from('sapin2_diagnostics')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('org_id', org_id)
-      .eq('annee', annee)
-      .maybeSingle()
+    // 2. Sinon, diagnostic partagé avec l'utilisateur (pas d'abonnement requis)
+    if (!data) {
+      data = await findSharedDiagnostic(APP_SLUG, TABLE, user.id, org_id, annee)
+    }
+
+    // Ni abonné, ni destinataire d'un partage → accès refusé
+    if (!data && !subscribed) {
+      return NextResponse.json({ error: 'Abonnement requis' }, { status: 403 })
+    }
 
     return NextResponse.json({ data })
   } catch (err) {

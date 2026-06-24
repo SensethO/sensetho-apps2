@@ -2,17 +2,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { canAccessDiagnostic } from '@/lib/rseShares'
 
 export const dynamic = 'force-dynamic'
 
-async function canWrite(userId: string, diagnosticId: string): Promise<boolean> {
-  const admin = createAdminClient()
-  const { data: profile } = await admin.from('profiles').select('role').eq('id', userId).single()
-  if (profile?.role === 'admin') return true
-  const { data } = await admin
-    .from('sapin2_diagnostics').select('user_id').eq('id', diagnosticId).single()
-  return data?.user_id === userId
-}
+const APP_SLUG = 'sapin2'
+const TABLE = 'sapin2_diagnostics'
+
+const canWrite = (userId: string, diagnosticId: string, requireEdit = false) =>
+  canAccessDiagnostic(APP_SLUG, TABLE, userId, diagnosticId, { requireEdit })
 
 /** GET /api/sapin2/[id]/actions?critere_id=xxx */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -43,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canWrite(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canWrite(user.id, params.id, true)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { critere_id, titre, description, priorite, echeance, responsable } = await req.json()
     if (!critere_id || !titre) return NextResponse.json({ error: 'critere_id et titre requis' }, { status: 400 })
@@ -77,7 +75,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canWrite(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canWrite(user.id, params.id, true)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { searchParams } = new URL(req.url)
     const actionId = searchParams.get('action_id')
@@ -112,7 +110,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!await canWrite(user.id, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await canWrite(user.id, params.id, true)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { searchParams } = new URL(req.url)
     const actionId = searchParams.get('action_id')
