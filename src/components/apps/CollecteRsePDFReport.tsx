@@ -54,6 +54,17 @@ export interface CollectePdfAction {
   responsable: string | null
 }
 
+/** Un document collecté (note + pièces jointes) regroupé par catégorie */
+export interface CollectePdfDoc {
+  axeId: string
+  axeLabel: string
+  axeIcon: string
+  axeColor: string
+  categorie: string
+  note: string
+  files: { name: string; ref?: string }[]
+}
+
 /** Données complètes passées au composant PDF */
 export interface CollectePdfData {
   organisation: string | null
@@ -69,6 +80,8 @@ export interface CollectePdfData {
   /** critere_id → commentaire */
   commentaires: Record<string, string>
   actions: CollectePdfAction[]
+  /** Notes & pièces jointes regroupées par catégorie (preuves documentaires) */
+  documents?: CollectePdfDoc[]
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -469,10 +482,55 @@ function AxeCard({ axe, data, cardIndex }: { axe: CollectePdfAxe; data: Collecte
   )
 }
 
+// ─── Carte « Notes & Annexes » par catégorie (capturée séparément) ────────────
+
+function DocCard({ doc, cardIndex }: { doc: CollectePdfDoc; cardIndex: number }) {
+  return (
+    <div
+      data-pdf-card={String(cardIndex).padStart(4, '0')}
+      style={{ width: 794, padding: '0 50px', paddingBottom: 10, boxSizing: 'border-box', fontFamily: '"Helvetica Neue", Arial, Helvetica, sans-serif', background: '#ffffff' }}
+    >
+      <div style={{ border: '1.5px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ background: doc.axeColor, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 15, flexShrink: 0 }}>{doc.axeIcon}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontFamily: 'Arial, sans-serif' }}>{doc.axeLabel}</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'white', lineHeight: 1.3, fontFamily: 'Arial, Helvetica, sans-serif' }}>{doc.categorie}</div>
+          </div>
+        </div>
+        <div style={{ padding: '10px 14px' }}>
+          {doc.note && (
+            <div style={{ marginBottom: doc.files.length ? 10 : 0, background: '#f5f3ff', borderLeft: '3px solid #6366f1', borderRadius: '0 6px 6px 0', padding: '7px 10px' }}>
+              <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.5, whiteSpace: 'pre-wrap', fontFamily: 'Arial, Helvetica, sans-serif' }}>{doc.note}</div>
+            </div>
+          )}
+          {doc.files.length > 0 && (
+            <div>
+              <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 6, fontFamily: 'Arial, sans-serif' }}>
+                Pièces jointes ({doc.files.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {doc.files.map((f, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: '#1e293b', fontFamily: 'Arial, Helvetica, sans-serif' }}>
+                    <span style={{ flexShrink: 0 }}>📎</span>
+                    {f.ref && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, color: '#4f46e5', background: '#e0e7ff', borderRadius: 4, padding: '1px 5px', fontFamily: 'Arial, sans-serif' }}>{f.ref}</span>}
+                    <span style={{ wordBreak: 'break-all' }}>{f.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Composant principal (rendu hors-écran par le parent) ─────────────────────
 
 export default function CollecteRsePDFReport({ id, data }: { id: string; data: CollectePdfData }) {
   let cardIndex = 0
+  const docs = data.documents ?? []
   return (
     <div
       id={id}
@@ -486,6 +544,21 @@ export default function CollecteRsePDFReport({ id, data }: { id: string; data: C
           <AxeCard key={axe.id} axe={axe} data={data} cardIndex={cardIndex++} />
         ))}
       </div>
+      {docs.length > 0 && (
+        <div style={{ width: 794, boxSizing: 'border-box' }}>
+          <div
+            data-pdf-card={String(cardIndex++).padStart(4, '0')}
+            style={{ width: 794, padding: '14px 50px 6px', boxSizing: 'border-box', background: '#ffffff' }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 900, color: '#312e81', fontFamily: 'Arial Black, Arial, sans-serif', borderBottom: '2px solid #e0e7ff', paddingBottom: 6 }}>
+              🗂️ Notes &amp; Annexes documentaires
+            </div>
+          </div>
+          {docs.map((doc, i) => (
+            <DocCard key={i} doc={doc} cardIndex={cardIndex++} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

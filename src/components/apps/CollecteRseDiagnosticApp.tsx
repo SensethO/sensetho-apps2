@@ -148,6 +148,15 @@ const STATUT_COLORS = {
 const STATUT_LABELS = { a_faire: 'À faire', en_cours: 'En cours', termine: 'Terminé' }
 const PRIORITE_LABELS = { haute: '🔴 Haute', moyenne: '🟡 Moyenne', basse: '🟢 Basse' }
 
+/** Convertit du HTML Tiptap simple en texte brut (pour l'export PDF). */
+function htmlToPlain(raw: string | null | undefined): string {
+  if (!raw) return ''
+  let s = String(raw)
+  s = s.replace(/<\s*br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])\s*>/gi, '\n').replace(/<[^>]*>/g, '')
+  s = s.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
+  return s.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 function critereLabel(id: string): string {
   for (const axe of COLLECTE_RSE_AXES) {
     const c = axe.criteres.find(x => x.id === id)
@@ -1460,6 +1469,8 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [shareError, setShareError] = useState('')
   const [shareList, setShareList] = useState<{ id: string; email: string; permission: 'read'|'edit' }[]>([])
   const [members, setMembers] = useState<Member[]>([])
+  const [downloadingAnnexes, setDownloadingAnnexes] = useState(false)
+  const [annexeProgress, setAnnexeProgress] = useState(0)
 
   const load = useCallback(async () => {
     if (!org || !year) return
@@ -1573,6 +1584,35 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
       if (v.commentaire) commentaires[k] = v.commentaire
     }
     const completude = diagnostic?.score_global ?? calculateCollecteRseScore(niveaux)
+
+    // Notes & annexes regroupées par catégorie (inclut les notes/pièces au niveau action)
+    const documents: NonNullable<CollectePdfData['documents']> = []
+    for (const axe of COLLECTE_RSE_AXES) {
+      for (const c of axe.criteres) {
+        const keys = new Set<string>()
+        for (const k of Object.keys(notes)) if (k === c.id || k.startsWith(`${c.id}_action_`)) keys.add(k)
+        for (const k of Object.keys(noteSections)) if (k === c.id || k.startsWith(`${c.id}_action_`)) keys.add(k)
+        const noteParts: string[] = []
+        const files: { name: string; ref?: string }[] = []
+        for (const k of Array.from(keys)) {
+          const t = htmlToPlain(notes[k])
+          if (t) noteParts.push(t)
+          for (const sec of (noteSections[k] ?? [])) {
+            const st = [htmlToPlain(sec.title), htmlToPlain(sec.content)].filter(Boolean).join(' — ')
+            if (st) noteParts.push(st)
+            for (const att of (sec.attachments ?? [])) {
+              if (att.deleted_at) continue
+              files.push({ name: att.name })
+            }
+          }
+        }
+        const note = noteParts.join('\n').trim()
+        if (note || files.length) {
+          documents.push({ axeId: axe.id, axeLabel: axe.label, axeIcon: axe.icon, axeColor: axe.color, categorie: c.label, note, files })
+        }
+      }
+    }
+
     return {
       organisation: org?.denomination ?? null,
       siren: org?.siren ?? null,
@@ -1585,6 +1625,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
       reponses: niveaux,
       commentaires,
       actions,
+      documents,
     }
   }
 
@@ -1675,6 +1716,50 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
     } catch { /* ignore */ }
   }
 
+  // ── Annexes : téléchargement direct depuis SharePoint (navigateur → SharePoint) ──
+  // Rassemble toutes les pièces jointes non supprimées de toutes les catégories.
+  function collectAnnexes(): { name: string; path: string }[] {
+    const out: { name: string; path: string }[] = []
+    for (const secs of Object.values(noteSections)) {
+      for (const sec of (secs ?? [])) {
+        for (const att of (sec.attachments ?? [])) {
+          if (att.deleted_at) continue
+          if (att.path) out.push({ name: att.name, path: att.path })
+        }
+      }
+    }
+    return out
+  }
+  const annexeCount = collectAnnexes().length
+
+  async function handleDownloadAnnexes() {
+    if (!diagnostic || downloadingAnnexes) return
+    const annexes = collectAnnexes()
+    if (!annexes.length) return
+    setDownloadingAnnexes(true)
+    setAnnexeProgress(0)
+    try {
+      for (const att of annexes) {
+        try {
+          const res = await fetch(`/api/collecte-rse/${diagnostic.id}/notes/signed-url?item_id=${encodeURIComponent(att.path)}`)
+          if (res.ok) {
+            const { url } = await res.json()
+            if (url) {
+              const a = document.createElement('a')
+              a.href = url; a.download = att.name; a.rel = 'noopener'
+              document.body.appendChild(a); a.click(); document.body.removeChild(a)
+            }
+          }
+        } catch { /* on continue même si une pièce échoue */ }
+        setAnnexeProgress(p => p + 1)
+        await new Promise(r => setTimeout(r, 600))
+      }
+    } finally {
+      setDownloadingAnnexes(false)
+      setAnnexeProgress(0)
+    }
+  }
+
   // ── Boutons injectés dans le header RseAppShell ───────────────────────────
   useEffect(() => {
     if (!diagnostic) { setHeaderActions(null); return }
@@ -1688,6 +1773,13 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
           {exportingPDF ? '⟳' : '📄'} PDF
         </button>
+        {annexeCount > 0 && (
+          <button onClick={handleDownloadAnnexes} disabled={downloadingAnnexes}
+            title="Télécharger toutes les pièces jointes directement depuis SharePoint"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-800/30 transition-colors disabled:opacity-50">
+            {downloadingAnnexes ? `⟳ ${annexeProgress}/${annexeCount}` : `📎 Annexes (${annexeCount})`}
+          </button>
+        )}
         <button onClick={() => setShowShare(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors">
           👥 Partager
@@ -1695,7 +1787,7 @@ export default function CollecteRseDiagnosticApp({ ctx }: { ctx: RseContext }) {
       </div>
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diagnostic, exportingExcel, exportingPDF])
+  }, [diagnostic, exportingExcel, exportingPDF, annexeCount, downloadingAnnexes, annexeProgress])
 
   const lockedTabs = !org || !diagnostic ? ['dashboard', 'diagnostic', 'actions'] : []
 

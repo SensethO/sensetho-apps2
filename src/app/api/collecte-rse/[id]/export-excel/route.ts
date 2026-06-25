@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { canAccessDiagnostic } from '@/lib/rseShares'
 import ExcelJS from 'exceljs'
 
 export const dynamic = 'force-dynamic'
@@ -138,14 +139,9 @@ function calculateScore(niveaux: Record<string, number>): number {
   return Math.round(total * 100)
 }
 
-// ─── Access check ─────────────────────────────────────────────────────────────
-async function canAccess(userId: string, diagnosticId: string): Promise<boolean> {
-  const admin = createAdminClient()
-  const { data: profile } = await admin.from('profiles').select('role').eq('id', userId).single()
-  if (profile?.role === 'admin') return true
-  const { data } = await admin.from('collecte_rse_diagnostics').select('user_id').eq('id', diagnosticId).single()
-  return data?.user_id === userId
-}
+// ─── Access check (propriétaire, admin ou utilisateur partagé) ────────────────
+const canAccess = (userId: string, diagnosticId: string) =>
+  canAccessDiagnostic('collecte-rse', 'collecte_rse_diagnostics', userId, diagnosticId)
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -186,11 +182,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const noteRows: NoteRow[] = []
     const pieceRows: PieceRow[] = []
     for (const n of (notesRes.data ?? []) as any[]) {
-      const info = critereInfo[n?.critere_id]
+      // Les notes/pièces peuvent être attachées au niveau catégorie OU au niveau action
+      // (clé `<critere_id>_action_<actionId>`) → on retombe sur la catégorie de base.
+      const rawKey = String(n?.critere_id ?? '')
+      const baseId = rawKey.split('_action_')[0]
+      const isActionNote = rawKey.includes('_action_')
+      const info = critereInfo[rawKey] ?? critereInfo[baseId]
       const axeLabel = info?.axe.label ?? '—'
       const axeIcon = info?.axe.icon ?? ''
       const axeId = info?.axe.id ?? ''
-      const categorie = info?.label ?? (n?.critere_id ?? '—')
+      const categorie = (info?.label ?? rawKey) + (isActionNote ? ' — note d’action' : '')
 
       // Note texte (content HTML/texte → texte simple)
       const texte = htmlToText(n?.content)
