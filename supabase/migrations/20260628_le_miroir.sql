@@ -137,7 +137,7 @@ SELECT
   'Le Miroir — éthologie d''entreprise',
   'le-miroir',
   'Le miroir collectif : faites peindre votre organisation (espèces + habitats marché/cité) par ses parties prenantes, et révélez les écarts de perception.',
-  'users',
+  'eye',
   '/rse/le-miroir',
   id,
   60,
