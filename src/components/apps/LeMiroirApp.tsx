@@ -54,6 +54,19 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  // Décalage d'année (règle RseAppShell obligatoire pour données par année)
+  useEffect(() => {
+    ctx.setYearShiftHandler(async (delta: number) => {
+      if (!orgId) return
+      await fetch('/api/le-miroir/shift-year', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, delta }),
+      })
+    })
+    return () => { ctx.setYearShiftHandler(null) }
+  }, [orgId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function startCampagne() {
     if (!userId || !orgId) return
     await supabase.from('le_miroir_campagnes').insert({ owner_id: userId, org_id: orgId, annee: year, nom: `Campagne ${year}` })
