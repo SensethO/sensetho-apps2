@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       .map(([k, v]) => `- ${k} : ${v}`)
       .join('\n')
 
-    const system = `Tu es un éthologue d'entreprise (méthode Sens'ethO). On observe une organisation (ou un service) comme un être vivant : on lui associe une ESPÈCE (mode de fonctionnement) et un HABITAT par milieu — le MARCHÉ (sa niche économique) et la CITÉ (sa place sociale/territoriale) — puis un verdict d'adéquation (1=inadéquat … 4=pleinement adéquat) par milieu. Tu choisis STRICTEMENT parmi les ids fournis.\n\n${catalogueForAI()}\n\nRéponds UNIQUEMENT par un objet JSON valide, sans texte autour, de la forme :\n{"especeId":"<id>","habitatMarcheId":"<id>","habitatCiteId":"<id>","verdictMarche":<1-4>,"verdictCite":<1-4>,"justification":"<2-3 phrases qui expliquent le choix>"}`
+    const system = `Tu es un éthologue d'entreprise (méthode Sens'ethO). On observe une organisation (ou un service) comme un être vivant : on lui associe une ESPÈCE (mode de fonctionnement) et un HABITAT par milieu — le MARCHÉ (sa niche économique) et la CITÉ (sa place sociale/territoriale) — puis un verdict d'adéquation (1=inadéquat … 4=pleinement adéquat) par milieu. Tu choisis STRICTEMENT parmi les ids fournis.\n\n${catalogueForAI()}\n\nEn t'appuyant sur ta connaissance du secteur déclaré, établis aussi un PROFIL SECTORIEL indicatif (attractivité, forces, faiblesses, turnover, stress/burn-out, niveau de rémunération et part fixe vs variable). Sers-toi de ces signaux pour éclairer le choix du milieu et des verdicts : turnover élevé, stress fort ou secteur en déclin → milieu plus hostile et adéquation plus basse ; secteur attractif et porteur → milieu plus ouvert. Donne des ordres de grandeur réalistes, jamais une fausse précision inventée.\n\nRéponds UNIQUEMENT par un objet JSON valide, sans texte autour :\n{"especeId":"<id>","habitatMarcheId":"<id>","habitatCiteId":"<id>","verdictMarche":<1-4>,"verdictCite":<1-4>,"justification":"<2-3 phrases>","secteur":{"nom":"<secteur identifié>","attractivite":"<niveau + 1 phrase>","forces":["<2-3 items>"],"faiblesses":["<2-3 items>"],"turnover":"<ordre de grandeur + commentaire>","stress_burnout":"<niveau + commentaire>","remuneration":"<niveau de salaire et part fixe/variable typiques du secteur>"}}`
 
     const userMsg = `Être à analyser : « ${etreLabel} »\n\nÉléments fournis :\n${lignes || '(peu d\'éléments)'}\n${quizTags?.length ? `\nIndices comportementaux : ${quizTags.join(', ')}` : ''}\n\nPropose le portrait éthologique le plus juste. L'habitat marché doit être un habitat plutôt « marché », l'habitat cité plutôt « cité ».`
 
@@ -60,11 +60,14 @@ export async function POST(req: NextRequest) {
     const habitatCiteId = HABITATS.some((h) => h.id === parsed.habitatCiteId) ? (parsed.habitatCiteId as string) : ''
     const clamp = (v: unknown) => Math.min(4, Math.max(1, Math.round(Number(v) || 3)))
 
+    const secteur = parsed.secteur && typeof parsed.secteur === 'object' ? parsed.secteur : null
+
     return NextResponse.json({
       suggestion: {
         especeId, habitatMarcheId, habitatCiteId,
         verdictMarche: clamp(parsed.verdictMarche), verdictCite: clamp(parsed.verdictCite),
         justification: typeof parsed.justification === 'string' ? parsed.justification : '',
+        secteur,
       },
     })
   } catch (e) {
