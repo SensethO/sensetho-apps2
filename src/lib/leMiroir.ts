@@ -84,19 +84,19 @@ export const habitatsPourMilieu = (m: 'marché' | 'cité') => HABITATS.filter((h
 
 // --- Questionnaire guidé (aide au choix de l'espèce) ---
 export const ESPECE_TAGS: Record<string, string[]> = {
-  manchot: ['egalitaire', 'survie', 'repli'], loup: ['hierarchique', 'meneur', 'conquete'],
-  lion: ['hierarchique', 'combat', 'conquete'], cheval: ['groupe-mouvant', 'vigilance', 'fuite-masse'],
-  fourmi: ['colonie', 'traces', 'construction'], abeille: ['colonie', 'quorum', 'construction'],
-  etourneau: ['egalitaire', 'essaim', 'adaptation'], castor: ['construction', 'egalitaire'],
-  elephant: ['hierarchique', 'meneur', 'memoire'], suricate: ['egalitaire', 'vigilance'],
-  vampire: ['egalitaire', 'service', 'survie'], nettoyeur: ['service', 'adaptation', 'solitaire'],
-  coucou: ['solitaire', 'parasite'], poule: ['hierarchique', 'combat'],
-  banc: ['groupe-mouvant', 'fuite-masse', 'essaim'], gnou: ['groupe-mouvant', 'fuite-masse'],
-  pieuvre: ['solitaire', 'adaptation'], tortue: ['solitaire', 'repli', 'memoire'],
+  manchot: ['egalitaire', 'survie', 'repli', 'adversite'], loup: ['hierarchique', 'meneur', 'conquete', 'parental'],
+  lion: ['hierarchique', 'combat', 'conquete', 'predateur'], cheval: ['groupe-mouvant', 'vigilance', 'fuite-masse', 'distribue'],
+  fourmi: ['colonie', 'traces', 'construction'], abeille: ['colonie', 'quorum', 'construction', 'democratie'],
+  etourneau: ['egalitaire', 'essaim', 'adaptation', 'agile'], castor: ['construction', 'egalitaire', 'batisseur'],
+  elephant: ['hierarchique', 'meneur', 'memoire', 'sagesse'], suricate: ['egalitaire', 'vigilance', 'sentinelle'],
+  vampire: ['egalitaire', 'service', 'survie', 'reciprocite'], nettoyeur: ['service', 'adaptation', 'solitaire', 'reputation'],
+  coucou: ['solitaire', 'parasite'], poule: ['hierarchique', 'combat', 'statut-fige'],
+  banc: ['groupe-mouvant', 'fuite-masse', 'essaim', 'anonymat'], gnou: ['groupe-mouvant', 'fuite-masse', 'suivisme'],
+  pieuvre: ['solitaire', 'adaptation', 'distribue'], tortue: ['solitaire', 'repli', 'memoire', 'lenteur'],
 }
 
 export interface QuizOption { label: string; tags: string[] }
-export interface QuizQuestion { id: string; question: string; hint: string; options: QuizOption[] }
+export interface QuizQuestion { id: string; question: string; hint: string; options: QuizOption[]; showIf?: (tags: string[]) => boolean }
 
 export const QUIZ: QuizQuestion[] = [
   { id: 'social', question: "Comment cet être s'organise-t-il ?",
@@ -105,11 +105,42 @@ export const QUIZ: QuizQuestion[] = [
       { label: 'Plutôt seul / autonome', tags: ['solitaire'] }, { label: 'En groupe, sans vrai chef', tags: ['egalitaire'] },
       { label: 'Avec une hiérarchie, un chef', tags: ['hierarchique'] }, { label: 'Comme une colonie très spécialisée', tags: ['colonie'] },
       { label: 'En groupes mouvants', tags: ['groupe-mouvant'] } ] },
-  { id: 'decision', question: 'Comment décide-t-il ou se coordonne-t-il ?',
-    hint: "Le mode de décision et de coordination : un meneur qui tranche, un alignement spontané, une délibération, ou des règles/process partagés.",
+
+  // ── Affinages conditionnels selon le type d'organisation ──
+  { id: 'hierarchie', question: 'Cette autorité est plutôt…', hint: "Précise la nature du pouvoir hiérarchique.",
+    showIf: (t) => t.includes('hierarchique'),
     options: [
-      { label: 'Un meneur entraîne', tags: ['meneur'] }, { label: "Chacun s'aligne sur ses voisins", tags: ['essaim'] },
-      { label: 'On délibère ensemble', tags: ['quorum'] }, { label: 'Par des traces, des process', tags: ['traces'] } ] },
+      { label: 'Parentale, bienveillante (protège, transmet)', tags: ['parental'] },
+      { label: 'Prédatrice, tournée vers la conquête', tags: ['predateur', 'conquete'] },
+      { label: 'Figée par le statut / l\'ancienneté', tags: ['statut-fige'] },
+      { label: "Fondée sur l'expérience et la mémoire", tags: ['sagesse', 'memoire'] } ] },
+  { id: 'cohesion', question: 'Sa cohésion tient surtout…', hint: "Ce qui soude le groupe sans chef.",
+    showIf: (t) => t.includes('egalitaire'),
+    options: [
+      { label: "À l'adversité partagée (on survit ensemble)", tags: ['adversite', 'survie'] },
+      { label: "À un alignement spontané, agile", tags: ['agile', 'essaim'] },
+      { label: 'À la vigilance mutuelle (on se surveille)', tags: ['sentinelle', 'vigilance'] },
+      { label: "À l'entraide réciproque (donnant-donnant)", tags: ['reciprocite', 'service'] },
+      { label: 'À la construction commune', tags: ['batisseur', 'construction'] } ] },
+  { id: 'solo', question: 'Ce solitaire est plutôt…', hint: "Précise la posture de l'être autonome.",
+    showIf: (t) => t.includes('solitaire'),
+    options: [
+      { label: 'Adaptatif, intelligent, agile', tags: ['adaptation', 'distribue'] },
+      { label: 'Sur la défensive, lent, protégé', tags: ['repli', 'lenteur'] },
+      { label: 'Profiteur (vit aux dépens des autres)', tags: ['parasite'] },
+      { label: 'Au service des autres (réputation)', tags: ['service', 'reputation'] } ] },
+  { id: 'masse', question: 'Dans ce mouvement de masse…', hint: "Précise le comportement collectif mouvant.",
+    showIf: (t) => t.includes('groupe-mouvant'),
+    options: [
+      { label: 'On se fond dans le nombre pour se protéger', tags: ['anonymat', 'fuite-masse'] },
+      { label: 'On suit le flux coûte que coûte', tags: ['suivisme', 'fuite-masse'] },
+      { label: 'Les talents restent reconnus, la vigilance partagée', tags: ['distribue', 'vigilance'] } ] },
+  { id: 'colonie', question: 'Cette colonie fonctionne par…', hint: "Précise le mode de coordination de la colonie.",
+    showIf: (t) => t.includes('colonie'),
+    options: [
+      { label: 'Des traces / des process (sans chef)', tags: ['traces'] },
+      { label: 'Une décision collective, un quorum', tags: ['quorum', 'democratie'] } ] },
+
   { id: 'danger', question: 'Face au danger ou au changement, il…',
     hint: "Sa réaction au stress et à la menace : fuir, se protéger, veiller, combattre, ou s'adapter. C'est souvent là que le comportement réel se révèle.",
     options: [
