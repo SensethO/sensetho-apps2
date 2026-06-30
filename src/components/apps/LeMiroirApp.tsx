@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import {
-  ESPECES, VERDICTS, QUIZ, especeById, habitatById, habitatsPourMilieu, suggererEspeces,
+  ESPECES, VERDICTS, QUIZ, OPEN_QUESTIONS, especeById, habitatById, habitatsPourMilieu, suggererEspeces,
 } from '@/lib/leMiroir'
 
 interface Portrait {
@@ -159,12 +159,37 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
   const [espece, setEspece] = useState(''); const [hM, setHM] = useState(''); const [hC, setHC] = useState('')
   const [vM, setVM] = useState(0); const [vC, setVC] = useState(0); const [justif, setJustif] = useState('')
   const [answers, setAnswers] = useState<Record<string, string[]>>({}); const [saving, setSaving] = useState(false)
+  const [oa, setOa] = useState<Record<string, string>>({}); const [analysing, setAnalysing] = useState(false); const [aiMsg, setAiMsg] = useState<string | null>(null)
   const tags = Object.values(answers).flat(); const suggestions = suggererEspeces(tags)
   const suggestedIds = new Set(suggestions.map((s) => s.id))
   const ready = espece && hM && hC && vM && vC
   const chip = (active: boolean) => active
     ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
     : { ...card, color: 'var(--text)' }
+  const etreLabel = etres.find((x) => x.key === etreKey)?.label ?? 'cet être'
+
+  async function analyser() {
+    setAnalysing(true); setAiMsg(null)
+    try {
+      const res = await fetch('/api/le-miroir/analyse', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ etreLabel, answers: oa, quizTags: tags }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.suggestion) { setAiMsg(data.error || 'Analyse indisponible pour le moment.'); setAnalysing(false); return }
+      const s = data.suggestion
+      if (s.especeId) setEspece(s.especeId)
+      if (s.habitatMarcheId) setHM(s.habitatMarcheId)
+      if (s.habitatCiteId) setHC(s.habitatCiteId)
+      if (s.verdictMarche) setVM(s.verdictMarche)
+      if (s.verdictCite) setVC(s.verdictCite)
+      if (s.justification) setJustif(s.justification)
+      setAiMsg("✓ Proposition de l'IA appliquée ci-dessous — ajustez si besoin, puis enregistrez.")
+    } catch {
+      setAiMsg("Erreur lors de l'analyse.")
+    }
+    setAnalysing(false)
+  }
 
   return (
     <div className="max-w-3xl">
@@ -184,11 +209,33 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
         </div>
       </Field>
 
-      <Field label="🧭 M'aider à trouver l'espèce">
+      <Field label="🤖 Analyse IA — décrire l'activité (optionnel)">
+        <div className="rounded-xl border p-4 space-y-3" style={card}>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Renseignez quelques éléments sur « {etreLabel} » ; l&apos;IA proposera l&apos;espèce et les habitats (marché / cité), que vous pourrez ensuite ajuster.</p>
+          {OPEN_QUESTIONS.map((q) => (
+            <div key={q.id}>
+              <label className="block text-sm mb-0.5" style={{ color: 'var(--text)' }}>{q.label}</label>
+              {q.hint && <div className="text-xs mb-1" style={{ color: 'var(--text-subtle)' }}>{q.hint}</div>}
+              {q.type === 'choice'
+                ? <div className="flex flex-wrap gap-2">{(q.options ?? []).map((o) => (
+                    <button key={o} type="button" onClick={() => setOa((a) => ({ ...a, [q.id]: a[q.id] === o ? '' : o }))} className="px-3 py-1.5 rounded-full border text-xs" style={chip(oa[q.id] === o)}>{o}</button>
+                  ))}</div>
+                : <textarea rows={2} value={oa[q.id] || ''} onChange={(e) => setOa((a) => ({ ...a, [q.id]: e.target.value }))} className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm" style={card} />}
+            </div>
+          ))}
+          <button type="button" disabled={analysing} onClick={analyser} className="px-4 py-2 rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>
+            {analysing ? 'Analyse en cours…' : "Analyser avec l'IA"}
+          </button>
+          {aiMsg && <div className="text-sm" style={{ color: 'var(--text-muted)' }}>{aiMsg}</div>}
+        </div>
+      </Field>
+
+      <Field label="🧭 M'aider à trouver l'espèce (questionnaire)">
         <div className="rounded-xl border p-4" style={card}>
           {QUIZ.map((q) => (
             <div key={q.id} className="mb-3">
-              <div className="text-sm font-medium mb-1" style={{ color: 'var(--text)' }}>{q.question}</div>
+              <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{q.question}</div>
+              {q.hint && <div className="text-xs mb-1.5" style={{ color: 'var(--text-subtle)' }}>{q.hint}</div>}
               <div className="flex flex-wrap gap-2">
                 {q.options.map((o, i) => {
                   const active = (answers[q.id] || []).join() === o.tags.join()
@@ -214,7 +261,7 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
       <Field label="L'espèce (le mode de fonctionnement)">
         <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))' }}>
           {ESPECES.map((e) => (
-            <button key={e.id} onClick={() => setEspece(e.id)} className="text-left rounded-lg border p-2"
+            <button key={e.id} onClick={() => setEspece(e.id)} title={e.description} className="text-left rounded-lg border p-2"
               style={espece === e.id ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)' } : card}>
               <div className="text-2xl">{e.emoji} {suggestedIds.has(e.id) && <span className="text-[10px] align-middle" style={{ color: 'var(--accent)' }}>★</span>}</div>
               <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{e.nom}</div>
@@ -252,7 +299,7 @@ function HabitatPicker({ label, milieu, value, onChange }: { label: string; mili
     <Field label={label}>
       <div className="flex flex-wrap gap-2">
         {habitatsPourMilieu(milieu).map((h) => (
-          <button key={h.id} onClick={() => onChange(h.id)} title={h.sens} className="px-3 py-1.5 rounded-full border text-xs"
+          <button key={h.id} onClick={() => onChange(h.id)} title={h.description} className="px-3 py-1.5 rounded-full border text-xs"
             style={value === h.id ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : { ...card, color: 'var(--text)' }}>
             {h.emoji} {h.nom}
           </button>
