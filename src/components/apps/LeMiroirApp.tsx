@@ -35,6 +35,7 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
   const [participants, setParticipants] = useState<Participant[]>([])
   const [portraits, setPortraits] = useState<Portrait[]>([])
   const [tab, setTab] = useState<'observer' | 'miroir'>('observer')
+  const [showShare, setShowShare] = useState(false)
 
   const loadAll = useCallback(async () => {
     if (!orgId) { setLoading(false); return }
@@ -109,6 +110,7 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
     { key: 'entreprise', label: orgName },
     ...services.map((s) => ({ key: 'service:' + s, label: 'Service ' + s })),
   ]
+  const isOwner = campagne.owner_id === userId
 
   return (
     <div className="p-4 md:p-6">
@@ -119,10 +121,17 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
             {t === 'observer' ? 'Peindre' : 'Le miroir'}
           </button>
         ))}
+        {isOwner && (
+          <button onClick={() => setShowShare((v) => !v)} className="px-4 py-2 rounded-lg text-sm border" style={{ ...card, color: 'var(--text)' }}>
+            👥 Inviter
+          </button>
+        )}
         <span className="ml-auto text-sm self-center" style={{ color: 'var(--text-subtle)' }}>
           {participant.poste} · {participant.service} — {portraits.length} portraits
         </span>
       </div>
+
+      {isOwner && showShare && <ShareManager campagneId={campagne.id} />}
 
       {tab === 'observer'
         ? <Observer etres={etres} onSave={async (p) => {
@@ -136,6 +145,62 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
 
 function Info({ children }: { children: React.ReactNode }) {
   return <div className="p-8 text-center" style={{ color: 'var(--text-muted)' }}>{children}</div>
+}
+
+interface ShareRow {
+  id: string; shared_with_user_id: string
+  profiles?: { email?: string | null; full_name?: string | null } | { email?: string | null; full_name?: string | null }[] | null
+}
+function shareEmail(s: ShareRow): string {
+  const p = Array.isArray(s.profiles) ? s.profiles[0] : s.profiles
+  return p?.email || p?.full_name || s.shared_with_user_id
+}
+
+function ShareManager({ campagneId }: { campagneId: string }) {
+  const [list, setList] = useState<ShareRow[]>([])
+  const [email, setEmail] = useState(''); const [msg, setMsg] = useState<string | null>(null); const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    const r = await fetch(`/api/le-miroir/${campagneId}/shares`)
+    const d = await r.json(); if (r.ok) setList((d.data as ShareRow[]) ?? [])
+  }, [campagneId])
+  useEffect(() => { load() }, [load])
+
+  async function invite() {
+    if (!email.trim()) return
+    setBusy(true); setMsg(null)
+    const r = await fetch(`/api/le-miroir/${campagneId}/shares`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim() }),
+    })
+    const d = await r.json(); setBusy(false)
+    if (!r.ok) { setMsg(d.error || 'Échec de l\'invitation.'); return }
+    setEmail(''); setMsg('✓ Participant invité.'); load()
+  }
+  async function remove(id: string) {
+    await fetch(`/api/le-miroir/${campagneId}/shares?share_id=${id}`, { method: 'DELETE' }); load()
+  }
+
+  return (
+    <div className="rounded-xl border p-4 mb-5" style={card}>
+      <div className="font-semibold mb-1" style={{ color: 'var(--text)' }}>👥 Inviter des participants</div>
+      <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>Par e-mail (la personne doit avoir un compte sur la plateforme). Chaque invité déclarera son poste et son service, puis pourra peindre les êtres qu&apos;il côtoie.</p>
+      <div className="flex gap-2 mb-2">
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@exemple.fr" className="flex-1 px-3 py-2 rounded-lg border bg-transparent text-sm" style={card} />
+        <button disabled={busy} onClick={invite} className="px-4 py-2 rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>{busy ? '…' : 'Inviter'}</button>
+      </div>
+      {msg && <div className="text-sm mb-2" style={{ color: 'var(--text-muted)' }}>{msg}</div>}
+      {list.length > 0 && (
+        <ul className="text-sm space-y-1">
+          {list.map((s) => (
+            <li key={s.id} className="flex items-center gap-3">
+              <span style={{ color: 'var(--text)' }}>{shareEmail(s)}</span>
+              <button onClick={() => remove(s.id)} className="text-xs underline" style={{ color: 'var(--text-subtle)' }}>retirer</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 function Onboarding({ onSave }: { onSave: (poste: string, service: string) => Promise<void> }) {
