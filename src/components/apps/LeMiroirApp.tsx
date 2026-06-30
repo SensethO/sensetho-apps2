@@ -4,8 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import {
-  ESPECES, VERDICTS, QUIZ, OPEN_QUESTIONS, especeById, habitatById, habitatsPourMilieu, suggererEspeces,
+  ESPECES, VERDICTS, QUIZ, OPEN_QUESTIONS, SECTEUR_DISCLAIMER, especeById, habitatById, habitatsPourMilieu, suggererEspeces,
 } from '@/lib/leMiroir'
+
+interface AiSecteur {
+  nom?: string; attractivite?: string; forces?: string[]; faiblesses?: string[]
+  turnover?: string; stress_burnout?: string; remuneration?: string
+}
 
 interface Portrait {
   id: string; user_id: string; etre_key: string; etre_label: string; espece_id: string
@@ -160,6 +165,7 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
   const [vM, setVM] = useState(0); const [vC, setVC] = useState(0); const [justif, setJustif] = useState('')
   const [answers, setAnswers] = useState<Record<string, string[]>>({}); const [saving, setSaving] = useState(false)
   const [oa, setOa] = useState<Record<string, string>>({}); const [analysing, setAnalysing] = useState(false); const [aiMsg, setAiMsg] = useState<string | null>(null)
+  const [aiSecteur, setAiSecteur] = useState<AiSecteur | null>(null)
   const tags = Object.values(answers).flat(); const suggestions = suggererEspeces(tags)
   const suggestedIds = new Set(suggestions.map((s) => s.id))
   const ready = espece && hM && hC && vM && vC
@@ -169,7 +175,7 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
   const etreLabel = etres.find((x) => x.key === etreKey)?.label ?? 'cet être'
 
   async function analyser() {
-    setAnalysing(true); setAiMsg(null)
+    setAnalysing(true); setAiMsg(null); setAiSecteur(null)
     try {
       const res = await fetch('/api/le-miroir/analyse', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -184,6 +190,7 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
       if (s.verdictMarche) setVM(s.verdictMarche)
       if (s.verdictCite) setVC(s.verdictCite)
       if (s.justification) setJustif(s.justification)
+      if (s.secteur) setAiSecteur(s.secteur as AiSecteur)
       setAiMsg("✓ Proposition de l'IA appliquée ci-dessous — ajustez si besoin, puis enregistrez.")
     } catch {
       setAiMsg("Erreur lors de l'analyse.")
@@ -227,6 +234,18 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
             {analysing ? 'Analyse en cours…' : "Analyser avec l'IA"}
           </button>
           {aiMsg && <div className="text-sm" style={{ color: 'var(--text-muted)' }}>{aiMsg}</div>}
+          {aiSecteur && (
+            <div className="rounded-lg border p-3 text-sm space-y-1" style={card}>
+              <div className="font-semibold" style={{ color: 'var(--text)' }}>📊 Profil sectoriel{aiSecteur.nom ? ` — ${aiSecteur.nom}` : ''} <span className="text-xs font-normal" style={{ color: 'var(--text-subtle)' }}>(indicatif)</span></div>
+              {aiSecteur.attractivite && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Attractivité :</b> {aiSecteur.attractivite}</div>}
+              {aiSecteur.forces?.length ? <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Forces :</b> {aiSecteur.forces.join(' · ')}</div> : null}
+              {aiSecteur.faiblesses?.length ? <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Faiblesses :</b> {aiSecteur.faiblesses.join(' · ')}</div> : null}
+              {aiSecteur.turnover && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Turnover :</b> {aiSecteur.turnover}</div>}
+              {aiSecteur.stress_burnout && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Stress / burn-out :</b> {aiSecteur.stress_burnout}</div>}
+              {aiSecteur.remuneration && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Rémunération :</b> {aiSecteur.remuneration}</div>}
+              <div className="text-xs pt-1" style={{ color: 'var(--text-subtle)' }}>{SECTEUR_DISCLAIMER}</div>
+            </div>
+          )}
         </div>
       </Field>
 
@@ -269,6 +288,12 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
             </button>
           ))}
         </div>
+        {espece && especeById(espece) && (
+          <div className="mt-2 rounded-lg border p-3 text-sm" style={{ ...card, color: 'var(--text-muted)' }}>
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>{especeById(espece)!.emoji} {especeById(espece)!.nom} — </span>
+            {especeById(espece)!.description}
+          </div>
+        )}
       </Field>
 
       <HabitatPicker label="Habitat côté marché" milieu="marché" value={hM} onChange={setHM} />
