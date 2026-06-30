@@ -11,11 +11,16 @@ interface AiSecteur {
   nom?: string; attractivite?: string; forces?: string[]; faiblesses?: string[]
   turnover?: string; stress_burnout?: string; remuneration?: string
 }
+interface AiSuggestion {
+  especeId?: string; habitatMarcheId?: string; habitatCiteId?: string
+  verdictMarche?: number; verdictCite?: number; justification?: string; secteur?: AiSecteur
+}
 
 interface Portrait {
   id: string; user_id: string; etre_key: string; etre_label: string; espece_id: string
   habitat_marche_id: string; habitat_cite_id: string; verdict_marche: number; verdict_cite: number
   justification: string | null; kind: 'individuel' | 'auto'
+  methode?: 'manuel' | 'ia' | null; prompt?: Record<string, string> | null; ia?: AiSuggestion | null
 }
 interface Campagne { id: string; owner_id: string; annee: number; nom: string | null }
 interface Participant { id: string; poste: string | null; service: string | null }
@@ -135,7 +140,13 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
 
       {tab === 'observer'
         ? <Observer etres={etres} onSave={async (p) => {
-            await supabase.from('le_miroir_portraits').insert({ campagne_id: campagne.id, user_id: userId, ...p })
+            const full = { campagne_id: campagne.id, user_id: userId, ...p }
+            const { error } = await supabase.from('le_miroir_portraits').insert(full)
+            if (error) {
+              // Repli si les colonnes methode/prompt/ia n'existent pas encore (migration non appliquée)
+              const { methode, prompt, ia, ...base } = full; void methode; void prompt; void ia
+              await supabase.from('le_miroir_portraits').insert(base)
+            }
             await loadAll(); setTab('miroir')
           }} />
         : <Miroir etres={etres} portraits={portraits} />}
@@ -221,7 +232,7 @@ function Onboarding({ onSave }: { onSave: (poste: string, service: string) => Pr
   )
 }
 
-interface NewPortrait { etre_key: string; etre_label: string; espece_id: string; habitat_marche_id: string; habitat_cite_id: string; verdict_marche: number; verdict_cite: number; justification: string | null; kind: 'individuel' | 'auto' }
+interface NewPortrait { etre_key: string; etre_label: string; espece_id: string; habitat_marche_id: string; habitat_cite_id: string; verdict_marche: number; verdict_cite: number; justification: string | null; kind: 'individuel' | 'auto'; methode: 'manuel' | 'ia'; prompt: Record<string, string> | null; ia: AiSuggestion | null }
 
 function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; onSave: (p: NewPortrait) => Promise<void> }) {
   const [etreKey, setEtreKey] = useState(etres[0]?.key ?? 'entreprise')
@@ -231,7 +242,10 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
   const [answers, setAnswers] = useState<Record<string, string[]>>({}); const [saving, setSaving] = useState(false)
   const [oa, setOa] = useState<Record<string, string>>({}); const [analysing, setAnalysing] = useState(false); const [aiMsg, setAiMsg] = useState<string | null>(null)
   const [aiSecteur, setAiSecteur] = useState<AiSecteur | null>(null)
+  const [methode, setMethode] = useState<'manuel' | 'ia'>('manuel')
+  const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null)
   const tags = Object.values(answers).flat(); const suggestions = suggererEspeces(tags)
+  const visibleQuiz = QUIZ.filter((q) => !q.showIf || q.showIf(tags))
   const suggestedIds = new Set(suggestions.map((s) => s.id))
   const ready = espece && hM && hC && vM && vC
   const chip = (active: boolean) => active
@@ -240,7 +254,7 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
   const etreLabel = etres.find((x) => x.key === etreKey)?.label ?? 'cet être'
 
   async function analyser() {
-    setAnalysing(true); setAiMsg(null); setAiSecteur(null)
+    setAnalysing(true); setAiMsg(null); setAiSecteur(null); setAiSuggestion(null)
     try {
       const res = await fetch('/api/le-miroir/analyse', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -248,7 +262,8 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
       })
       const data = await res.json()
       if (!res.ok || !data.suggestion) { setAiMsg(data.error || 'Analyse indisponible pour le moment.'); setAnalysing(false); return }
-      const s = data.suggestion
+      const s = data.suggestion as AiSuggestion
+      setAiSuggestion(s)
       if (s.especeId) setEspece(s.especeId)
       if (s.habitatMarcheId) setHM(s.habitatMarcheId)
       if (s.habitatCiteId) setHC(s.habitatCiteId)
@@ -281,7 +296,20 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
         </div>
       </Field>
 
-      <Field label="🤖 Analyse IA — décrire l'activité (optionnel)">
+      <Field label="Comment construire le portrait ?">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setMethode('ia')} className="px-3 py-1.5 rounded-lg border text-sm" style={chip(methode === 'ia')}>🤖 Automatique (IA, narratif)</button>
+          <button onClick={() => setMethode('manuel')} className="px-3 py-1.5 rounded-lg border text-sm" style={chip(methode === 'manuel')}>✋ Manuel (choix guidé)</button>
+        </div>
+        <div className="text-xs mt-1.5" style={{ color: 'var(--text-subtle)' }}>
+          {methode === 'ia'
+            ? "Décrivez l'activité avec vos mots ; l'IA propose l'espèce, les habitats et le profil sectoriel — vous gardez la main pour ajuster."
+            : "Répondez au questionnaire : les questions s'affinent selon vos réponses, puis choisissez l'espèce et les milieux."}
+        </div>
+      </Field>
+
+      {methode === 'ia' && (
+      <Field label="🤖 Analyse IA — décrire l'activité">
         <div className="rounded-xl border p-4 space-y-3" style={card}>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Renseignez quelques éléments sur « {etreLabel} » ; l&apos;IA proposera l&apos;espèce et les habitats (marché / cité), que vous pourrez ensuite ajuster.</p>
           {OPEN_QUESTIONS.map((q) => (
@@ -313,10 +341,12 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
           )}
         </div>
       </Field>
+      )}
 
-      <Field label="🧭 M'aider à trouver l'espèce (questionnaire)">
+      {methode === 'manuel' && (
+      <Field label="🧭 Questionnaire — m'aider à trouver l'espèce">
         <div className="rounded-xl border p-4" style={card}>
-          {QUIZ.map((q) => (
+          {visibleQuiz.map((q) => (
             <div key={q.id} className="mb-3">
               <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{q.question}</div>
               {q.hint && <div className="text-xs mb-1.5" style={{ color: 'var(--text-subtle)' }}>{q.hint}</div>}
@@ -341,6 +371,7 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
           )}
         </div>
       </Field>
+      )}
 
       <Field label="L'espèce (le mode de fonctionnement)">
         <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))' }}>
@@ -376,7 +407,13 @@ function Observer({ etres, onSave }: { etres: { key: string; label: string }[]; 
       <button disabled={!ready || saving} onClick={async () => {
         setSaving(true)
         const e = etres.find((x) => x.key === etreKey)!
-        await onSave({ etre_key: etreKey, etre_label: e.label, espece_id: espece, habitat_marche_id: hM, habitat_cite_id: hC, verdict_marche: vM, verdict_cite: vC, justification: justif.trim() || null, kind })
+        const promptClean = Object.fromEntries(Object.entries(oa).filter(([, v]) => v && v.trim()))
+        await onSave({
+          etre_key: etreKey, etre_label: e.label, espece_id: espece, habitat_marche_id: hM, habitat_cite_id: hC,
+          verdict_marche: vM, verdict_cite: vC, justification: justif.trim() || null, kind, methode,
+          prompt: methode === 'ia' && Object.keys(promptClean).length ? promptClean : null,
+          ia: methode === 'ia' ? aiSuggestion : null,
+        })
       }} className="px-4 py-2 rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>
         {saving ? 'Enregistrement…' : 'Enregistrer le portrait'}
       </button>
@@ -428,43 +465,103 @@ function Gauge({ value }: { value?: number }) {
   ))}</span>
 }
 
-function Miroir({ etres, portraits }: { etres: { key: string; label: string }[]; portraits: Portrait[] }) {
-  const mode = (arr: string[]) => { if (!arr.length) return undefined; const c: Record<string, number> = {}; arr.forEach((v) => (c[v] = (c[v] || 0) + 1)); return Object.keys(c).sort((a, b) => c[b] - c[a])[0] }
-  const avg = (arr: number[]) => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : undefined
+const modeOf = (arr: string[]) => { if (!arr.length) return undefined; const c: Record<string, number> = {}; arr.forEach((v) => (c[v] = (c[v] || 0) + 1)); return Object.keys(c).sort((a, b) => c[b] - c[a])[0] }
+const avgOf = (arr: number[]) => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : undefined
+const verdictLabel = (v: number) => VERDICTS.find((x) => x.value === v)?.label ?? '—'
+const oqLabel = (id: string) => OPEN_QUESTIONS.find((q) => q.id === id)?.label ?? id
 
+function Miroir({ etres, portraits }: { etres: { key: string; label: string }[]; portraits: Portrait[] }) {
   const cards = etres.map((e) => {
     const all = portraits.filter((p) => p.etre_key === e.key)
-    const het = all.filter((p) => p.kind === 'individuel'); const auto = all.find((p) => p.kind === 'auto')
     if (!all.length) return null
-    const vmM = avg(het.map((p) => p.verdict_marche)); const vcM = avg(het.map((p) => p.verdict_cite))
-    const ecartC = auto && vcM !== undefined ? Math.round((auto.verdict_cite - vcM) * 10) / 10 : undefined
-    const ecartM = auto && vmM !== undefined ? Math.round((auto.verdict_marche - vmM) * 10) / 10 : undefined
-    const ecart = (ecartC !== undefined && Math.abs(ecartC) >= 1) || (ecartM !== undefined && Math.abs(ecartM) >= 1)
-    const esp = especeById(mode(het.map((p) => p.espece_id)) ?? '')
-    return (
-      <div key={e.key} className="rounded-xl border p-4" style={card}>
-        <div className="font-semibold mb-1" style={{ color: 'var(--text)' }}>{e.label}</div>
-        <div className="text-xs mb-2" style={{ color: 'var(--text-subtle)' }}>{het.length} regard(s)</div>
-        <div className="mb-2" style={{ color: 'var(--text)' }}>{esp ? `${esp.emoji} ${esp.nom}` : '—'}</div>
-        <div className="grid grid-cols-2 gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-          <div>marché : {(() => { const h = habitatById(mode(het.map((p) => p.habitat_marche_id)) ?? ''); return h ? h.emoji : '' })()} <Gauge value={vmM} /></div>
-          <div>cité : {(() => { const h = habitatById(mode(het.map((p) => p.habitat_cite_id)) ?? ''); return h ? h.emoji : '' })()} <Gauge value={vcM} /></div>
-        </div>
-        {auto && (
-          <div className="text-xs mt-2 pt-2 border-t" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-            Auto : marché <Gauge value={auto.verdict_marche} /> · cité <Gauge value={auto.verdict_cite} />
-            {ecart && <span className="ml-2 px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f6e7df', color: '#a85b3b' }}>écart de perception</span>}
-          </div>
-        )}
-      </div>
-    )
+    return <EtreCard key={e.key} label={e.label} all={all} />
   }).filter(Boolean)
 
   return (
     <div>
       {cards.length === 0
         ? <Info>Aucun portrait pour l&apos;instant. Allez dans « Peindre » pour commencer.</Info>
-        : <div className="grid md:grid-cols-2 gap-4">{cards}</div>}
+        : <div className="grid md:grid-cols-2 gap-4 items-start">{cards}</div>}
+    </div>
+  )
+}
+
+function EtreCard({ label, all }: { label: string; all: Portrait[] }) {
+  const [open, setOpen] = useState(false)
+  const het = all.filter((p) => p.kind === 'individuel'); const auto = all.find((p) => p.kind === 'auto')
+  const vmM = avgOf(het.map((p) => p.verdict_marche)); const vcM = avgOf(het.map((p) => p.verdict_cite))
+  const ecartC = auto && vcM !== undefined ? Math.abs(auto.verdict_cite - vcM) : 0
+  const ecartM = auto && vmM !== undefined ? Math.abs(auto.verdict_marche - vmM) : 0
+  const ecart = ecartC >= 1 || ecartM >= 1
+  const esp = especeById(modeOf(het.map((p) => p.espece_id)) ?? '')
+
+  return (
+    <div className="rounded-xl border p-4" style={card}>
+      <div className="font-semibold mb-1" style={{ color: 'var(--text)' }}>{label}</div>
+      <div className="text-xs mb-2" style={{ color: 'var(--text-subtle)' }}>{het.length} regard(s){auto ? ' + 1 auto-portrait' : ''}</div>
+      <div className="mb-2" style={{ color: 'var(--text)' }}>{esp ? `${esp.emoji} ${esp.nom}` : '—'}</div>
+      <div className="grid grid-cols-2 gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+        <div>marché : {(() => { const h = habitatById(modeOf(het.map((p) => p.habitat_marche_id)) ?? ''); return h ? h.emoji : '' })()} <Gauge value={vmM} /></div>
+        <div>cité : {(() => { const h = habitatById(modeOf(het.map((p) => p.habitat_cite_id)) ?? ''); return h ? h.emoji : '' })()} <Gauge value={vcM} /></div>
+      </div>
+      {auto && (
+        <div className="text-xs mt-2 pt-2 border-t" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+          Auto : marché <Gauge value={auto.verdict_marche} /> · cité <Gauge value={auto.verdict_cite} />
+          {ecart && <span className="ml-2 px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f6e7df', color: '#a85b3b' }}>écart de perception</span>}
+        </div>
+      )}
+      <button onClick={() => setOpen((o) => !o)} className="mt-3 text-xs underline" style={{ color: 'var(--accent)' }}>
+        {open ? 'Masquer le détail' : `Ouvrir le miroir — voir les ${all.length} regard(s)`}
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+          {all.map((p, i) => <PortraitDetail key={p.id} p={p} index={i} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PortraitDetail({ p, index }: { p: Portrait; index: number }) {
+  const esp = especeById(p.espece_id); const hM = habitatById(p.habitat_marche_id); const hC = habitatById(p.habitat_cite_id)
+  const isIa = p.methode === 'ia'
+  const sect = p.ia?.secteur
+  return (
+    <div className="rounded-lg border p-3 text-xs space-y-1.5" style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)' }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)' }}>
+          {p.kind === 'auto' ? 'Auto-portrait' : `Regard ${index + 1}`}
+        </span>
+        <span className="px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-subtle)' }}>
+          {isIa ? '🤖 Automatique (IA)' : '✋ Manuel'}
+        </span>
+      </div>
+      <div style={{ color: 'var(--text)' }}>{esp ? `${esp.emoji} ${esp.nom}` : '—'}</div>
+      <div style={{ color: 'var(--text-muted)' }}>
+        Marché : {hM ? `${hM.emoji} ${hM.nom}` : '—'} · <i>{verdictLabel(p.verdict_marche)}</i><br />
+        Cité : {hC ? `${hC.emoji} ${hC.nom}` : '—'} · <i>{verdictLabel(p.verdict_cite)}</i>
+      </div>
+      {p.justification && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Justification :</b> {p.justification}</div>}
+
+      {isIa && p.prompt && Object.keys(p.prompt).length > 0 && (
+        <div className="mt-1 pt-1.5 border-t" style={{ borderColor: 'var(--border)' }}>
+          <div className="font-semibold mb-0.5" style={{ color: 'var(--text)' }}>📝 Ce qui a été décrit à l&apos;IA</div>
+          {Object.entries(p.prompt).map(([k, v]) => (
+            <div key={k} style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>{oqLabel(k)} :</b> {v}</div>
+          ))}
+        </div>
+      )}
+      {isIa && sect && (
+        <div className="mt-1 pt-1.5 border-t" style={{ borderColor: 'var(--border)' }}>
+          <div className="font-semibold mb-0.5" style={{ color: 'var(--text)' }}>🤖 Réponse de l&apos;IA — profil sectoriel{sect.nom ? ` (${sect.nom})` : ''}</div>
+          {sect.attractivite && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Attractivité :</b> {sect.attractivite}</div>}
+          {sect.forces?.length ? <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Forces :</b> {sect.forces.join(' · ')}</div> : null}
+          {sect.faiblesses?.length ? <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Faiblesses :</b> {sect.faiblesses.join(' · ')}</div> : null}
+          {sect.turnover && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Turnover :</b> {sect.turnover}</div>}
+          {sect.stress_burnout && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Stress / burn-out :</b> {sect.stress_burnout}</div>}
+          {sect.remuneration && <div style={{ color: 'var(--text-muted)' }}><b style={{ color: 'var(--text)' }}>Rémunération :</b> {sect.remuneration}</div>}
+        </div>
+      )}
     </div>
   )
 }
