@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
+import EudrTracesPanel from '@/components/apps/EudrTracesPanel'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ interface Contract {
   notes: string | null
 }
 
-type TabKey = 'dashboard' | 'buyers' | 'suppliers' | 'contracts'
+type TabKey = 'dashboard' | 'buyers' | 'suppliers' | 'contracts' | 'traces'
 type Entity = 'buyers' | 'suppliers' | 'contracts'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -347,6 +348,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
     { key: 'buyers', label: '🏢 Acheteurs' },
     { key: 'suppliers', label: '🌱 Fournisseurs' },
     { key: 'contracts', label: '📄 Contrats' },
+    { key: 'traces', label: '🇪🇺 EUDR / TRACES' },
   ]
 
   return (
@@ -412,6 +414,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
               onDelete={c => setToDelete({ entity: 'contracts', id: c.id, label: c.contract_number ?? 'ce contrat' })}
             />
           )}
+          {tab === 'traces' && <EudrTracesPanel orgId={orgId} canManage={!ctx.isShared} />}
         </>
       )}
 
