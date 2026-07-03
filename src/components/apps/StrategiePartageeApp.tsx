@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
+import { exportStrategiePdf } from '@/lib/pdf/strategiePdf'
 
 // ─── Méthode Hoshin Kanri « Stratégie Partagée » (AQM Conseil) — Phase 1 : Élaborer ───
 // Document vivant unique par organisation. Modules : Mission, SWOT, Attentes (Kano),
@@ -17,12 +18,12 @@ interface VisionParties { hommes: string; marche: string; environnement: string;
 interface VisionQuestions { entreprise: string; clients: string; marche: string; personnel: string; fonctionnement: string }
 interface Vision { synthetique: string; detaillee: string; chiffree: string; parties: VisionParties; questions: VisionQuestions }
 interface Valeur { valeur: string; regles: string[] }
-interface LigneAction { enonce: string; objectif: string; indicateur: string; niveauActuel: string; cible: string; echeance: string; deployable: boolean }
-interface Axe { titre: string; freins: string[]; lignes: LigneAction[] }
+interface LigneAction { id: string; enonce: string; objectif: string; indicateur: string; niveauActuel: string; cible: string; echeance: string; deployable: boolean }
+interface Axe { id: string; titre: string; freins: string[]; lignes: LigneAction[] }
 interface StrategieActivite { produits: string[]; notes: string }
 // Phase 2 — Déployer
 interface Hoshin { scores: Record<string, Record<string, number>>; sponsors: Record<string, string> }
-interface BscItem { objectif: string; indicateur: string; cible: string }
+interface BscItem { id: string; objectif: string; indicateur: string; cible: string }
 interface Bsc { finances: BscItem[]; clients: BscItem[]; processus: BscItem[]; apprentissage: BscItem[] }
 interface MasterRow { libelle: string; type: 'action' | 'projet'; pilotage: 'hierarchique' | 'transversal' | 'projet'; responsable: string; livrables: string; echeance: string }
 // Phase 3 — Piloter
@@ -76,6 +77,12 @@ const VISION_QUESTIONS: { key: keyof VisionQuestions; label: string }[] = [
   { key: 'personnel', label: 'Comment voyons-nous notre personnel et comment voulons-nous être vus par lui ? (relations, hiérarchie)' },
   { key: 'fonctionnement', label: 'Comment voyons-nous notre fonctionnement et nos outils ? (organisation, processus, SI, infrastructures)' },
 ]
+
+let _idc = 0
+function uid(): string {
+  try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID() } catch { /* noop */ }
+  return `id_${Date.now().toString(36)}_${(_idc++).toString(36)}`
+}
 
 function emptyDoc(): Doc {
   return {
@@ -168,6 +175,7 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
 
   // Export + partage
   const [exporting, setExporting] = useState(false)
+  const [exportingPdf, setExportingPdf] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
   const [sharePermission, setSharePermission] = useState<'read' | 'edit'>('read')
@@ -196,9 +204,11 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
         }
         d.valeurs = Array.isArray(row.valeurs) ? row.valeurs as Valeur[] : []
         d.axes = Array.isArray(row.axes) ? row.axes as Axe[] : []
+        // Backfill des ids stables (données antérieures aux ids)
+        d.axes.forEach(a => { if (!a.id) a.id = uid(); a.lignes = Array.isArray(a.lignes) ? a.lignes : []; a.lignes.forEach(l => { if (!l.id) l.id = uid() }) })
         Object.assign(d.strategie_activite, row.strategie_activite ?? {})
         if (row.hoshin) { const h = row.hoshin as Partial<Hoshin>; d.hoshin = { scores: h.scores ?? {}, sponsors: h.sponsors ?? {} } }
-        if (row.bsc) Object.assign(d.bsc, row.bsc)
+        if (row.bsc) { Object.assign(d.bsc, row.bsc); (Object.keys(d.bsc) as (keyof Bsc)[]).forEach(k => d.bsc[k].forEach(it => { if (!it.id) it.id = uid() })) }
         d.master_plan = Array.isArray(row.master_plan) ? row.master_plan as MasterRow[] : []
         if (row.pilotage) { const p = row.pilotage as Partial<Pilotage>; d.pilotage = { suivi: p.suivi ?? {}, revues: Array.isArray(p.revues) ? p.revues : [] } }
         if (Array.isArray(row.kotter) && row.kotter.length === KOTTER_ETAPES.length) d.kotter = row.kotter as KotterStep[]
@@ -240,6 +250,13 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
     finally { setExporting(false) }
   }, [orgId])
 
+  const handleExportPdf = useCallback(async () => {
+    setExportingPdf(true)
+    try { await exportStrategiePdf(doc, ctx.org?.denomination ?? 'Organisation') }
+    catch (e) { setError(String((e as Error).message ?? e)) }
+    finally { setExportingPdf(false) }
+  }, [doc, ctx.org?.denomination])
+
   useEffect(() => {
     if (!orgId) { ctx.setActions(null); return }
     ctx.setActions(
@@ -248,9 +265,13 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
           <button onClick={() => setShowShare(true)}
             className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors">👥 Partager</button>
         )}
+        <button onClick={handleExportPdf} disabled={exportingPdf}
+          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors disabled:opacity-50">
+          {exportingPdf ? '…' : '⬇ PDF'}
+        </button>
         <button onClick={handleExport} disabled={exporting}
           className="px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50">
-          {exporting ? '…' : '⬇ Export Excel'}
+          {exporting ? '…' : '⬇ Excel'}
         </button>
         {!readOnly && (
           <button onClick={save} disabled={saving || !dirty}
@@ -261,7 +282,7 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
       </div>
     )
     return () => ctx.setActions(null)
-  }, [orgId, readOnly, saving, dirty, save, exporting, handleExport, ctx])
+  }, [orgId, readOnly, saving, dirty, save, exporting, handleExport, exportingPdf, handleExportPdf, ctx])
 
   // ── Partage du dossier (rse_diagnostic_shares, diagnostic_id = org_id) ──
   const loadShares = useCallback(async () => {
@@ -660,11 +681,11 @@ function AxesTab({ axes, update, readOnly }: { axes: Axe[]; update: Upd; readOnl
                 </label>
               </div>
             ))}
-            {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.axes[ai].lignes.push({ enonce: '', objectif: '', indicateur: '', niveauActuel: '', cible: '', echeance: '', deployable: false }) })}>+ Ligne d’action</button>}
+            {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.axes[ai].lignes.push({ id: uid(), enonce: '', objectif: '', indicateur: '', niveauActuel: '', cible: '', echeance: '', deployable: false }) })}>+ Ligne d’action</button>}
           </div>
         </div>
       ))}
-      {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.axes.push({ titre: '', freins: [], lignes: [] }) })}>+ Ajouter un axe stratégique</button>}
+      {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.axes.push({ id: uid(), titre: '', freins: [], lignes: [] }) })}>+ Ajouter un axe stratégique</button>}
     </div>
   )
 }
@@ -694,9 +715,9 @@ function HoshinTab({ axes, hoshin, update, readOnly }: { axes: Axe[]; hoshin: Ho
   // Lignes = toutes les lignes d'actions (aplaties) ; Colonnes = axes. Cellule = contribution 0..3.
   const rows: { rk: string; label: string; texte: string }[] = []
   axes.forEach((axe, ai) => axe.lignes.forEach((la, li) => {
-    rows.push({ rk: `${ai}.${li}`, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '—' })
+    rows.push({ rk: la.id, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '—' })
   }))
-  const cols = axes.map((axe, ai) => ({ ck: `${ai}`, label: `A${ai + 1}`, texte: axe.titre || '—' }))
+  const cols = axes.map((axe, ai) => ({ ck: axe.id, label: `A${ai + 1}`, texte: axe.titre || '—' }))
 
   if (!cols.length || !rows.length) {
     return (
@@ -813,7 +834,7 @@ function BscTab({ bsc, update, readOnly }: { bsc: Bsc; update: Upd; readOnly: bo
                   </div>
                 </div>
               ))}
-              {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.bsc[p.key].push({ objectif: '', indicateur: '', cible: '' }) })}>+ Objectif</button>}
+              {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.bsc[p.key].push({ id: uid(), objectif: '', indicateur: '', cible: '' }) })}>+ Objectif</button>}
             </div>
           </div>
         ))}
@@ -885,11 +906,11 @@ function TableauBordTab({ axes, bsc, pilotage, update, readOnly }: { axes: Axe[]
   type Row = { key: string; source: string; indicateur: string; depart: string; cible: string }
   const rows: Row[] = []
   axes.forEach((axe, ai) => axe.lignes.forEach((la, li) => {
-    if (la.indicateur || la.objectif) rows.push({ key: `la:${ai}.${li}`, source: `A${ai + 1}.${li + 1} — ${axe.titre || '…'}`, indicateur: la.indicateur || la.objectif, depart: la.niveauActuel, cible: la.cible })
+    if (la.indicateur || la.objectif) rows.push({ key: `la:${la.id}`, source: `A${ai + 1}.${li + 1} — ${axe.titre || '…'}`, indicateur: la.indicateur || la.objectif, depart: la.niveauActuel, cible: la.cible })
   }))
   const bscLabel: Record<keyof Bsc, string> = { finances: 'BSC · Finances', clients: 'BSC · Clients', processus: 'BSC · Processus', apprentissage: 'BSC · Apprentissage' }
-  ;(Object.keys(bscLabel) as (keyof Bsc)[]).forEach(p => bsc[p].forEach((it, i) => {
-    if (it.indicateur || it.objectif) rows.push({ key: `bsc:${p}:${i}`, source: bscLabel[p], indicateur: it.indicateur || it.objectif, depart: '', cible: it.cible })
+  ;(Object.keys(bscLabel) as (keyof Bsc)[]).forEach(p => bsc[p].forEach(it => {
+    if (it.indicateur || it.objectif) rows.push({ key: `bsc:${it.id}`, source: bscLabel[p], indicateur: it.indicateur || it.objectif, depart: '', cible: it.cible })
   }))
 
   const get = (k: string): Suivi => pilotage.suivi[k] ?? { valeur: '', statut: '' }

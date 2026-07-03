@@ -136,7 +136,7 @@ export async function GET(req: NextRequest) {
     const s8 = wb.addWorksheet('Matrice Hoshin')
     const axes = d.axes ?? []
     const laRows: { rk: string; label: string; texte: string }[] = []
-    axes.forEach((axe: any, ai: number) => (axe.lignes ?? []).forEach((la: any, li: number) => laRows.push({ rk: `${ai}.${li}`, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '' })))
+    axes.forEach((axe: any, ai: number) => (axe.lignes ?? []).forEach((la: any, li: number) => laRows.push({ rk: la.id ?? `${ai}.${li}`, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '' })))
     s8.columns = [{ width: 40 }, ...axes.map(() => ({ width: 8 })), { width: 8 }, { width: 18 }]
     title(s8, 'Matrice Hoshin d’alignement (3 fort · 2 moyen · 1 faible)', axes.length + 3)
     head(s8, 3, ['Lignes d’actions \\ Axes', ...axes.map((_: any, ai: number) => `A${ai + 1}`), 'Σ', 'Sponsor'])
@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
     laRows.forEach((r, i) => {
       sc(s8, 4 + i, 1, `${r.label} — ${r.texte}`)
       let tot = 0
-      axes.forEach((_: any, ai: number) => { const val = scores[r.rk]?.[`${ai}`] ?? 0; tot += val; sc(s8, 4 + i, 2 + ai, val || '', { ha: 'center', bg: val === 3 ? C.indigo : val ? C.indigoL : undefined, fg: val === 3 ? C.white : undefined }) })
+      axes.forEach((axe: any, ai: number) => { const val = scores[r.rk]?.[axe.id ?? `${ai}`] ?? 0; tot += val; sc(s8, 4 + i, 2 + ai, val || '', { ha: 'center', bg: val === 3 ? C.indigo : val ? C.indigoL : undefined, fg: val === 3 ? C.white : undefined }) })
       sc(s8, 4 + i, 2 + axes.length, tot, { ha: 'center', bold: true }); sc(s8, 4 + i, 3 + axes.length, txt(sponsors[r.rk]))
     })
 
@@ -174,7 +174,7 @@ export async function GET(req: NextRequest) {
     let tr = 4
     axes.forEach((axe: any, ai: number) => (axe.lignes ?? []).forEach((la: any, li: number) => {
       if (!la.indicateur && !la.objectif) return
-      const s = suivi[`la:${ai}.${li}`] ?? {}
+      const s = suivi[`la:${la.id ?? `${ai}.${li}`}`] ?? {}
       sc(s11, tr, 1, `A${ai + 1}.${li + 1} — ${txt(axe.titre)}`); sc(s11, tr, 2, txt(la.indicateur || la.objectif)); sc(s11, tr, 3, txt(la.niveauActuel), { ha: 'center' }); sc(s11, tr, 4, txt(la.cible), { ha: 'center' }); sc(s11, tr, 5, txt(s.valeur), { ha: 'center' }); sc(s11, tr, 6, feuLab[s.statut] ?? '—', { bg: s.statut === 'vert' ? C.green : s.statut === 'orange' ? C.amber : s.statut === 'rouge' ? C.red : undefined }); tr++
     }))
 
