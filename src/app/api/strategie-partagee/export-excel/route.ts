@@ -124,7 +124,8 @@ export async function GET(req: NextRequest) {
     head(s7, 3, ['Réf.', 'Énoncé', 'Résultat / Objectif', 'Indicateur', 'Actuel', 'Cible', 'Échéance', 'Déployable'])
     let rr = 4
     ;(d.axes ?? []).forEach((axe: any, ai: number) => {
-      sc(s7, rr, 1, `A${ai + 1}`, { bold: true, bg: C.indigoL }); sc(s7, rr, 2, txt(axe.titre), { bold: true, bg: C.indigoL }); for (let c = 3; c <= 8; c++) sc(s7, rr, c, '', { bg: C.indigoL }); rr++
+      sc(s7, rr, 1, `A${ai + 1}`, { bold: true, bg: C.indigoL }); sc(s7, rr, 2, txt(axe.titre), { bold: true, bg: C.indigoL })
+      sc(s7, rr, 3, '', { bg: C.indigoL }); sc(s7, rr, 4, txt(axe.indicateur), { bg: C.indigoL }); sc(s7, rr, 5, '', { bg: C.indigoL }); sc(s7, rr, 6, txt(axe.objectif), { bg: C.indigoL }); sc(s7, rr, 7, '', { bg: C.indigoL }); sc(s7, rr, 8, '', { bg: C.indigoL }); rr++
       if (axe.freins?.length) { sc(s7, rr, 1, 'Freins', { it: true }); sc(s7, rr, 2, axe.freins.map((f: string) => `• ${f}`).join('\n'), { it: true }); s7.mergeCells(rr, 2, rr, 8); rr++ }
       ;(axe.lignes ?? []).forEach((la: any, li: number) => {
         sc(s7, rr, 1, `LA${ai + 1}.${li + 1}`); sc(s7, rr, 2, txt(la.enonce)); sc(s7, rr, 3, txt(la.objectif)); sc(s7, rr, 4, txt(la.indicateur))
@@ -150,20 +151,20 @@ export async function GET(req: NextRequest) {
 
     // 9. Balanced Scorecard
     const s9 = wb.addWorksheet('Balanced Scorecard')
-    s9.columns = [{ width: 26 }, { width: 45 }, { width: 30 }, { width: 20 }]
-    title(s9, 'Balanced Scorecard', 4)
-    head(s9, 3, ['Perspective', 'Objectif', 'Indicateur', 'Cible'])
+    s9.columns = [{ width: 26 }, { width: 42 }, { width: 28 }, { width: 16 }, { width: 16 }]
+    title(s9, 'Balanced Scorecard (A = en Avance · P = a Posteriori)', 5)
+    head(s9, 3, ['Perspective', 'Objectif', 'Indicateur', 'Cible', 'Type'])
     const bscLabels: Record<string, string> = { finances: 'Résultats financiers', clients: 'Résultats clients', processus: 'Processus internes', apprentissage: 'Apprentissage organisationnel' }
     let br = 4
-    Object.entries(bscLabels).forEach(([k, lab]) => (d.bsc?.[k] ?? []).forEach((it: any) => { sc(s9, br, 1, lab); sc(s9, br, 2, txt(it.objectif)); sc(s9, br, 3, txt(it.indicateur)); sc(s9, br, 4, txt(it.cible)); br++ }))
+    Object.entries(bscLabels).forEach(([k, lab]) => (d.bsc?.[k] ?? []).forEach((it: any) => { sc(s9, br, 1, lab); sc(s9, br, 2, txt(it.objectif)); sc(s9, br, 3, txt(it.indicateur)); sc(s9, br, 4, txt(it.cible)); sc(s9, br, 5, it.type === 'A' ? 'A — en Avance' : 'P — a Posteriori', { ha: 'center' }); br++ }))
 
-    // 10. Master Plan
+    // 10. Master Plan (QQOQCP)
     const s10 = wb.addWorksheet('Master Plan')
-    s10.columns = [{ width: 45 }, { width: 12 }, { width: 16 }, { width: 20 }, { width: 30 }, { width: 14 }]
-    title(s10, 'Master Plan', 6)
-    head(s10, 3, ['Action / Projet', 'Type', 'Pilotage', 'Responsable', 'Livrables', 'Échéance'])
+    s10.columns = [{ width: 40 }, { width: 10 }, { width: 14 }, { width: 18 }, { width: 18 }, { width: 12 }, { width: 18 }, { width: 24 }, { width: 26 }]
+    title(s10, 'Master Plan (QQOQCP)', 9)
+    head(s10, 3, ['Quoi (action / projet)', 'Type', 'Pilotage', 'Qui (resp.)', 'Où (périmètre)', 'Quand', 'Combien (ressources)', 'Pourquoi (objectif)', 'Livrables'])
     const pilLab: Record<string, string> = { hierarchique: 'Hiérarchique', transversal: 'Transversal', projet: 'Projet' }
-    ;(d.master_plan ?? []).forEach((m: any, i: number) => { sc(s10, 4 + i, 1, txt(m.libelle)); sc(s10, 4 + i, 2, m.type === 'projet' ? 'Projet' : 'Action'); sc(s10, 4 + i, 3, pilLab[m.pilotage] ?? '—'); sc(s10, 4 + i, 4, txt(m.responsable)); sc(s10, 4 + i, 5, txt(m.livrables)); sc(s10, 4 + i, 6, txt(m.echeance)) })
+    ;(d.master_plan ?? []).forEach((m: any, i: number) => { sc(s10, 4 + i, 1, txt(m.libelle)); sc(s10, 4 + i, 2, m.type === 'projet' ? 'Projet' : 'Action'); sc(s10, 4 + i, 3, pilLab[m.pilotage] ?? '—'); sc(s10, 4 + i, 4, txt(m.responsable)); sc(s10, 4 + i, 5, txt(m.perimetre)); sc(s10, 4 + i, 6, txt(m.echeance)); sc(s10, 4 + i, 7, txt(m.ressources)); sc(s10, 4 + i, 8, txt(m.pourquoi)); sc(s10, 4 + i, 9, txt(m.livrables)) })
 
     // 11. Tableau de bord
     const s11 = wb.addWorksheet('Tableau de bord')
@@ -226,6 +227,71 @@ export async function GET(req: NextRequest) {
     title(s16, 'Déploiement niveau n-1 (QUOI × COMMENT, corrélation 3/2/1)', depActions.length + 1)
     head(s16, 3, ['QUOI (LA direction) \\ COMMENT', ...depActions.map((a: any, i: number) => a.libelle || `Action ${i + 1}`)])
     laRows.forEach((r, i) => { sc(s16, 4 + i, 1, `${r.label} — ${r.texte}`); depActions.forEach((a: any, j: number) => { const v = dep.scores?.[r.rk]?.[a.id] ?? 0; sc(s16, 4 + i, 2 + j, v || '', { ha: 'center', bg: v === 3 ? C.indigo : v ? C.indigoL : undefined, fg: v === 3 ? C.white : undefined }) }) })
+
+    // 17. FCS & arbre d'alignement
+    const s17 = wb.addWorksheet('FCS')
+    s17.columns = [{ width: 10 }, { width: 55 }, { width: 40 }, { width: 18 }]
+    title(s17, 'Facteurs Clés de Succès & indicateurs stratégiques', 4)
+    head(s17, 3, ['FCS', 'Énoncé', 'Indicateur stratégique', 'Cible'])
+    let fr = 4
+    ;(d.fcs ?? []).forEach((f: any, fi: number) => {
+      const inds = f.indicateurs ?? []
+      if (!inds.length) { sc(s17, fr, 1, `FCS${fi + 1}`, { bold: true }); sc(s17, fr, 2, txt(f.titre)); sc(s17, fr, 3, '—'); sc(s17, fr, 4, '—'); fr++ }
+      inds.forEach((ind: any, ii: number) => { sc(s17, fr, 1, ii === 0 ? `FCS${fi + 1}` : '', { bold: true }); sc(s17, fr, 2, ii === 0 ? txt(f.titre) : ''); sc(s17, fr, 3, txt(ind.libelle)); sc(s17, fr, 4, txt(ind.cible)); fr++ })
+    })
+
+    // 18. Carte stratégique
+    const s18 = wb.addWorksheet('Carte stratégique')
+    s18.columns = [{ width: 45 }, { width: 45 }, { width: 12 }, { width: 14 }]
+    title(s18, 'Carte stratégique — liens de cause à effet', 4)
+    head(s18, 3, ['Cause', 'Effet', 'Force', 'Durée (mois)'])
+    const bscPool: Record<string, string> = {}
+    Object.entries(bscLabels).forEach(([k, lab]) => (d.bsc?.[k] ?? []).forEach((it: any) => { bscPool[it.id] = `[${lab}] ${it.indicateur || it.objectif || '—'}` }))
+    const forceLab: Record<number, string> = { 3: 'Fort', 2: 'Moyen', 1: 'Faible' }
+    ;(d.carte ?? []).filter((l: any) => l.causeId && l.effetId).forEach((l: any, i: number) => {
+      sc(s18, 4 + i, 1, bscPool[l.causeId] ?? '—'); sc(s18, 4 + i, 2, bscPool[l.effetId] ?? '—'); sc(s18, 4 + i, 3, forceLab[l.force] ?? '—', { ha: 'center' }); sc(s18, 4 + i, 4, txt(l.duree), { ha: 'center' })
+    })
+
+    // 19. Communication
+    const s19 = wb.addWorksheet('Communication')
+    s19.columns = [{ width: 28 }, { width: 90 }]
+    title(s19, 'Communication de la stratégie', 2)
+    const comm = d.communication ?? {}
+    let cr = 3
+    sc(s19, cr, 1, 'Slogan', { bg: C.grayL, bold: true }); sc(s19, cr, 2, txt(comm.slogan)); cr++
+    sc(s19, cr, 1, 'Visuel de référence', { bg: C.grayL, bold: true }); sc(s19, cr, 2, txt(comm.visuel)); cr++
+    sc(s19, cr, 1, 'Messages clés', { bg: C.grayL, bold: true }); sc(s19, cr, 2, (comm.messages ?? []).map((m: string) => `• ${m}`).join('\n') || '—'); cr++
+    sc(s19, cr, 1, 'Objections', { bg: C.grayL, bold: true }); sc(s19, cr, 2, (comm.objections ?? []).map((m: string) => `• ${m}`).join('\n') || '—'); cr++
+    const commCheck: [string, string][] = [['swot3', 'SWOT : 3 majeurs par cadran, sentiment d’urgence'], ['mission', 'Mission : pourquoi et chaque mot expliqués'], ['vision20', 'Vision : 20 points clés max, écarts montrés'], ['axes', 'Axes : le QUOI expliqué'], ['cascading', 'Cascading : les LA = début du COMMENT'], ['managers', 'Managers : appropriation et implication']]
+    sc(s19, cr, 1, 'Checklist « faire comprendre »', { bg: C.grayL, bold: true }); sc(s19, cr, 2, commCheck.map(([k, lab]) => `${comm.checklist?.[k] ? '☑' : '☐'} ${lab}`).join('\n')); cr++
+
+    // 20. Canvas (BMC + Lean)
+    const s20 = wb.addWorksheet('Canvas')
+    s20.columns = [{ width: 34 }, { width: 90 }]
+    title(s20, 'Business Model Canvas & Lean Canvas', 2)
+    const bmcLabels: [string, string][] = [['segments', '1. Segments de clientèle'], ['proposition', '2. Proposition de valeur'], ['canaux', '3. Canaux'], ['relations', '4. Relations clients'], ['revenus', '5. Flux de revenus'], ['ressources', '6. Ressources clés'], ['activites', '7. Activités clés'], ['partenaires', '8. Partenariats clés'], ['couts', '9. Structure de coûts']]
+    const leanLabels: [string, string][] = [['probleme', '1. Problème'], ['segments', '2. Segments de clients'], ['uvp', '3. Proposition de valeur unique'], ['solution', '4. Solution'], ['canaux', '5. Canaux'], ['revenus', '6. Sources de revenus'], ['couts', '7. Structure de coûts'], ['indicateurs', '8. Indicateurs clés'], ['avantage', '9. Avantage déloyal']]
+    let vr = 3
+    sc(s20, vr, 1, 'BUSINESS MODEL CANVAS (Osterwalder)', { bg: C.indigoL, bold: true }); s20.mergeCells(vr, 1, vr, 2); vr++
+    bmcLabels.forEach(([k, lab]) => { sc(s20, vr, 1, lab, { bold: true }); sc(s20, vr, 2, ((d.canvas?.bmc?.[k] ?? []) as string[]).map(x => `• ${x}`).join('\n') || '—'); vr++ })
+    vr++
+    sc(s20, vr, 1, 'LEAN CANVAS (Ash Maurya)', { bg: C.indigoL, bold: true }); s20.mergeCells(vr, 1, vr, 2); vr++
+    leanLabels.forEach(([k, lab]) => { sc(s20, vr, 1, lab, { bold: true }); sc(s20, vr, 2, ((d.canvas?.lean?.[k] ?? []) as string[]).map(x => `• ${x}`).join('\n') || '—'); vr++ })
+
+    // 21. Revues de stratégie
+    const s21 = wb.addWorksheet('Revues')
+    s21.columns = [{ width: 14 }, { width: 30 }, { width: 80 }]
+    title(s21, 'Revues de stratégie (PDCA)', 3)
+    head(s21, 3, ['Date', 'Type', 'Compte rendu'])
+    const revLab: Record<string, string> = { unite: 'Suivi master plan (unité)', codir: 'Revue Codir', audit: 'Audit du président', reactualisation: 'Réactualisation annuelle' }
+    ;((d.pilotage?.revues ?? []) as any[]).forEach((r, i) => { sc(s21, 4 + i, 1, txt(r.date)); sc(s21, 4 + i, 2, revLab[r.type] ?? 'Revue'); sc(s21, 4 + i, 3, txt(r.note)) })
+
+    // Récolte des valeurs — complément sur la feuille Valeurs
+    const vc = d.valeurs_collecte ?? {}
+    const vcRows: [string, string[]][] = [['Partagées aujourd’hui', vc.aujourdhui ?? []], ['À mieux partager', vc.mieux ?? []], ['Pour réussir le projet', vc.projet ?? []]]
+    let vr6 = 6 + (d.valeurs?.length ?? 0)
+    sc(s6, vr6, 1, 'Récolte des valeurs (3 questions)', { bg: C.indigoL, bold: true }); s6.mergeCells(vr6, 1, vr6, 2); vr6++
+    vcRows.forEach(([lab, arr]) => { sc(s6, vr6, 1, lab, { bold: true }); sc(s6, vr6, 2, (arr as string[]).map(x => `• ${x}`).join('\n') || '—'); vr6++ })
 
     const buf = await wb.xlsx.writeBuffer()
     const name = `Strategie_${(org?.denomination ?? 'org').replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`

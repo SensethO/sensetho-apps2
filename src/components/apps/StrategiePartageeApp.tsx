@@ -19,20 +19,36 @@ interface VisionQuestions { entreprise: string; clients: string; marche: string;
 interface Vision { synthetique: string; detaillee: string; chiffree: string; parties: VisionParties; questions: VisionQuestions }
 interface Valeur { valeur: string; regles: string[] }
 interface LigneAction { id: string; enonce: string; objectif: string; indicateur: string; niveauActuel: string; cible: string; echeance: string; deployable: boolean }
-interface Axe { id: string; titre: string; freins: string[]; lignes: LigneAction[] }
+interface Axe { id: string; titre: string; indicateur: string; objectif: string; freins: string[]; lignes: LigneAction[] }
 interface StrategieActivite { produits: string[]; notes: string }
 // Phase 2 — Déployer
 interface Hoshin { scores: Record<string, Record<string, number>>; sponsors: Record<string, string> }
-interface BscItem { id: string; objectif: string; indicateur: string; cible: string }
+// type d'indicateur BSC : 'A' = en Avance (précurseur), 'P' = a Posteriori (règle du cours : 1/3 A, 2/3 P)
+interface BscItem { id: string; objectif: string; indicateur: string; cible: string; type: 'A' | 'P' }
 interface Bsc { finances: BscItem[]; clients: BscItem[]; processus: BscItem[]; apprentissage: BscItem[] }
-interface MasterRow { libelle: string; type: 'action' | 'projet'; pilotage: 'hierarchique' | 'transversal' | 'projet'; responsable: string; livrables: string; echeance: string }
+// QQOQCP : Quoi (libelle), Qui (responsable), Où (perimetre), Quand (echeance), Combien (ressources), Pourquoi (pourquoi)
+interface MasterRow { libelle: string; type: 'action' | 'projet'; pilotage: 'hierarchique' | 'transversal' | 'projet'; responsable: string; livrables: string; echeance: string; perimetre: string; ressources: string; pourquoi: string }
 // Phase 3 — Piloter
 type Feu = '' | 'vert' | 'orange' | 'rouge'
 interface Suivi { valeur: string; statut: Feu }
-interface Revue { date: string; note: string }
+// Types de revues du cours : suivi master plan en unité, revue Codir (trimestrielle),
+// audit du président, réactualisation annuelle de la stratégie.
+type RevueType = 'unite' | 'codir' | 'audit' | 'reactualisation'
+interface Revue { date: string; note: string; type: RevueType }
 interface Pilotage { suivi: Record<string, Suivi>; revues: Revue[] }
 type KotterStatut = 'afaire' | 'encours' | 'fait'
 interface KotterStep { statut: KotterStatut; note: string }
+// Arbre d'alignement stratégique : 3 à 5 FCS, chacun avec ses indicateurs stratégiques.
+interface FcsIndicateur { id: string; libelle: string; cible: string }
+interface Fcs { id: string; titre: string; indicateurs: FcsIndicateur[] }
+// Carte stratégique : lien de cause à effet entre 2 indicateurs BSC (force 3/2/1, durée en mois).
+interface CarteLien { id: string; causeId: string; effetId: string; force: number; duree: string }
+// Communication de la stratégie
+interface Communication { slogan: string; visuel: string; messages: string[]; objections: string[]; checklist: Record<string, boolean> }
+// Business Model Canvas & Lean Canvas (9 blocs chacun, listes)
+interface Canvas { bmc: Record<string, string[]>; lean: Record<string, string[]> }
+// Récolte des valeurs — les 3 questions du cours
+interface ValeursCollecte { aujourdhui: string[]; mieux: string[]; projet: string[] }
 // Matrices de croisement
 interface Tows { fo: string[]; fa: string[]; wo: string[]; wa: string[] }
 interface Matrices { visionAxes: Record<string, Record<string, number>>; attentesOffre: Record<string, Record<string, number>> }
@@ -56,7 +72,45 @@ interface Doc {
   tows: Tows
   matrices: Matrices
   deploiement: Deploiement
+  fcs: Fcs[]
+  carte: CarteLien[]
+  communication: Communication
+  canvas: Canvas
+  valeurs_collecte: ValeursCollecte
 }
+
+// Blocs des canvas (ordre du cours)
+const BMC_BLOCS: { key: string; label: string; hintTxt: string }[] = [
+  { key: 'segments', label: '1. Segments de clientèle', hintTxt: 'Pour qui créons-nous de la valeur ? Quels sont nos clients les plus importants ?' },
+  { key: 'proposition', label: '2. Proposition de valeur', hintTxt: 'Quelle valeur apportons-nous ? Quels problèmes résolvons-nous, à quels besoins répondons-nous ?' },
+  { key: 'canaux', label: '3. Canaux', hintTxt: 'Comment communiquons-nous et touchons-nous nos segments ? (reconnaissance, évaluation, achat, prestation, après-vente)' },
+  { key: 'relations', label: '4. Relations clients', hintTxt: 'Quel type de relation chaque segment souhaite-t-il ? (assistance, self-service, communautés, co-création…)' },
+  { key: 'revenus', label: '5. Flux de revenus', hintTxt: 'Pour quelle valeur nos clients sont-ils disposés à payer ? Comment ? (vente, abonnement, licence…)' },
+  { key: 'ressources', label: '6. Ressources clés', hintTxt: 'Actifs requis : physiques, intellectuels, humains, financiers.' },
+  { key: 'activites', label: '7. Activités clés', hintTxt: 'Que devons-nous faire pour que le modèle fonctionne ? (production, résolution de problèmes, plate-forme)' },
+  { key: 'partenaires', label: '8. Partenariats clés', hintTxt: 'Partenaires et fournisseurs clés (alliances, coopétition, joint-venture, acheteur-fournisseur).' },
+  { key: 'couts', label: '9. Structure de coûts', hintTxt: 'Coûts les plus importants ; ressources et activités les plus coûteuses ; logique coûts ou valeur.' },
+]
+const LEAN_BLOCS: { key: string; label: string; hintTxt: string }[] = [
+  { key: 'probleme', label: '1. Problème', hintTxt: 'Les 3 problèmes essentiels à résoudre pour le client ; solutions existantes.' },
+  { key: 'segments', label: '2. Segments de clients', hintTxt: 'Clients cibles ; caractériser les early adopters.' },
+  { key: 'uvp', label: '3. Proposition de valeur unique', hintTxt: 'Message simple, clair et persuasif : en quoi le produit est différent et mérite d’être acheté.' },
+  { key: 'solution', label: '4. Solution', hintTxt: 'Les 3 fonctionnalités essentielles — rester au niveau de l’ébauche la plus simple.' },
+  { key: 'canaux', label: '5. Canaux', hintTxt: 'Chemins d’accès aux clients (entrants/sortants, gratuits/payants, direct/indirect).' },
+  { key: 'revenus', label: '6. Sources de revenus', hintTxt: 'Modèle de revenus, prix (le prix fait partie du produit et détermine vos clients).' },
+  { key: 'couts', label: '7. Structure de coûts', hintTxt: 'Coûts opérationnels, coût du MVP, taux d’absorption, seuil de rentabilité.' },
+  { key: 'indicateurs', label: '8. Indicateurs clés', hintTxt: 'Pirate Metrics : Acquisition, Activation, Rétention, Revenu, Recommandation.' },
+  { key: 'avantage', label: '9. Avantage déloyal', hintTxt: 'Ce qui ne peut pas être facilement copié ou acheté (communauté, experts, effet réseau…).' },
+]
+// Checklist « Tout d'abord faire comprendre ! » (communication)
+const COMM_CHECKLIST: { key: string; label: string }[] = [
+  { key: 'swot3', label: 'SWOT : rester sur les 3 majeurs par cadran, créer le sentiment d’urgence (chiffres)' },
+  { key: 'mission', label: 'Mission : expliquer le pourquoi et chaque mot, dimension noble' },
+  { key: 'vision20', label: 'Vision : aller à l’essentiel (20 points clés max), montrer les écarts, susciter les échanges' },
+  { key: 'axes', label: 'Axes : expliquer chaque axe = le QUOI ; ensemble on construira le COMMENT' },
+  { key: 'cascading', label: 'Cascading : expliquer la suite, les Lignes d’Actions = le début du COMMENT' },
+  { key: 'managers', label: 'Managers : appropriation (questions, clarifications) et implication (venir avec des idées)' },
+]
 
 // Clé stable dérivée du texte (robuste au réordonnancement des listes de chaînes).
 function slug(s: string): string {
@@ -119,10 +173,15 @@ function emptyDoc(): Doc {
     tows: { fo: [], fa: [], wo: [], wa: [] },
     matrices: { visionAxes: {}, attentesOffre: {} },
     deploiement: { actions: [], scores: {} },
+    fcs: [],
+    carte: [],
+    communication: { slogan: '', visuel: '', messages: [], objections: [], checklist: {} },
+    canvas: { bmc: {}, lean: {} },
+    valeurs_collecte: { aujourdhui: [], mieux: [], projet: [] },
   }
 }
 
-type TabKey = 'presentation' | 'mission' | 'swot' | 'attentes' | 'vision' | 'valeurs' | 'axes' | 'activite' | 'hoshin' | 'deploiement' | 'bsc' | 'masterplan' | 'tableaubord' | 'changement'
+type TabKey = 'presentation' | 'mission' | 'swot' | 'attentes' | 'vision' | 'valeurs' | 'axes' | 'activite' | 'hoshin' | 'deploiement' | 'masterplan' | 'communication' | 'fcs' | 'bsc' | 'carte' | 'tableaubord' | 'changement'
 const TABS: { key: TabKey; label: string; phase: 1 | 2 | 3 }[] = [
   { key: 'presentation', label: '📖 Présentation', phase: 1 },
   { key: 'mission', label: '🎯 Mission', phase: 1 },
@@ -134,8 +193,11 @@ const TABS: { key: TabKey; label: string; phase: 1 | 2 | 3 }[] = [
   { key: 'activite', label: '📦 Stratégie d’activité', phase: 1 },
   { key: 'hoshin', label: '🔀 Matrice Hoshin', phase: 2 },
   { key: 'deploiement', label: '⬇️ Déploiement (QUOI/COMMENT)', phase: 2 },
-  { key: 'bsc', label: '📊 Balanced Scorecard', phase: 2 },
   { key: 'masterplan', label: '🗓️ Master Plan', phase: 2 },
+  { key: 'communication', label: '📣 Communication', phase: 2 },
+  { key: 'fcs', label: '🌳 FCS & Arbre d’alignement', phase: 3 },
+  { key: 'bsc', label: '📊 Balanced Scorecard', phase: 3 },
+  { key: 'carte', label: '🗺️ Carte stratégique', phase: 3 },
   { key: 'tableaubord', label: '📈 Tableau de bord', phase: 3 },
   { key: 'changement', label: '🚀 Conduite du changement', phase: 3 },
 ]
@@ -229,17 +291,25 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
         }
         d.valeurs = Array.isArray(row.valeurs) ? row.valeurs as Valeur[] : []
         d.axes = Array.isArray(row.axes) ? row.axes as Axe[] : []
-        // Backfill des ids stables (données antérieures aux ids)
-        d.axes.forEach(a => { if (!a.id) a.id = uid(); a.lignes = Array.isArray(a.lignes) ? a.lignes : []; a.lignes.forEach(l => { if (!l.id) l.id = uid() }) })
+        // Backfill des ids stables et nouveaux champs (données antérieures)
+        d.axes.forEach(a => { if (!a.id) a.id = uid(); a.indicateur = a.indicateur ?? ''; a.objectif = a.objectif ?? ''; a.lignes = Array.isArray(a.lignes) ? a.lignes : []; a.lignes.forEach(l => { if (!l.id) l.id = uid() }) })
         Object.assign(d.strategie_activite, row.strategie_activite ?? {})
         if (row.hoshin) { const h = row.hoshin as Partial<Hoshin>; d.hoshin = { scores: h.scores ?? {}, sponsors: h.sponsors ?? {} } }
-        if (row.bsc) { Object.assign(d.bsc, row.bsc); (Object.keys(d.bsc) as (keyof Bsc)[]).forEach(k => d.bsc[k].forEach(it => { if (!it.id) it.id = uid() })) }
+        if (row.bsc) { Object.assign(d.bsc, row.bsc); (Object.keys(d.bsc) as (keyof Bsc)[]).forEach(k => d.bsc[k].forEach(it => { if (!it.id) it.id = uid(); if (it.type !== 'A' && it.type !== 'P') it.type = 'P' })) }
         d.master_plan = Array.isArray(row.master_plan) ? row.master_plan as MasterRow[] : []
-        if (row.pilotage) { const p = row.pilotage as Partial<Pilotage>; d.pilotage = { suivi: p.suivi ?? {}, revues: Array.isArray(p.revues) ? p.revues : [] } }
+        d.master_plan.forEach(m => { m.perimetre = m.perimetre ?? ''; m.ressources = m.ressources ?? ''; m.pourquoi = m.pourquoi ?? '' })
+        if (row.pilotage) { const p = row.pilotage as Partial<Pilotage>; d.pilotage = { suivi: p.suivi ?? {}, revues: Array.isArray(p.revues) ? p.revues : [] }; d.pilotage.revues.forEach(r => { if (!r.type) r.type = 'codir' }) }
         if (Array.isArray(row.kotter) && row.kotter.length === KOTTER_ETAPES.length) d.kotter = row.kotter as KotterStep[]
         if (row.tows) Object.assign(d.tows, row.tows)
         if (row.matrices) { const m = row.matrices as Partial<Matrices>; d.matrices = { visionAxes: m.visionAxes ?? {}, attentesOffre: m.attentesOffre ?? {} } }
         if (row.deploiement) { const dp = row.deploiement as Partial<Deploiement>; d.deploiement = { actions: Array.isArray(dp.actions) ? dp.actions : [], scores: dp.scores ?? {} }; d.deploiement.actions.forEach(a => { if (!a.id) a.id = uid() }) }
+        d.fcs = Array.isArray(row.fcs) ? row.fcs as Fcs[] : []
+        d.fcs.forEach(f => { if (!f.id) f.id = uid(); f.indicateurs = Array.isArray(f.indicateurs) ? f.indicateurs : []; f.indicateurs.forEach(i => { if (!i.id) i.id = uid() }) })
+        d.carte = Array.isArray(row.carte) ? row.carte as CarteLien[] : []
+        d.carte.forEach(l => { if (!l.id) l.id = uid() })
+        if (row.communication) { const c = row.communication as Partial<Communication>; d.communication = { slogan: c.slogan ?? '', visuel: c.visuel ?? '', messages: c.messages ?? [], objections: c.objections ?? [], checklist: c.checklist ?? {} } }
+        if (row.canvas) { const cv = row.canvas as Partial<Canvas>; d.canvas = { bmc: cv.bmc ?? {}, lean: cv.lean ?? {} } }
+        if (row.valeurs_collecte) { const vc = row.valeurs_collecte as Partial<ValeursCollecte>; d.valeurs_collecte = { aujourdhui: vc.aujourdhui ?? [], mieux: vc.mieux ?? [], projet: vc.projet ?? [] } }
       }
       setDoc(d); setDirty(false); initial.current = true
     } catch (e) { setError(String((e as Error).message ?? e)) }
@@ -400,11 +470,14 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
           {tab === 'swot' && <SwotTab swot={doc.swot} tows={doc.tows} update={update} readOnly={readOnly} />}
           {tab === 'attentes' && <AttentesTab a={doc.attentes} produits={doc.strategie_activite.produits} matrices={doc.matrices} update={update} readOnly={readOnly} />}
           {tab === 'vision' && <VisionTab vision={doc.vision} axes={doc.axes} matrices={doc.matrices} update={update} readOnly={readOnly} />}
-          {tab === 'valeurs' && <ValeursTab valeurs={doc.valeurs} update={update} readOnly={readOnly} />}
+          {tab === 'valeurs' && <ValeursTab valeurs={doc.valeurs} collecte={doc.valeurs_collecte} update={update} readOnly={readOnly} />}
           {tab === 'axes' && <AxesTab axes={doc.axes} update={update} readOnly={readOnly} />}
-          {tab === 'activite' && <ActiviteTab sa={doc.strategie_activite} update={update} readOnly={readOnly} />}
+          {tab === 'activite' && <ActiviteTab sa={doc.strategie_activite} canvas={doc.canvas} update={update} readOnly={readOnly} />}
           {tab === 'hoshin' && <HoshinTab axes={doc.axes} hoshin={doc.hoshin} update={update} readOnly={readOnly} />}
           {tab === 'deploiement' && <DeploiementTab axes={doc.axes} deploiement={doc.deploiement} update={update} readOnly={readOnly} />}
+          {tab === 'communication' && <CommunicationTab comm={doc.communication} update={update} readOnly={readOnly} />}
+          {tab === 'fcs' && <FcsTab fcs={doc.fcs} vision={doc.vision} axes={doc.axes} update={update} readOnly={readOnly} />}
+          {tab === 'carte' && <CarteTab carte={doc.carte} bsc={doc.bsc} update={update} readOnly={readOnly} />}
           {tab === 'bsc' && <BscTab bsc={doc.bsc} update={update} readOnly={readOnly} />}
           {tab === 'masterplan' && <MasterPlanTab rows={doc.master_plan} update={update} readOnly={readOnly} />}
           {tab === 'tableaubord' && <TableauBordTab axes={doc.axes} bsc={doc.bsc} pilotage={doc.pilotage} update={update} readOnly={readOnly} />}
@@ -742,12 +815,32 @@ function VisionTab({ vision, axes, matrices, update, readOnly }: { vision: Visio
 }
 
 // ── Valeurs & règles du jeu ──
-function ValeursTab({ valeurs, update, readOnly }: { valeurs: Valeur[]; update: Upd; readOnly: boolean }) {
+function ValeursTab({ valeurs, collecte, update, readOnly }: { valeurs: Valeur[]; collecte: ValeursCollecte; update: Upd; readOnly: boolean }) {
+  const questions: { key: keyof ValeursCollecte; label: string }[] = [
+    { key: 'aujourdhui', label: 'Quelles valeurs sommes-nous sûrs de partager aujourd’hui dans notre entreprise ?' },
+    { key: 'mieux', label: 'Quelles valeurs voudrions-nous mieux partager pour réussir notre projet stratégique ?' },
+    { key: 'projet', label: 'Quelles valeurs devrions-nous partager pour réussir notre projet ?' },
+  ]
   return (
     <div className="space-y-4">
       <div className={card}>
         <h3 className="font-semibold text-gray-900 dark:text-white">Valeurs & règles du jeu</h3>
         <p className={hint}>Culture, morale et éthique à partager. Chaque valeur se traduit en règles de comportement concrètes, formulées positivement et évaluables. Le management doit être exemplaire.</p>
+      </div>
+
+      <div className={card}>
+        <div>
+          <h4 className="font-medium text-gray-900 dark:text-white">Déterminer les valeurs — récolte (Codir + équipes)</h4>
+          <p className={hint}>Méthode du cours : pour chaque question, 3 valeurs par personne sur post-it, tri par affinité, hiérarchisation (vote 3 gommettes), puis synthèse pour <strong>choisir 3 à 6 valeurs</strong>. La détermination ne peut être le fait du seul Codir : récolte préalable auprès du personnel, confrontation, synthèse générale.</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {questions.map(q => (
+            <div key={q.key} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2 bg-gray-50/60 dark:bg-gray-800/30">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-300">{q.label}</p>
+              <StringList items={collecte[q.key]} readOnly={readOnly} onChange={v => update(d => { d.valeurs_collecte[q.key] = v })} placeholder="Valeur…" />
+            </div>
+          ))}
+        </div>
       </div>
       {valeurs.map((v, i) => (
         <div key={i} className={card}>
@@ -782,6 +875,19 @@ function AxesTab({ axes, update, readOnly }: { axes: Axe[]; update: Upd; readOnl
             <input className={`${input} font-medium`} value={axe.titre} disabled={readOnly} placeholder="Énoncé de l’axe stratégique"
               onChange={e => update(d => { d.axes[ai].titre = e.target.value })} />
             {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.axes.splice(ai, 1) })}>Supprimer</button>}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className={label}>Indicateur de l’axe (mesure la réussite de l’axe)</label>
+              <input className={input} value={axe.indicateur} disabled={readOnly} placeholder="ex. Index satisfaction sur 100"
+                onChange={e => update(d => { d.axes[ai].indicateur = e.target.value })} />
+            </div>
+            <div>
+              <label className={label}>Objectif de l’axe (niveau à atteindre)</label>
+              <input className={input} value={axe.objectif} disabled={readOnly} placeholder="ex. 77,5"
+                onChange={e => update(d => { d.axes[ai].objectif = e.target.value })} />
+            </div>
           </div>
 
           <div>
@@ -820,26 +926,56 @@ function AxesTab({ axes, update, readOnly }: { axes: Axe[]; update: Upd; readOnl
           </div>
         </div>
       ))}
-      {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.axes.push({ id: uid(), titre: '', freins: [], lignes: [] }) })}>+ Ajouter un axe stratégique</button>}
+      {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.axes.push({ id: uid(), titre: '', indicateur: '', objectif: '', freins: [], lignes: [] }) })}>+ Ajouter un axe stratégique</button>}
     </div>
   )
 }
 
 // ── Stratégie d'activité ──
-function ActiviteTab({ sa, update, readOnly }: { sa: StrategieActivite; update: Upd; readOnly: boolean }) {
+function ActiviteTab({ sa, canvas, update, readOnly }: { sa: StrategieActivite; canvas: Canvas; update: Upd; readOnly: boolean }) {
+  const [canvasMode, setCanvasMode] = useState<'bmc' | 'lean'>('bmc')
+  const blocs = canvasMode === 'bmc' ? BMC_BLOCS : LEAN_BLOCS
+  const data = canvasMode === 'bmc' ? canvas.bmc : canvas.lean
   return (
-    <div className={card}>
-      <div>
-        <h3 className="font-semibold text-gray-900 dark:text-white">Stratégie d’activité</h3>
-        <p className={hint}>Quels produits/services pour atteindre notre vision — répondant aux attentes clients et au marché, fruit de notre R&D et de notre innovation ? (Outils possibles : Business Model Canvas d’Osterwalder, Lean Canvas d’Ash Maurya.)</p>
+    <div className="space-y-4">
+      <div className={card}>
+        <div>
+          <h3 className="font-semibold text-gray-900 dark:text-white">Stratégie d’activité</h3>
+          <p className={hint}>Quels produits/services pour atteindre notre vision — répondant aux attentes clients et au marché, fruit de notre R&D et de notre innovation ?</p>
+        </div>
+        <div>
+          <label className={label}>Produits / services clés</label>
+          <StringList items={sa.produits} readOnly={readOnly} onChange={v => update(d => { d.strategie_activite.produits = v })} />
+        </div>
+        <div>
+          <label className={label}>Notes (plan produit, critères de choix par marché…)</label>
+          <textarea className={`${input} h-24`} value={sa.notes} disabled={readOnly} onChange={e => update(d => { d.strategie_activite.notes = e.target.value })} />
+        </div>
       </div>
-      <div>
-        <label className={label}>Produits / services clés</label>
-        <StringList items={sa.produits} readOnly={readOnly} onChange={v => update(d => { d.strategie_activite.produits = v })} />
-      </div>
-      <div>
-        <label className={label}>Notes (Business Model Canvas / Lean Canvas, plan produit…)</label>
-        <textarea className={`${input} h-32`} value={sa.notes} disabled={readOnly} onChange={e => update(d => { d.strategie_activite.notes = e.target.value })} />
+
+      <div className={card}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h4 className="font-medium text-gray-900 dark:text-white">{canvasMode === 'bmc' ? 'Business Model Canvas (Osterwalder & Pigneur)' : 'Lean Canvas (Ash Maurya — Running Lean)'}</h4>
+            <p className={hint}>{canvasMode === 'bmc' ? 'Les 9 blocs du modèle économique — remplir de gauche (entreprise) à droite (marché).' : 'Les 9 blocs orientés produit/startup — commencer par Problème et Segments.'}</p>
+          </div>
+          <div className="flex gap-1">
+            <button className={`px-2.5 py-1.5 text-xs rounded-lg ${canvasMode === 'bmc' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`} onClick={() => setCanvasMode('bmc')}>Business Model Canvas</button>
+            <button className={`px-2.5 py-1.5 text-xs rounded-lg ${canvasMode === 'lean' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`} onClick={() => setCanvasMode('lean')}>Lean Canvas</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {blocs.map(b => (
+            <div key={b.key} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2 bg-gray-50/60 dark:bg-gray-800/30">
+              <div>
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{b.label}</p>
+                <p className="text-[10px] text-gray-400">{b.hintTxt}</p>
+              </div>
+              <StringList items={data[b.key] ?? []} readOnly={readOnly}
+                onChange={v => update(d => { d.canvas[canvasMode][b.key] = v })} />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -852,7 +988,7 @@ function HoshinTab({ axes, hoshin, update, readOnly }: { axes: Axe[]; hoshin: Ho
   axes.forEach((axe, ai) => axe.lignes.forEach((la, li) => {
     rows.push({ rk: la.id, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '—' })
   }))
-  const cols = axes.map((axe, ai) => ({ ck: axe.id, label: `A${ai + 1}`, texte: axe.titre || '—' }))
+  const cols = axes.map((axe, ai) => ({ ck: axe.id, label: `A${ai + 1}`, texte: axe.titre || '—', indicateur: axe.indicateur, objectif: axe.objectif }))
 
   if (!cols.length || !rows.length) {
     return (
@@ -889,9 +1025,12 @@ function HoshinTab({ axes, hoshin, update, readOnly }: { axes: Axe[]; hoshin: Ho
             <tr>
               <th className="p-2 text-left sticky left-0 bg-white dark:bg-gray-800/40 min-w-[220px]">Lignes d’actions \ Axes</th>
               {cols.map(c => (
-                <th key={c.ck} className="p-2 align-bottom text-center min-w-[64px]" title={c.texte}>
+                <th key={c.ck} className="p-2 align-bottom text-center min-w-[64px]" title={`${c.texte}${c.indicateur ? `\nIndicateur : ${c.indicateur}` : ''}${c.objectif ? `\nObjectif : ${c.objectif}` : ''}`}>
                   <div className="font-bold text-indigo-700 dark:text-indigo-400">{c.label}</div>
                   <div className="text-[10px] font-normal text-gray-400 max-w-[80px] truncate mx-auto">{c.texte}</div>
+                  {(c.indicateur || c.objectif) && (
+                    <div className="text-[9px] font-normal text-indigo-400 max-w-[80px] truncate mx-auto">{[c.indicateur, c.objectif].filter(Boolean).join(' → ')}</div>
+                  )}
                 </th>
               ))}
               <th className="p-2 text-center font-semibold">Σ</th>
@@ -948,7 +1087,11 @@ function DeploiementTab({ axes, deploiement, update, readOnly }: { axes: Axe[]; 
     <div className={card}>
       <div>
         <h3 className="font-semibold text-gray-900 dark:text-white">Déploiement niveau n-1 — matrice QUOI / COMMENT</h3>
-        <p className={hint}>Le déploiement descend par une démarche QUOI/COMMENT : les lignes d’actions de la direction (QUOI, en lignes) sont traduites en lignes d’actions du niveau inférieur (COMMENT, en colonnes). Notez la corrélation : 3 fort · 2 moyen · 1 faible. La somme par colonne vérifie l’alignement de chaque action n-1.</p>
+        <p className={hint}>Le déploiement descend par une démarche QUOI/COMMENT : les lignes d’actions de la direction (QUOI, en lignes) sont traduites en lignes d’actions du niveau inférieur (COMMENT, en colonnes). Notez la corrélation : 3 fort · 2 moyen · 1 faible. La somme par colonne vérifie l’alignement de chaque action n-1. En général 10 à 20 lignes d’actions au niveau Codir ; les lignes d’actions doivent induire une amélioration ou une transformation.</p>
+      </div>
+
+      <div className="rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 px-4 py-3 text-xs text-indigo-800 dark:text-indigo-300">
+        <strong>Catchball</strong> (Hoshin Kanri) : réunions d’ajustement et de négociation entre lignes hiérarchiques (n-1/n-2…). Vérifie que les lignes d’actions sont pertinentes et exécutables, résout les conflits et besoins en ressources, gère les liens entre départements (ligne d’action affectant un autre processus, gap nécessitant une coopération transversale). Le mécanisme remontant d’alignement permet l’équilibrage, à partir des master plans des unités.
       </div>
 
       {rows.length === 0 ? (
@@ -992,17 +1135,36 @@ function DeploiementTab({ axes, deploiement, update, readOnly }: { axes: Axe[]; 
 
 // ── Balanced Scorecard ──────────────────────────────────────────────────────────
 function BscTab({ bsc, update, readOnly }: { bsc: Bsc; update: Upd; readOnly: boolean }) {
-  const persp: { key: keyof Bsc; title: string; sub: string }[] = [
-    { key: 'finances', title: 'Résultats financiers', sub: 'Comment nous voient nos actionnaires ?' },
-    { key: 'clients', title: 'Résultats clients', sub: 'Comment nous voient nos clients ?' },
-    { key: 'processus', title: 'Processus internes', sub: 'Quels processus maîtriser pour satisfaire clients et actionnaires ?' },
-    { key: 'apprentissage', title: 'Apprentissage organisationnel', sub: 'Comment continuer à progresser et créer de la valeur ?' },
+  const persp: { key: keyof Bsc; title: string; sub: string; cible: number }[] = [
+    { key: 'finances', title: 'Résultats financiers', sub: 'Que faut-il apporter aux actionnaires ?', cible: 20 },
+    { key: 'clients', title: 'Résultats clients / parties prenantes', sub: 'Que faut-il apporter aux clients (et autres parties prenantes) ?', cible: 20 },
+    { key: 'processus', title: 'Processus internes', sub: 'Quels processus clés dans la satisfaction des clients et des actionnaires ?', cible: 40 },
+    { key: 'apprentissage', title: 'Apprentissage organisationnel', sub: 'Comment piloter le changement et l’amélioration ?', cible: 20 },
   ]
+  // Équilibrage (règles du cours) : 15-25 indicateurs ; 1/3 en Avance, 2/3 a Posteriori ; 20/20/40/20 par axe.
+  const total = persp.reduce((s, p) => s + bsc[p.key].length, 0)
+  const nbAvance = persp.reduce((s, p) => s + bsc[p.key].filter(i => i.type === 'A').length, 0)
+  const pctA = total ? Math.round((nbAvance / total) * 100) : 0
+  const okTotal = total >= 15 && total <= 25
+  const okAvance = total > 0 && pctA >= 25 && pctA <= 45
+  const badge = (ok: boolean, txt2: string) => (
+    <span className={`px-2 py-1 rounded text-xs ${ok ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'}`}>{txt2}</span>
+  )
   return (
     <div className="space-y-4">
       <div className={card}>
-        <h3 className="font-semibold text-gray-900 dark:text-white">Balanced Scorecard — 4 perspectives</h3>
-        <p className={hint}>Traduisez la vision et la stratégie en objectifs et indicateurs équilibrés sur les 4 perspectives.</p>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Balanced Scorecard — 4 perspectives (Kaplan & Norton)</h3>
+        <p className={hint}>Un tableau de bord relié à la stratégie (si la stratégie change, les indicateurs changent). Type d’indicateur : <strong>A</strong> = en Avance (précurseur) · <strong>P</strong> = a Posteriori. Règles d’équilibrage : 15 à 25 indicateurs · 1/3 en avance, 2/3 a posteriori · ventilation 20 % Finances, 20 % Clients, 40 % Processus, 20 % Apprentissage.</p>
+        {total > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {badge(okTotal, `${total} indicateur${total > 1 ? 's' : ''} (cible 15-25)`)}
+            {badge(okAvance, `${pctA} % en avance (cible ~33 %)`)}
+            {persp.map(p => {
+              const pct = total ? Math.round((bsc[p.key].length / total) * 100) : 0
+              return badge(Math.abs(pct - p.cible) <= 12, `${p.title.split(' ')[1] ?? p.key} ${pct} % (cible ${p.cible} %)`)
+            })}
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {persp.map(p => (
@@ -1014,6 +1176,11 @@ function BscTab({ bsc, update, readOnly }: { bsc: Bsc; update: Upd; readOnly: bo
                   <div className="flex items-center gap-2">
                     <input className={input} value={it.objectif} disabled={readOnly} placeholder="Objectif"
                       onChange={e => update(d => { d.bsc[p.key][i].objectif = e.target.value })} />
+                    <select className={`${input} w-40`} value={it.type ?? 'P'} disabled={readOnly} title="A = en Avance (précurseur) · P = a Posteriori"
+                      onChange={e => update(d => { d.bsc[p.key][i].type = e.target.value as 'A' | 'P' })}>
+                      <option value="A">A — en Avance</option>
+                      <option value="P">P — a Posteriori</option>
+                    </select>
                     {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.bsc[p.key].splice(i, 1) })}>✕</button>}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1024,7 +1191,7 @@ function BscTab({ bsc, update, readOnly }: { bsc: Bsc; update: Upd; readOnly: bo
                   </div>
                 </div>
               ))}
-              {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.bsc[p.key].push({ id: uid(), objectif: '', indicateur: '', cible: '' }) })}>+ Objectif</button>}
+              {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.bsc[p.key].push({ id: uid(), objectif: '', indicateur: '', cible: '', type: 'P' }) })}>+ Objectif</button>}
             </div>
           </div>
         ))}
@@ -1040,18 +1207,21 @@ function MasterPlanTab({ rows, update, readOnly }: { rows: MasterRow[]; update: 
     <div className={card}>
       <div>
         <h3 className="font-semibold text-gray-900 dark:text-white">Master Plan</h3>
-        <p className={hint}>Positionnez les actions/projets dans le temps. Précisez le type (action ou projet), le mode de pilotage (hiérarchique/vertical, transversal, ou projet), le responsable, les livrables et l’échéance.</p>
+        <p className={hint}>Positionnez les actions/projets dans le temps (master plan sur 3 ans, précision du trimestre sur la première année). Planifiez selon <strong>QQOQCP</strong> : Quoi (l’action, orientée finalité) · Qui (le responsable) · Où (le périmètre) · Quand (l’échéance) · Combien (les ressources) · Pourquoi (l’objectif).</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-              <th className="p-2 min-w-[220px]">Action / Projet</th>
+              <th className="p-2 min-w-[200px]">Quoi (action / projet)</th>
               <th className="p-2">Type</th>
               <th className="p-2">Pilotage</th>
-              <th className="p-2 min-w-[120px]">Responsable</th>
-              <th className="p-2 min-w-[160px]">Livrables</th>
-              <th className="p-2 min-w-[110px]">Échéance</th>
+              <th className="p-2 min-w-[110px]">Qui (resp.)</th>
+              <th className="p-2 min-w-[110px]">Où (périmètre)</th>
+              <th className="p-2 min-w-[100px]">Quand</th>
+              <th className="p-2 min-w-[110px]">Combien (ressources)</th>
+              <th className="p-2 min-w-[130px]">Pourquoi (objectif)</th>
+              <th className="p-2 min-w-[140px]">Livrables</th>
               {!readOnly && <th className="p-2" />}
             </tr>
           </thead>
@@ -1070,15 +1240,18 @@ function MasterPlanTab({ rows, update, readOnly }: { rows: MasterRow[]; update: 
                   </select>
                 </td>
                 <td className="p-1"><input className={input} value={r.responsable} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].responsable = e.target.value })} /></td>
-                <td className="p-1"><input className={input} value={r.livrables} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].livrables = e.target.value })} /></td>
+                <td className="p-1"><input className={input} value={r.perimetre} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].perimetre = e.target.value })} /></td>
                 <td className="p-1"><input className={input} value={r.echeance} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].echeance = e.target.value })} /></td>
+                <td className="p-1"><input className={input} value={r.ressources} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].ressources = e.target.value })} /></td>
+                <td className="p-1"><input className={input} value={r.pourquoi} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].pourquoi = e.target.value })} /></td>
+                <td className="p-1"><input className={input} value={r.livrables} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].livrables = e.target.value })} /></td>
                 {!readOnly && <td className="p-1 text-center"><button className={btnGhost} onClick={() => update(d => { d.master_plan.splice(i, 1) })}>✕</button></td>}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.master_plan.push({ libelle: '', type: 'action', pilotage: 'hierarchique', responsable: '', livrables: '', echeance: '' }) })}>+ Ajouter une ligne</button>}
+      {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.master_plan.push({ libelle: '', type: 'action', pilotage: 'hierarchique', responsable: '', livrables: '', echeance: '', perimetre: '', ressources: '', pourquoi: '' }) })}>+ Ajouter une ligne</button>}
     </div>
   )
 }
@@ -1168,17 +1341,186 @@ function TableauBordTab({ axes, bsc, pilotage, update, readOnly }: { axes: Axe[]
 
       <div className={card}>
         <h4 className="font-medium text-gray-900 dark:text-white">Revues de stratégie</h4>
-        <p className={hint}>Roue PDCA : consignez les comptes rendus des revues (décisions, ajustements des plans).</p>
+        <p className={hint}>Roue PDCA — dispositif du cours : suivi des <strong>master plans en unité</strong> (fréquence définie), revue de la stratégie en <strong>Codir</strong> (habituellement trimestrielle, tableau de bord mensuel ou trimestriel), <strong>audit du président</strong> (objectif, modalités) et <strong>réactualisation annuelle</strong> de la stratégie.</p>
         {pilotage.revues.map((rev, i) => (
           <div key={i} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2 bg-gray-50/60 dark:bg-gray-800/30">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input className={`${input} w-40`} type="date" value={rev.date} disabled={readOnly} onChange={e => update(d => { d.pilotage.revues[i].date = e.target.value })} />
+              <select className={`${input} w-56`} value={rev.type ?? 'codir'} disabled={readOnly} onChange={e => update(d => { d.pilotage.revues[i].type = e.target.value as RevueType })}>
+                <option value="unite">Suivi master plan (unité)</option>
+                <option value="codir">Revue Codir (trimestrielle)</option>
+                <option value="audit">Audit du président</option>
+                <option value="reactualisation">Réactualisation annuelle</option>
+              </select>
               {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.pilotage.revues.splice(i, 1) })}>Supprimer</button>}
             </div>
             <textarea className={`${input} h-20`} value={rev.note} disabled={readOnly} placeholder="Compte rendu, décisions, ajustements…" onChange={e => update(d => { d.pilotage.revues[i].note = e.target.value })} />
           </div>
         ))}
-        {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.pilotage.revues.push({ date: '', note: '' }) })}>+ Ajouter une revue</button>}
+        {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.pilotage.revues.push({ date: '', note: '', type: 'codir' }) })}>+ Ajouter une revue</button>}
+      </div>
+    </div>
+  )
+}
+
+// ── FCS & Arbre d'alignement stratégique ─────────────────────────────────────────
+function FcsTab({ fcs, vision, axes, update, readOnly }: { fcs: Fcs[]; vision: Vision; axes: Axe[]; update: Upd; readOnly: boolean }) {
+  return (
+    <div className="space-y-4">
+      <div className={card}>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Facteurs Clés de Succès & Arbre d’alignement stratégique</h3>
+        <p className={hint}>3 à 5 grands aspects sur lesquels l’entreprise doit se focaliser pour atteindre sa vision (leviers). L’arbre relie : Stratégie → FCS → indicateurs stratégiques → indicateurs opérationnels. Questions clés : Pourquoi les clients achètent-ils une première fois, pourquoi reviennent-ils ? Quels avantages pourrions-nous mieux exploiter ? Quels problèmes devons-nous régler sans quoi notre succès futur serait en danger ? Que devons-nous absolument réussir ?</p>
+      </div>
+
+      {/* Sommet de l'arbre : vision + axes (rappel) */}
+      <div className={card}>
+        <h4 className="font-medium text-gray-900 dark:text-white">Sommet de l’arbre</h4>
+        <p className="text-sm text-gray-700 dark:text-gray-300"><strong>Vision :</strong> {vision.synthetique || <span className="text-gray-400">à renseigner (onglet Vision)</span>}</p>
+        {axes.length > 0 && (
+          <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-0.5">
+            {axes.map((a, ai) => <li key={a.id}>A{ai + 1} — {a.titre || '…'}</li>)}
+          </ul>
+        )}
+      </div>
+
+      {fcs.map((f, fi) => (
+        <div key={f.id} className={card}>
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 w-12 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">FCS{fi + 1}</span>
+            <input className={`${input} font-medium`} value={f.titre} disabled={readOnly} placeholder="Énoncé du Facteur Clé de Succès"
+              onChange={e => update(d => { d.fcs[fi].titre = e.target.value })} />
+            {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.fcs.splice(fi, 1) })}>Supprimer</button>}
+          </div>
+          <div className="space-y-2">
+            <p className={label}>Indicateurs stratégiques liés au FCS</p>
+            {f.indicateurs.map((ind, ii) => (
+              <div key={ind.id} className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 shrink-0">I{fi + 1}.{ii + 1}</span>
+                <input className={input} value={ind.libelle} disabled={readOnly} placeholder="Indicateur stratégique"
+                  onChange={e => update(d => { d.fcs[fi].indicateurs[ii].libelle = e.target.value })} />
+                <input className={`${input} w-32`} value={ind.cible} disabled={readOnly} placeholder="Cible"
+                  onChange={e => update(d => { d.fcs[fi].indicateurs[ii].cible = e.target.value })} />
+                {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.fcs[fi].indicateurs.splice(ii, 1) })}>✕</button>}
+              </div>
+            ))}
+            {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.fcs[fi].indicateurs.push({ id: uid(), libelle: '', cible: '' }) })}>+ Indicateur stratégique</button>}
+          </div>
+        </div>
+      ))}
+      {fcs.length >= 5 && <p className={hint}>Le cours recommande 3 à 5 FCS — au-delà, la focalisation se perd.</p>}
+      {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.fcs.push({ id: uid(), titre: '', indicateurs: [] }) })}>+ Ajouter un FCS</button>}
+    </div>
+  )
+}
+
+// ── Carte stratégique (liens de cause à effet) ────────────────────────────────────
+function CarteTab({ carte, bsc, update, readOnly }: { carte: CarteLien[]; bsc: Bsc; update: Upd; readOnly: boolean }) {
+  // Réservoir d'indicateurs = ceux de la BSC, étiquetés par perspective.
+  const perspLabel: Record<keyof Bsc, string> = { finances: 'Finances', clients: 'Clients', processus: 'Processus', apprentissage: 'Apprentissage' }
+  const pool: { id: string; label: string }[] = []
+  ;(Object.keys(perspLabel) as (keyof Bsc)[]).forEach(p => bsc[p].forEach(it => {
+    if (it.indicateur || it.objectif) pool.push({ id: it.id, label: `[${perspLabel[p]}] ${it.indicateur || it.objectif}` })
+  }))
+  const name = (id: string) => pool.find(p => p.id === id)?.label ?? '—'
+  const forceLabel: Record<number, string> = { 3: 'Fort', 2: 'Moyen', 1: 'Faible' }
+
+  return (
+    <div className="space-y-4">
+      <div className={card}>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Carte stratégique — liens de cause à effet</h3>
+        <p className={hint}>Construite de haut en bas, lue de bas en haut (Apprentissage → Processus → Clients → Finances). Chaque lien cause→effet est évalué par sa <strong>force</strong> (fort/moyen/faible : probabilité que la cause agisse sur l’effet) et sa <strong>durée en mois</strong> (délai pour que l’indicateur « effet » bouge). Les chemins courts et longs se lisent en chaînant les liens.</p>
+      </div>
+
+      {pool.length < 2 ? (
+        <div className={card}><p className={hint}>Renseignez d’abord des indicateurs dans la Balanced Scorecard (au moins 2) pour tracer des liens de cause à effet.</p></div>
+      ) : (
+        <div className={card}>
+          {carte.length > 0 && (
+            <div className="space-y-2">
+              {carte.map((l, i) => (
+                <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 p-2 bg-gray-50/60 dark:bg-gray-800/30">
+                  <select className={`${input} flex-1 min-w-[180px]`} value={l.causeId} disabled={readOnly} onChange={e => update(d => { d.carte[i].causeId = e.target.value })}>
+                    <option value="">— Cause —</option>
+                    {pool.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  </select>
+                  <span className="text-indigo-500 font-bold">→</span>
+                  <select className={`${input} flex-1 min-w-[180px]`} value={l.effetId} disabled={readOnly} onChange={e => update(d => { d.carte[i].effetId = e.target.value })}>
+                    <option value="">— Effet —</option>
+                    {pool.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  </select>
+                  <select className={`${input} w-28`} value={l.force} disabled={readOnly} onChange={e => update(d => { d.carte[i].force = Number(e.target.value) })}>
+                    {[3, 2, 1].map(v => <option key={v} value={v}>{forceLabel[v]}</option>)}
+                  </select>
+                  <input className={`${input} w-24`} value={l.duree} disabled={readOnly} placeholder="mois" onChange={e => update(d => { d.carte[i].duree = e.target.value })} />
+                  {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.carte.splice(i, 1) })}>✕</button>}
+                </div>
+              ))}
+            </div>
+          )}
+          {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.carte.push({ id: uid(), causeId: '', effetId: '', force: 2, duree: '' }) })}>+ Ajouter un lien cause → effet</button>}
+
+          {carte.filter(l => l.causeId && l.effetId).length > 0 && (
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+              <p className={label}>Lecture des liens</p>
+              <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                {carte.filter(l => l.causeId && l.effetId).map(l => (
+                  <li key={l.id}>• {name(l.causeId)} <span className="text-indigo-500">→</span> {name(l.effetId)} <span className="text-gray-400">({forceLabel[l.force] ?? '—'}{l.duree ? `, ${l.duree} mois` : ''})</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Communication de la stratégie ──────────────────────────────────────────────────
+function CommunicationTab({ comm, update, readOnly }: { comm: Communication; update: Upd; readOnly: boolean }) {
+  return (
+    <div className="space-y-4">
+      <div className={card}>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Communication de la stratégie</h3>
+        <p className={hint}>Pourquoi communiquer (Balanced Scorecard Collaborative Survey) : <strong>95 %</strong> des équipes ne comprennent pas la stratégie de leur organisation · <strong>90 %</strong> des organisations échouent dans l’exécution réelle · <strong>86 %</strong> des équipes de direction passent moins d’une heure par mois à parler de stratégie · <strong>60 %</strong> ne font pas le lien entre stratégie et budget.</p>
+      </div>
+
+      <div className={card}>
+        <h4 className="font-medium text-gray-900 dark:text-white">Slogan & visuel de référence</h4>
+        <div>
+          <label className={label}>Slogan (à partir de la mission ou de la vision)</label>
+          <input className={input} value={comm.slogan} disabled={readOnly} onChange={e => update(d => { d.communication.slogan = e.target.value })} placeholder="Notre slogan…" />
+        </div>
+        <div>
+          <label className={label}>Visuel de référence (description du visuel unique qui raconte la stratégie)</label>
+          <textarea className={`${input} h-20`} value={comm.visuel} disabled={readOnly} onChange={e => update(d => { d.communication.visuel = e.target.value })} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={card}>
+          <h4 className="font-medium text-gray-900 dark:text-white">Messages clés</h4>
+          <p className={hint}>Points importants, menaces, chiffres clés. « Qu’est-ce que je veux qu’ils retiennent ? »</p>
+          <StringList items={comm.messages} readOnly={readOnly} onChange={v => update(d => { d.communication.messages = v })} />
+        </div>
+        <div className={card}>
+          <h4 className="font-medium text-gray-900 dark:text-white">Principales objections (et réponses)</h4>
+          <p className={hint}>Identifier les objections probables et préparer les réponses.</p>
+          <StringList items={comm.objections} readOnly={readOnly} onChange={v => update(d => { d.communication.objections = v })} />
+        </div>
+      </div>
+
+      <div className={card}>
+        <h4 className="font-medium text-gray-900 dark:text-white">« Tout d’abord faire comprendre ! » — checklist</h4>
+        <div className="space-y-2">
+          {COMM_CHECKLIST.map(c => (
+            <label key={c.key} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input type="checkbox" className="mt-0.5 accent-indigo-600" disabled={readOnly}
+                checked={!!comm.checklist[c.key]}
+                onChange={e => update(d => { d.communication.checklist[c.key] = e.target.checked })} />
+              {c.label}
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   )

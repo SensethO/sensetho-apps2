@@ -85,12 +85,20 @@ export async function exportStrategiePdf(doc: any, orgName: string): Promise<voi
 
   // ── Valeurs ──
   heading('5 · Valeurs & règles du jeu')
+  const vc = doc.valeurs_collecte ?? {}
+  if ((vc.aujourdhui?.length || vc.mieux?.length || vc.projet?.length)) {
+    sub('Récolte des valeurs (3 questions)')
+    if (vc.aujourdhui?.length) { text('Partagées aujourd’hui :', L, 9.5, 'bold', GRAY); bullets(vc.aujourdhui) }
+    if (vc.mieux?.length) { text('À mieux partager :', L, 9.5, 'bold', GRAY); bullets(vc.mieux) }
+    if (vc.projet?.length) { text('Pour réussir le projet :', L, 9.5, 'bold', GRAY); bullets(vc.projet) }
+  }
   ;(doc.valeurs ?? []).forEach((val: any) => { sub(t(val.valeur)); bullets(val.regles) })
 
   // ── Axes & Lignes d'actions ──
   heading('6 · Axes stratégiques & Lignes d’actions')
   ;(doc.axes ?? []).forEach((axe: any, ai: number) => {
     sub(`A${ai + 1} · ${t(axe.titre)}`)
+    if (axe.indicateur || axe.objectif) text(`Indicateur de l’axe : ${t(axe.indicateur)}   ·   Objectif : ${t(axe.objectif)}`, L + 1, 9, 'italic', GRAY)
     if (axe.freins?.length) { text('Freins & obstacles :', L, 9.5, 'bold', GRAY); bullets(axe.freins) }
     ;(axe.lignes ?? []).forEach((la: any, li: number) => {
       text(`LA${ai + 1}.${li + 1} — ${t(la.enonce)}`, L + 1, 10, 'bold')
@@ -116,15 +124,21 @@ export async function exportStrategiePdf(doc: any, orgName: string): Promise<voi
   // ── Balanced Scorecard ──
   heading('8 · Balanced Scorecard')
   const bscLab: [string, string][] = [['finances', 'Résultats financiers'], ['clients', 'Résultats clients'], ['processus', 'Processus internes'], ['apprentissage', 'Apprentissage organisationnel']]
-  bscLab.forEach(([k, lab]) => { const items = doc.bsc?.[k] ?? []; if (items.length) { sub(lab); items.forEach((it: any) => text(`• ${t(it.objectif)}  —  ${t(it.indicateur)}  →  ${t(it.cible)}`, L + 1, 9.5)) } })
+  bscLab.forEach(([k, lab]) => { const items = doc.bsc?.[k] ?? []; if (items.length) { sub(lab); items.forEach((it: any) => text(`• [${it.type === 'A' ? 'A' : 'P'}] ${t(it.objectif)}  —  ${t(it.indicateur)}  →  ${t(it.cible)}`, L + 1, 9.5)) } })
+  const allBsc = bscLab.flatMap(([k]) => doc.bsc?.[k] ?? [])
+  if (allBsc.length) {
+    const nbA = allBsc.filter((i: any) => i.type === 'A').length
+    muted(`Équilibrage : ${allBsc.length} indicateurs (cible 15-25) · ${Math.round((nbA / allBsc.length) * 100)} % en avance (cible ~33 %) · A = en Avance, P = a Posteriori.`)
+  }
 
   // ── Master Plan ──
   heading('9 · Master Plan')
   const pilLab: Record<string, string> = { hierarchique: 'Hiérarchique', transversal: 'Transversal', projet: 'Projet' }
   ;(doc.master_plan ?? []).forEach((m: any) => {
     text(`${m.type === 'projet' ? '▣' : '▸'} ${t(m.libelle)}`, L + 1, 10, 'bold')
-    text([`${m.type === 'projet' ? 'Projet' : 'Action'} · ${pilLab[m.pilotage] ?? '—'}`, m.responsable && `Resp. : ${m.responsable}`, m.echeance && `Échéance : ${m.echeance}`].filter(Boolean).join('   ·   '), L + 3, 9, 'italic', GRAY)
-    if (m.livrables) text(`Livrables : ${m.livrables}`, L + 3, 9, 'normal', GRAY)
+    text([`${m.type === 'projet' ? 'Projet' : 'Action'} · ${pilLab[m.pilotage] ?? '—'}`, m.responsable && `Qui : ${m.responsable}`, m.perimetre && `Où : ${m.perimetre}`, m.echeance && `Quand : ${m.echeance}`].filter(Boolean).join('   ·   '), L + 3, 9, 'italic', GRAY)
+    const l2 = [m.ressources && `Combien : ${m.ressources}`, m.pourquoi && `Pourquoi : ${m.pourquoi}`, m.livrables && `Livrables : ${m.livrables}`].filter(Boolean).join('   ·   ')
+    if (l2) text(l2, L + 3, 9, 'normal', GRAY)
   })
 
   // ── Tableau de bord ──
@@ -137,7 +151,8 @@ export async function exportStrategiePdf(doc: any, orgName: string): Promise<voi
     text([`${t(la.niveauActuel)} → cible ${t(la.cible)}`, `actuel : ${t(s.valeur)}`, feuLab[s.statut] ?? '—'].join('   ·   '), L + 3, 9, 'italic', GRAY)
   }))
   const revues = doc.pilotage?.revues ?? []
-  if (revues.length) { sub('Revues de stratégie'); revues.forEach((r: any) => { text(t(r.date), L + 1, 9.5, 'bold'); para(t(r.note), 3) }) }
+  const revLab: Record<string, string> = { unite: 'Suivi master plan (unité)', codir: 'Revue Codir', audit: 'Audit du président', reactualisation: 'Réactualisation annuelle' }
+  if (revues.length) { sub('Revues de stratégie'); revues.forEach((r: any) => { text(`${t(r.date)} — ${revLab[r.type] ?? 'Revue'}`, L + 1, 9.5, 'bold'); para(t(r.note), 3) }) }
 
   // ── Kotter ──
   heading('11 · Conduite du changement (Kotter)')
@@ -175,6 +190,44 @@ export async function exportStrategiePdf(doc: any, orgName: string): Promise<voi
     const line = depActions.map((a: any, j: number) => `${a.libelle || `Action ${j + 1}`}:${grid(dep.scores?.[la.id]?.[a.id] ?? 0)}`).join('  ·  ')
     text(`LA${ai + 1}.${li + 1} — ${t(la.enonce)}`, L + 1, 9.5, 'bold'); text(line, L + 3, 9, 'italic', GRAY)
   }))
+
+  // ── FCS & arbre d'alignement ──
+  heading('16 · Facteurs Clés de Succès & arbre d’alignement')
+  if (!(doc.fcs ?? []).length) muted('Aucun FCS renseigné (3 à 5 recommandés).')
+  else (doc.fcs ?? []).forEach((f: any, fi: number) => {
+    sub(`FCS${fi + 1} · ${t(f.titre)}`)
+    ;(f.indicateurs ?? []).forEach((ind: any, ii: number) => text(`I${fi + 1}.${ii + 1} — ${t(ind.libelle)}  →  ${t(ind.cible)}`, L + 1, 9.5))
+  })
+
+  // ── Carte stratégique ──
+  heading('17 · Carte stratégique (liens de cause à effet)')
+  const bscPool: Record<string, string> = {}
+  bscLab.forEach(([k, lab]) => (doc.bsc?.[k] ?? []).forEach((it: any) => { bscPool[it.id] = `[${lab}] ${it.indicateur || it.objectif || '—'}` }))
+  const carteLinks = (doc.carte ?? []).filter((l: any) => l.causeId && l.effetId)
+  const forceLab2: Record<number, string> = { 3: 'Fort', 2: 'Moyen', 1: 'Faible' }
+  if (!carteLinks.length) muted('Aucun lien cause→effet renseigné.')
+  else carteLinks.forEach((l: any) => text(`• ${bscPool[l.causeId] ?? '—'}  →  ${bscPool[l.effetId] ?? '—'}   (${forceLab2[l.force] ?? '—'}${l.duree ? `, ${l.duree} mois` : ''})`, L + 1, 9.5))
+
+  // ── Communication ──
+  heading('18 · Communication de la stratégie')
+  const comm = doc.communication ?? {}
+  kv('Slogan', comm.slogan)
+  if (comm.visuel) { sub('Visuel de référence'); para(comm.visuel) }
+  if (comm.messages?.length) { sub('Messages clés'); bullets(comm.messages) }
+  if (comm.objections?.length) { sub('Principales objections'); bullets(comm.objections) }
+  const commCheck: [string, string][] = [['swot3', 'SWOT : 3 majeurs par cadran, sentiment d’urgence'], ['mission', 'Mission : pourquoi et chaque mot expliqués'], ['vision20', 'Vision : 20 points clés max, écarts montrés'], ['axes', 'Axes : le QUOI expliqué'], ['cascading', 'Cascading : les LA = début du COMMENT'], ['managers', 'Managers : appropriation et implication']]
+  sub('Checklist « faire comprendre »')
+  commCheck.forEach(([k, lab]) => text(`${comm.checklist?.[k] ? '☑' : '☐'} ${lab}`, L + 1, 9.5))
+
+  // ── Canvas ──
+  heading('19 · Business Model Canvas / Lean Canvas')
+  const bmcLabels2: [string, string][] = [['segments', 'Segments de clientèle'], ['proposition', 'Proposition de valeur'], ['canaux', 'Canaux'], ['relations', 'Relations clients'], ['revenus', 'Flux de revenus'], ['ressources', 'Ressources clés'], ['activites', 'Activités clés'], ['partenaires', 'Partenariats clés'], ['couts', 'Structure de coûts']]
+  const leanLabels2: [string, string][] = [['probleme', 'Problème'], ['segments', 'Segments de clients'], ['uvp', 'Proposition de valeur unique'], ['solution', 'Solution'], ['canaux', 'Canaux'], ['revenus', 'Sources de revenus'], ['couts', 'Structure de coûts'], ['indicateurs', 'Indicateurs clés'], ['avantage', 'Avantage déloyal']]
+  const hasBmc = bmcLabels2.some(([k]) => (doc.canvas?.bmc?.[k] ?? []).length)
+  const hasLean = leanLabels2.some(([k]) => (doc.canvas?.lean?.[k] ?? []).length)
+  if (!hasBmc && !hasLean) muted('Aucun canvas renseigné.')
+  if (hasBmc) { sub('Business Model Canvas (Osterwalder)'); bmcLabels2.forEach(([k, lab]) => { const items = doc.canvas?.bmc?.[k] ?? []; if (items.length) { text(lab, L + 1, 9.5, 'bold', GRAY); bullets(items) } }) }
+  if (hasLean) { sub('Lean Canvas (Ash Maurya)'); leanLabels2.forEach(([k, lab]) => { const items = doc.canvas?.lean?.[k] ?? []; if (items.length) { text(lab, L + 1, 9.5, 'bold', GRAY); bullets(items) } }) }
 
   // Pied de page
   const pages = pdf.getNumberOfPages()

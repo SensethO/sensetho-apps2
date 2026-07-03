@@ -10,7 +10,7 @@ const APP_SLUG = 'strategie-partagee'
 const TABLE = 'strategie_partagee'
 
 // Champs (modules) modifiables côté client.
-const FIELDS = ['horizon', 'mission', 'swot', 'attentes', 'vision', 'valeurs', 'axes', 'strategie_activite', 'hoshin', 'bsc', 'master_plan', 'pilotage', 'kotter', 'tows', 'matrices', 'deploiement']
+const FIELDS = ['horizon', 'mission', 'swot', 'attentes', 'vision', 'valeurs', 'axes', 'strategie_activite', 'hoshin', 'bsc', 'master_plan', 'pilotage', 'kotter', 'tows', 'matrices', 'deploiement', 'fcs', 'carte', 'communication', 'canvas', 'valeurs_collecte']
 
 async function getRole(userId: string): Promise<string | null> {
   const admin = createAdminClient()
