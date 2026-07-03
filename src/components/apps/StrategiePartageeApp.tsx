@@ -33,6 +33,11 @@ interface Revue { date: string; note: string }
 interface Pilotage { suivi: Record<string, Suivi>; revues: Revue[] }
 type KotterStatut = 'afaire' | 'encours' | 'fait'
 interface KotterStep { statut: KotterStatut; note: string }
+// Matrices de croisement
+interface Tows { fo: string[]; fa: string[]; wo: string[]; wa: string[] }
+interface Matrices { visionAxes: Record<string, Record<string, number>>; attentesOffre: Record<string, Record<string, number>> }
+interface DeployAction { id: string; libelle: string }
+interface Deploiement { actions: DeployAction[]; scores: Record<string, Record<string, number>> }
 
 interface Doc {
   horizon: string
@@ -48,6 +53,14 @@ interface Doc {
   master_plan: MasterRow[]
   pilotage: Pilotage
   kotter: KotterStep[]
+  tows: Tows
+  matrices: Matrices
+  deploiement: Deploiement
+}
+
+// Clé stable dérivée du texte (robuste au réordonnancement des listes de chaînes).
+function slug(s: string): string {
+  return (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 48) || '_'
 }
 
 const KOTTER_ETAPES = [
@@ -103,10 +116,13 @@ function emptyDoc(): Doc {
     master_plan: [],
     pilotage: { suivi: {}, revues: [] },
     kotter: KOTTER_ETAPES.map(() => ({ statut: 'afaire' as KotterStatut, note: '' })),
+    tows: { fo: [], fa: [], wo: [], wa: [] },
+    matrices: { visionAxes: {}, attentesOffre: {} },
+    deploiement: { actions: [], scores: {} },
   }
 }
 
-type TabKey = 'presentation' | 'mission' | 'swot' | 'attentes' | 'vision' | 'valeurs' | 'axes' | 'activite' | 'hoshin' | 'bsc' | 'masterplan' | 'tableaubord' | 'changement'
+type TabKey = 'presentation' | 'mission' | 'swot' | 'attentes' | 'vision' | 'valeurs' | 'axes' | 'activite' | 'hoshin' | 'deploiement' | 'bsc' | 'masterplan' | 'tableaubord' | 'changement'
 const TABS: { key: TabKey; label: string; phase: 1 | 2 | 3 }[] = [
   { key: 'presentation', label: '📖 Présentation', phase: 1 },
   { key: 'mission', label: '🎯 Mission', phase: 1 },
@@ -117,6 +133,7 @@ const TABS: { key: TabKey; label: string; phase: 1 | 2 | 3 }[] = [
   { key: 'axes', label: '🧭 Axes & Lignes d’actions', phase: 1 },
   { key: 'activite', label: '📦 Stratégie d’activité', phase: 1 },
   { key: 'hoshin', label: '🔀 Matrice Hoshin', phase: 2 },
+  { key: 'deploiement', label: '⬇️ Déploiement (QUOI/COMMENT)', phase: 2 },
   { key: 'bsc', label: '📊 Balanced Scorecard', phase: 2 },
   { key: 'masterplan', label: '🗓️ Master Plan', phase: 2 },
   { key: 'tableaubord', label: '📈 Tableau de bord', phase: 3 },
@@ -158,6 +175,14 @@ function StringList({ items, onChange, placeholder, readOnly }: { items: string[
         </div>
       )}
     </div>
+  )
+}
+
+// Cellule de score 0→1→2→3 (clic), couleurs indigo — partagée par les matrices.
+function ScoreCell({ value, onCycle, readOnly }: { value: number; onCycle: () => void; readOnly: boolean }) {
+  const cls = value === 3 ? 'bg-indigo-600 text-white' : value === 2 ? 'bg-indigo-300 dark:bg-indigo-700 text-gray-900 dark:text-white' : value === 1 ? 'bg-indigo-100 dark:bg-indigo-900/50 text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-gray-600'
+  return (
+    <button onClick={onCycle} disabled={readOnly} className={`w-9 h-9 rounded font-bold ${cls} ${readOnly ? '' : 'hover:ring-2 hover:ring-indigo-400'}`}>{value || ''}</button>
   )
 }
 
@@ -212,6 +237,9 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
         d.master_plan = Array.isArray(row.master_plan) ? row.master_plan as MasterRow[] : []
         if (row.pilotage) { const p = row.pilotage as Partial<Pilotage>; d.pilotage = { suivi: p.suivi ?? {}, revues: Array.isArray(p.revues) ? p.revues : [] } }
         if (Array.isArray(row.kotter) && row.kotter.length === KOTTER_ETAPES.length) d.kotter = row.kotter as KotterStep[]
+        if (row.tows) Object.assign(d.tows, row.tows)
+        if (row.matrices) { const m = row.matrices as Partial<Matrices>; d.matrices = { visionAxes: m.visionAxes ?? {}, attentesOffre: m.attentesOffre ?? {} } }
+        if (row.deploiement) { const dp = row.deploiement as Partial<Deploiement>; d.deploiement = { actions: Array.isArray(dp.actions) ? dp.actions : [], scores: dp.scores ?? {} }; d.deploiement.actions.forEach(a => { if (!a.id) a.id = uid() }) }
       }
       setDoc(d); setDirty(false); initial.current = true
     } catch (e) { setError(String((e as Error).message ?? e)) }
@@ -369,13 +397,14 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
         <>
           {tab === 'presentation' && <Presentation horizon={doc.horizon} onHorizon={v => update(d => { d.horizon = v })} readOnly={readOnly} />}
           {tab === 'mission' && <MissionTab mission={doc.mission} update={update} readOnly={readOnly} />}
-          {tab === 'swot' && <SwotTab swot={doc.swot} update={update} readOnly={readOnly} />}
-          {tab === 'attentes' && <AttentesTab a={doc.attentes} update={update} readOnly={readOnly} />}
-          {tab === 'vision' && <VisionTab vision={doc.vision} update={update} readOnly={readOnly} />}
+          {tab === 'swot' && <SwotTab swot={doc.swot} tows={doc.tows} update={update} readOnly={readOnly} />}
+          {tab === 'attentes' && <AttentesTab a={doc.attentes} produits={doc.strategie_activite.produits} matrices={doc.matrices} update={update} readOnly={readOnly} />}
+          {tab === 'vision' && <VisionTab vision={doc.vision} axes={doc.axes} matrices={doc.matrices} update={update} readOnly={readOnly} />}
           {tab === 'valeurs' && <ValeursTab valeurs={doc.valeurs} update={update} readOnly={readOnly} />}
           {tab === 'axes' && <AxesTab axes={doc.axes} update={update} readOnly={readOnly} />}
           {tab === 'activite' && <ActiviteTab sa={doc.strategie_activite} update={update} readOnly={readOnly} />}
           {tab === 'hoshin' && <HoshinTab axes={doc.axes} hoshin={doc.hoshin} update={update} readOnly={readOnly} />}
+          {tab === 'deploiement' && <DeploiementTab axes={doc.axes} deploiement={doc.deploiement} update={update} readOnly={readOnly} />}
           {tab === 'bsc' && <BscTab bsc={doc.bsc} update={update} readOnly={readOnly} />}
           {tab === 'masterplan' && <MasterPlanTab rows={doc.master_plan} update={update} readOnly={readOnly} />}
           {tab === 'tableaubord' && <TableauBordTab axes={doc.axes} bsc={doc.bsc} pilotage={doc.pilotage} update={update} readOnly={readOnly} />}
@@ -500,30 +529,61 @@ function MissionTab({ mission, update, readOnly }: { mission: Mission; update: U
 }
 
 // ── SWOT ──
-function SwotTab({ swot, update, readOnly }: { swot: Swot; update: Upd; readOnly: boolean }) {
+function SwotTab({ swot, tows, update, readOnly }: { swot: Swot; tows: Tows; update: Upd; readOnly: boolean }) {
   const quadrants: { key: keyof Swot; title: string; sub: string; cls: string }[] = [
     { key: 'forces', title: 'Forces', sub: 'Interne · Positif — Qu’est-ce que nous faisons bien ? Sur quoi nous appuyer ?', cls: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' },
     { key: 'faiblesses', title: 'Faiblesses', sub: 'Interne · Négatif — Qu’est-ce qui ne marche pas bien ? Quoi surmonter ?', cls: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' },
     { key: 'opportunites', title: 'Opportunités', sub: 'Externe · Positif — Quels facteurs externes exploiter ? Nos potentiels ?', cls: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' },
     { key: 'menaces', title: 'Menaces', sub: 'Externe · Négatif — Quels changements / menaces pèsent sur notre projet ?', cls: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' },
   ]
+  // Rappels des réponses SWOT pour aider à croiser
+  const ref = (arr: string[]) => arr.length ? arr.map(x => `• ${x}`).join('  ') : '—'
+  const towsCells: { key: keyof Tows; title: string; desc: string; cls: string }[] = [
+    { key: 'fo', title: 'FO — Offensif (Forces × Opportunités)', desc: 'S’appuyer sur nos forces pour saisir les opportunités.', cls: 'bg-green-50 dark:bg-green-900/20' },
+    { key: 'wo', title: 'WO — Réorientation (Faiblesses × Opportunités)', desc: 'Corriger nos faiblesses en profitant des opportunités.', cls: 'bg-blue-50 dark:bg-blue-900/20' },
+    { key: 'fa', title: 'FA — Défensif (Forces × Menaces)', desc: 'Utiliser nos forces pour contrer les menaces.', cls: 'bg-amber-50 dark:bg-amber-900/20' },
+    { key: 'wa', title: 'WA — Repli / Vigilance (Faiblesses × Menaces)', desc: 'Minimiser les faiblesses et éviter les menaces.', cls: 'bg-red-50 dark:bg-red-900/20' },
+  ]
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {quadrants.map(q => (
-        <div key={q.key} className={`rounded-xl border p-4 space-y-3 ${q.cls}`}>
-          <div>
-            <h3 className="font-semibold text-gray-900 dark:text-white">{q.title}</h3>
-            <p className={hint}>{q.sub}</p>
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {quadrants.map(q => (
+          <div key={q.key} className={`rounded-xl border p-4 space-y-3 ${q.cls}`}>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">{q.title}</h3>
+              <p className={hint}>{q.sub}</p>
+            </div>
+            <StringList items={swot[q.key]} readOnly={readOnly} onChange={v => update(d => { d.swot[q.key] = v })} placeholder={`Ajouter une ${q.title.toLowerCase()}…`} />
           </div>
-          <StringList items={swot[q.key]} readOnly={readOnly} onChange={v => update(d => { d.swot[q.key] = v })} placeholder={`Ajouter une ${q.title.toLowerCase()}…`} />
+        ))}
+      </div>
+
+      <div className={card}>
+        <div>
+          <h3 className="font-semibold text-gray-900 dark:text-white">Matrice de confrontation (TOWS)</h3>
+          <p className={hint}>Croisez les réponses du SWOT pour formuler les options stratégiques dans les 4 cases.</p>
         </div>
-      ))}
+        <div className="text-xs text-gray-500 dark:text-gray-400 grid grid-cols-1 md:grid-cols-2 gap-2">
+          <p><strong>Forces :</strong> {ref(swot.forces)}</p>
+          <p><strong>Opportunités :</strong> {ref(swot.opportunites)}</p>
+          <p><strong>Faiblesses :</strong> {ref(swot.faiblesses)}</p>
+          <p><strong>Menaces :</strong> {ref(swot.menaces)}</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {towsCells.map(c => (
+            <div key={c.key} className={`rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2 ${c.cls}`}>
+              <div><h4 className="font-medium text-gray-900 dark:text-white text-sm">{c.title}</h4><p className={hint}>{c.desc}</p></div>
+              <StringList items={tows[c.key]} readOnly={readOnly} onChange={v => update(d => { d.tows[c.key] = v })} placeholder="Option stratégique…" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
 
 // ── Attentes clients (Kano) ──
-function AttentesTab({ a, update, readOnly }: { a: Attentes; update: Upd; readOnly: boolean }) {
+function AttentesTab({ a, produits, matrices, update, readOnly }: { a: Attentes; produits: string[]; matrices: Matrices; update: Upd; readOnly: boolean }) {
   const cats: { key: keyof Attentes; title: string; sub: string }[] = [
     { key: 'base', title: 'Attentes de base (obligatoire)', sub: 'Le « dû » — leur absence génère de l’insatisfaction, leur présence ne satisfait pas.' },
     { key: 'proportionnel', title: 'Attentes proportionnelles (performance)', sub: 'Plus c’est présent, plus le client est satisfait — identifient la performance.' },
@@ -550,18 +610,67 @@ function AttentesTab({ a, update, readOnly }: { a: Attentes; update: Upd; readOn
           <input className={input} value={a.nps} disabled={readOnly} onChange={e => update(d => { d.attentes.nps = e.target.value })} placeholder="ex. +32" />
         </div>
       </div>
+
+      <AttentesOffreMatrix a={a} produits={produits} matrices={matrices} update={update} readOnly={readOnly} />
+    </div>
+  )
+}
+
+// Matrice attentes (Kano) × offre (produits/services) : niveau de réponse 3/2/1.
+function AttentesOffreMatrix({ a, produits, matrices, update, readOnly }: { a: Attentes; produits: string[]; matrices: Matrices; update: Upd; readOnly: boolean }) {
+  const rows = [
+    ...a.base.map(x => ({ txt: x, cat: 'Base' })),
+    ...a.proportionnel.map(x => ({ txt: x, cat: 'Perf.' })),
+    ...a.attractif.map(x => ({ txt: x, cat: 'Attractif' })),
+  ].filter(r => r.txt.trim())
+  const cols = produits.filter(p => p.trim())
+  if (!rows.length || !cols.length) {
+    return (
+      <div className={card}>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Matrice attentes × offre</h3>
+        <p className={hint}>Renseignez des <strong>attentes clients</strong> (ci-dessus) et des <strong>produits/services</strong> (onglet « Stratégie d’activité ») : la matrice permettra d’évaluer dans quelle mesure chaque offre répond à chaque attente (3 fort · 2 moyen · 1 faible).</p>
+      </div>
+    )
+  }
+  const val = (rk: string, ck: string) => matrices.attentesOffre[rk]?.[ck] ?? 0
+  return (
+    <div className={card}>
+      <div><h3 className="font-semibold text-gray-900 dark:text-white">Matrice attentes × offre</h3><p className={hint}>Dans quelle mesure chaque produit/service répond à chaque attente ? 3 fort · 2 moyen · 1 faible.</p></div>
+      <div className="overflow-x-auto">
+        <table className="text-sm border-collapse">
+          <thead><tr>
+            <th className="p-2 text-left sticky left-0 bg-white dark:bg-gray-800/40 min-w-[220px]">Attente \ Offre</th>
+            {cols.map((c, j) => <th key={j} className="p-2 text-center min-w-[64px]"><div className="text-[11px] max-w-[90px] truncate mx-auto" title={c}>{c}</div></th>)}
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const rk = slug(r.txt)
+              return (
+                <tr key={i} className="border-t border-gray-100 dark:border-gray-700">
+                  <td className="p-2 sticky left-0 bg-white dark:bg-gray-800/40"><span className="text-[10px] text-gray-400">{r.cat}</span> <span className="text-gray-700 dark:text-gray-300">{r.txt}</span></td>
+                  {cols.map((c, j) => {
+                    const ck = slug(c)
+                    return <td key={j} className="p-1 text-center"><ScoreCell value={val(rk, ck)} readOnly={readOnly} onCycle={() => update(d => { if (!d.matrices.attentesOffre[rk]) d.matrices.attentesOffre[rk] = {}; d.matrices.attentesOffre[rk][ck] = (val(rk, ck) + 1) % 4 })} /></td>
+                  })}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
 
 // ── Vision ──
-function VisionTab({ vision, update, readOnly }: { vision: Vision; update: Upd; readOnly: boolean }) {
+function VisionTab({ vision, axes, matrices, update, readOnly }: { vision: Vision; axes: Axe[]; matrices: Matrices; update: Upd; readOnly: boolean }) {
   const parties: { key: keyof VisionParties; label: string }[] = [
     { key: 'hommes', label: 'Hommes (collaborateurs)' },
     { key: 'marche', label: 'Marché / Clients' },
     { key: 'environnement', label: 'Environnement / Écosystème' },
     { key: 'entreprise', label: 'Entreprise / Actionnaires' },
   ]
+  const val = (pk: string, ck: string) => matrices.visionAxes[pk]?.[ck] ?? 0
   return (
     <div className="space-y-4">
       <div className={card}>
@@ -601,6 +710,32 @@ function VisionTab({ vision, update, readOnly }: { vision: Vision; update: Upd; 
             </div>
           ))}
         </div>
+      </div>
+
+      <div className={card}>
+        <div><h4 className="font-medium text-gray-900 dark:text-white">Matrice : parties prenantes × axes stratégiques</h4><p className={hint}>Vérifiez que chaque partie prenante de la vision est bien servie par les axes. 3 fort · 2 moyen · 1 faible.</p></div>
+        {axes.length === 0 ? (
+          <p className={hint}>Renseignez d’abord des axes stratégiques (onglet « Axes »).</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="text-sm border-collapse">
+              <thead><tr>
+                <th className="p-2 text-left sticky left-0 bg-white dark:bg-gray-800/40 min-w-[200px]">Partie prenante \ Axe</th>
+                {axes.map((a, ai) => <th key={a.id} className="p-2 text-center min-w-[64px]"><div className="font-bold text-indigo-700 dark:text-indigo-400">A{ai + 1}</div><div className="text-[10px] font-normal text-gray-400 max-w-[80px] truncate mx-auto" title={a.titre}>{a.titre || '—'}</div></th>)}
+              </tr></thead>
+              <tbody>
+                {parties.map(p => (
+                  <tr key={p.key} className="border-t border-gray-100 dark:border-gray-700">
+                    <td className="p-2 sticky left-0 bg-white dark:bg-gray-800/40 text-gray-700 dark:text-gray-300">{p.label}</td>
+                    {axes.map(a => (
+                      <td key={a.id} className="p-1 text-center"><ScoreCell value={val(p.key, a.id)} readOnly={readOnly} onCycle={() => update(d => { if (!d.matrices.visionAxes[p.key]) d.matrices.visionAxes[p.key] = {}; d.matrices.visionAxes[p.key][a.id] = (val(p.key, a.id) + 1) % 4 })} /></td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -796,6 +931,61 @@ function HoshinTab({ axes, hoshin, update, readOnly }: { axes: Axe[]; hoshin: Ho
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+// ── Déploiement cascading QUOI / COMMENT ────────────────────────────────────────
+function DeploiementTab({ axes, deploiement, update, readOnly }: { axes: Axe[]; deploiement: Deploiement; update: Upd; readOnly: boolean }) {
+  // QUOI = lignes d'actions niveau direction ; COMMENT = actions du niveau n-1 (colonnes).
+  const rows: { rk: string; label: string; texte: string }[] = []
+  axes.forEach((axe, ai) => axe.lignes.forEach((la, li) => rows.push({ rk: la.id, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '—' })))
+  const cols = deploiement.actions
+  const val = (rk: string, ck: string) => deploiement.scores[rk]?.[ck] ?? 0
+  const colTotal = (ck: string) => rows.reduce((s, r) => s + val(r.rk, ck), 0)
+
+  return (
+    <div className={card}>
+      <div>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Déploiement niveau n-1 — matrice QUOI / COMMENT</h3>
+        <p className={hint}>Le déploiement descend par une démarche QUOI/COMMENT : les lignes d’actions de la direction (QUOI, en lignes) sont traduites en lignes d’actions du niveau inférieur (COMMENT, en colonnes). Notez la corrélation : 3 fort · 2 moyen · 1 faible. La somme par colonne vérifie l’alignement de chaque action n-1.</p>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className={hint}>Renseignez d’abord des lignes d’actions (onglet « Axes & Lignes d’actions »).</p>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="text-sm border-collapse">
+              <thead><tr>
+                <th className="p-2 text-left sticky left-0 bg-white dark:bg-gray-800/40 min-w-[240px]">QUOI (LA direction) \ COMMENT (actions n-1)</th>
+                {cols.map((c, j) => (
+                  <th key={c.id} className="p-2 align-bottom text-center min-w-[80px]">
+                    <input className={`${input} text-xs w-24`} value={c.libelle} disabled={readOnly} placeholder={`Action ${j + 1}`}
+                      onChange={e => update(d => { const a = d.deploiement.actions.find(x => x.id === c.id); if (a) a.libelle = e.target.value })} />
+                    {!readOnly && <button className="text-[10px] text-gray-400 hover:text-red-500 mt-1" onClick={() => update(d => { d.deploiement.actions = d.deploiement.actions.filter(x => x.id !== c.id) })}>retirer</button>}
+                  </th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.rk} className="border-t border-gray-100 dark:border-gray-700">
+                    <td className="p-2 sticky left-0 bg-white dark:bg-gray-800/40"><span className="font-medium text-gray-700 dark:text-gray-300">{r.label}</span><span className="text-gray-400"> — {r.texte}</span></td>
+                    {cols.map(c => <td key={c.id} className="p-1 text-center"><ScoreCell value={val(r.rk, c.id)} readOnly={readOnly} onCycle={() => update(d => { if (!d.deploiement.scores[r.rk]) d.deploiement.scores[r.rk] = {}; d.deploiement.scores[r.rk][c.id] = (val(r.rk, c.id) + 1) % 4 })} /></td>)}
+                  </tr>
+                ))}
+                {cols.length > 0 && (
+                  <tr className="border-t-2 border-gray-200 dark:border-gray-600">
+                    <td className="p-2 sticky left-0 bg-white dark:bg-gray-800/40 font-semibold">Total par action n-1</td>
+                    {cols.map(c => <td key={c.id} className="p-2 text-center font-semibold text-indigo-700 dark:text-indigo-400">{colTotal(c.id)}</td>)}
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.deploiement.actions.push({ id: uid(), libelle: '' }) })}>+ Ajouter une action n-1 (COMMENT)</button>}
+        </>
+      )}
     </div>
   )
 }

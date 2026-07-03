@@ -10,6 +10,8 @@ const DARK: [number, number, number] = [17, 24, 39]
 const GRAY: [number, number, number] = [107, 114, 128]
 
 const t = (v: any) => (v === null || v === undefined || v === '' ? '—' : String(v))
+const slug = (s: any) => String(s ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 48) || '_'
+const grid = (v: number) => (v ? String(v) : '·')
 
 export async function exportStrategiePdf(doc: any, orgName: string): Promise<void> {
   const { default: jsPDF } = await import('jspdf')
@@ -142,6 +144,37 @@ export async function exportStrategiePdf(doc: any, orgName: string): Promise<voi
   const kLabels = ['Créer un sentiment d’urgence', 'Former une coalition puissante', 'Développer une vision mobilisatrice', 'Communiquer la vision', 'Lever les obstacles au changement', 'Démontrer des résultats à court terme', 'Bâtir sur les premiers résultats', 'Ancrer les nouvelles pratiques']
   const statLab: Record<string, string> = { afaire: 'À faire', encours: 'En cours', fait: 'Fait' }
   kLabels.forEach((lab, i) => { const st = doc.kotter?.[i] ?? {}; text(`${i + 1}. ${lab}  [${statLab[st.statut] ?? 'À faire'}]`, L + 1, 9.5, 'bold'); if (st.note) para(st.note, 3) })
+
+  // ── Matrice de confrontation TOWS ──
+  heading('12 · Matrice de confrontation (TOWS)')
+  const tw = doc.tows ?? {}
+  const towsSecs: [string, any][] = [['FO — Offensif (Forces × Opportunités)', tw.fo], ['WO — Réorientation (Faiblesses × Opportunités)', tw.wo], ['FA — Défensif (Forces × Menaces)', tw.fa], ['WA — Repli / Vigilance (Faiblesses × Menaces)', tw.wa]]
+  towsSecs.forEach(([lab, arr]) => { sub(lab); bullets(arr) })
+
+  // ── Vision × Axes ──
+  heading('13 · Parties prenantes × Axes')
+  const va = doc.matrices?.visionAxes ?? {}
+  const parties: [string, string][] = [['hommes', 'Hommes'], ['marche', 'Marché / Clients'], ['environnement', 'Environnement'], ['entreprise', 'Entreprise / Actionnaires']]
+  if (!axes.length) muted('Aucun axe renseigné.')
+  else parties.forEach(([k, lab]) => { const line = axes.map((a: any, ai: number) => `A${ai + 1}:${grid(va[k]?.[a.id] ?? 0)}`).join('  '); text(lab, L + 1, 9.5, 'bold'); text(line, L + 3, 9, 'italic', GRAY) })
+
+  // ── Attentes × Offre ──
+  heading('14 · Attentes clients × Offre')
+  const ao = doc.matrices?.attentesOffre ?? {}
+  const attRows: string[] = [...(doc.attentes?.base ?? []), ...(doc.attentes?.proportionnel ?? []), ...(doc.attentes?.attractif ?? [])].filter(Boolean)
+  const prod: string[] = (doc.strategie_activite?.produits ?? []).filter(Boolean)
+  if (!attRows.length || !prod.length) muted('Renseignez des attentes et des produits/services pour cette matrice.')
+  else attRows.forEach(att => { const line = prod.map((p: string) => `${p}:${grid(ao[slug(att)]?.[slug(p)] ?? 0)}`).join('  ·  '); text(att, L + 1, 9.5, 'bold'); text(line, L + 3, 9, 'italic', GRAY) })
+
+  // ── Déploiement QUOI/COMMENT ──
+  heading('15 · Déploiement niveau n-1 (QUOI × COMMENT)')
+  const dep = doc.deploiement ?? { actions: [], scores: {} }
+  const depActions = dep.actions ?? []
+  if (!depActions.length) muted('Aucune action n-1 (COMMENT) définie.')
+  else axes.forEach((axe: any, ai: number) => (axe.lignes ?? []).forEach((la: any, li: number) => {
+    const line = depActions.map((a: any, j: number) => `${a.libelle || `Action ${j + 1}`}:${grid(dep.scores?.[la.id]?.[a.id] ?? 0)}`).join('  ·  ')
+    text(`LA${ai + 1}.${li + 1} — ${t(la.enonce)}`, L + 1, 9.5, 'bold'); text(line, L + 3, 9, 'italic', GRAY)
+  }))
 
   // Pied de page
   const pages = pdf.getNumberOfPages()

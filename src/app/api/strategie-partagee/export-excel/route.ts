@@ -187,6 +187,46 @@ export async function GET(req: NextRequest) {
     const statLab: Record<string, string> = { afaire: 'À faire', encours: 'En cours', fait: 'Fait' }
     kotterLabels.forEach((lab, i) => { const st = d.kotter?.[i] ?? {}; sc(s12, 4 + i, 1, i + 1, { ha: 'center' }); sc(s12, 4 + i, 2, lab); sc(s12, 4 + i, 3, statLab[st.statut] ?? 'À faire', { ha: 'center', bg: st.statut === 'fait' ? C.green : st.statut === 'encours' ? C.amber : undefined }); sc(s12, 4 + i, 4, txt(st.note)) })
 
+    // slug identique au composant (clés des matrices texte)
+    const slug = (s: any) => String(s ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 48) || '_'
+
+    // 13. Matrice de confrontation (TOWS)
+    const s13 = wb.addWorksheet('Confrontation TOWS')
+    s13.columns = [{ width: 55 }, { width: 55 }]
+    title(s13, 'Matrice de confrontation SWOT (TOWS)', 2)
+    const tw = d.tows ?? {}
+    const towsBlock = (r: number, lab: string, arr: any[]) => { sc(s13, r, 1, lab, { bg: C.indigoL, bold: true }); s13.mergeCells(r, 1, r, 2); (arr ?? []).forEach((x: string, i: number) => { sc(s13, r + 1 + i, 1, `• ${x}`); s13.mergeCells(r + 1 + i, 1, r + 1 + i, 2) }) }
+    let tr2 = 3
+    ;[['FO — Offensif (Forces × Opportunités)', tw.fo], ['WO — Réorientation (Faiblesses × Opportunités)', tw.wo], ['FA — Défensif (Forces × Menaces)', tw.fa], ['WA — Repli / Vigilance (Faiblesses × Menaces)', tw.wa]].forEach(([lab, arr]: any) => { towsBlock(tr2, lab, arr); tr2 += 2 + (arr?.length ?? 0) })
+
+    // 14. Vision × Axes
+    const s14 = wb.addWorksheet('Vision × Axes')
+    const va = d.matrices?.visionAxes ?? {}
+    s14.columns = [{ width: 30 }, ...axes.map(() => ({ width: 10 }))]
+    title(s14, 'Parties prenantes × Axes stratégiques', axes.length + 1)
+    head(s14, 3, ['Partie prenante \\ Axe', ...axes.map((_: any, ai: number) => `A${ai + 1}`)])
+    const parties: [string, string][] = [['hommes', 'Hommes'], ['marche', 'Marché / Clients'], ['environnement', 'Environnement'], ['entreprise', 'Entreprise / Actionnaires']]
+    parties.forEach(([k, lab], i) => { sc(s14, 4 + i, 1, lab); axes.forEach((a: any, ai: number) => { const v = va[k]?.[a.id] ?? 0; sc(s14, 4 + i, 2 + ai, v || '', { ha: 'center', bg: v === 3 ? C.indigo : v ? C.indigoL : undefined, fg: v === 3 ? C.white : undefined }) }) })
+
+    // 15. Attentes × Offre
+    const s15 = wb.addWorksheet('Attentes × Offre')
+    const ao = d.matrices?.attentesOffre ?? {}
+    const attRows: string[] = [...(d.attentes?.base ?? []), ...(d.attentes?.proportionnel ?? []), ...(d.attentes?.attractif ?? [])].filter(Boolean)
+    const prod: string[] = (d.strategie_activite?.produits ?? []).filter(Boolean)
+    s15.columns = [{ width: 40 }, ...prod.map(() => ({ width: 16 }))]
+    title(s15, 'Attentes clients × Offre', prod.length + 1)
+    head(s15, 3, ['Attente \\ Offre', ...prod])
+    attRows.forEach((att, i) => { sc(s15, 4 + i, 1, att); prod.forEach((p, j) => { const v = ao[slug(att)]?.[slug(p)] ?? 0; sc(s15, 4 + i, 2 + j, v || '', { ha: 'center', bg: v === 3 ? C.indigo : v ? C.indigoL : undefined, fg: v === 3 ? C.white : undefined }) }) })
+
+    // 16. Déploiement QUOI/COMMENT
+    const s16 = wb.addWorksheet('Déploiement QUOI-COMMENT')
+    const dep = d.deploiement ?? { actions: [], scores: {} }
+    const depActions = dep.actions ?? []
+    s16.columns = [{ width: 40 }, ...depActions.map(() => ({ width: 16 }))]
+    title(s16, 'Déploiement niveau n-1 (QUOI × COMMENT, corrélation 3/2/1)', depActions.length + 1)
+    head(s16, 3, ['QUOI (LA direction) \\ COMMENT', ...depActions.map((a: any, i: number) => a.libelle || `Action ${i + 1}`)])
+    laRows.forEach((r, i) => { sc(s16, 4 + i, 1, `${r.label} — ${r.texte}`); depActions.forEach((a: any, j: number) => { const v = dep.scores?.[r.rk]?.[a.id] ?? 0; sc(s16, 4 + i, 2 + j, v || '', { ha: 'center', bg: v === 3 ? C.indigo : v ? C.indigoL : undefined, fg: v === 3 ? C.white : undefined }) }) })
+
     const buf = await wb.xlsx.writeBuffer()
     const name = `Strategie_${(org?.denomination ?? 'org').replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`
     return new NextResponse(buf, {
