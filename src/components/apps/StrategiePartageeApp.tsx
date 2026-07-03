@@ -19,6 +19,11 @@ interface Valeur { valeur: string; regles: string[] }
 interface LigneAction { enonce: string; objectif: string; indicateur: string; niveauActuel: string; cible: string; echeance: string; deployable: boolean }
 interface Axe { titre: string; freins: string[]; lignes: LigneAction[] }
 interface StrategieActivite { produits: string[]; notes: string }
+// Phase 2 — Déployer
+interface Hoshin { scores: Record<string, Record<string, number>>; sponsors: Record<string, string> }
+interface BscItem { objectif: string; indicateur: string; cible: string }
+interface Bsc { finances: BscItem[]; clients: BscItem[]; processus: BscItem[]; apprentissage: BscItem[] }
+interface MasterRow { libelle: string; type: 'action' | 'projet'; pilotage: 'hierarchique' | 'transversal' | 'projet'; responsable: string; livrables: string; echeance: string }
 
 interface Doc {
   horizon: string
@@ -29,6 +34,9 @@ interface Doc {
   valeurs: Valeur[]
   axes: Axe[]
   strategie_activite: StrategieActivite
+  hoshin: Hoshin
+  bsc: Bsc
+  master_plan: MasterRow[]
 }
 
 const MISSION_CRITERES: { key: string; label: string }[] = [
@@ -62,19 +70,25 @@ function emptyDoc(): Doc {
     valeurs: [],
     axes: [],
     strategie_activite: { produits: [], notes: '' },
+    hoshin: { scores: {}, sponsors: {} },
+    bsc: { finances: [], clients: [], processus: [], apprentissage: [] },
+    master_plan: [],
   }
 }
 
-type TabKey = 'presentation' | 'mission' | 'swot' | 'attentes' | 'vision' | 'valeurs' | 'axes' | 'activite'
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'presentation', label: '📖 Présentation' },
-  { key: 'mission', label: '🎯 Mission' },
-  { key: 'swot', label: '⚖️ SWOT' },
-  { key: 'attentes', label: '👥 Attentes clients' },
-  { key: 'vision', label: '🔭 Vision' },
-  { key: 'valeurs', label: '💎 Valeurs' },
-  { key: 'axes', label: '🧭 Axes & Lignes d’actions' },
-  { key: 'activite', label: '📦 Stratégie d’activité' },
+type TabKey = 'presentation' | 'mission' | 'swot' | 'attentes' | 'vision' | 'valeurs' | 'axes' | 'activite' | 'hoshin' | 'bsc' | 'masterplan'
+const TABS: { key: TabKey; label: string; phase: 1 | 2 }[] = [
+  { key: 'presentation', label: '📖 Présentation', phase: 1 },
+  { key: 'mission', label: '🎯 Mission', phase: 1 },
+  { key: 'swot', label: '⚖️ SWOT', phase: 1 },
+  { key: 'attentes', label: '👥 Attentes clients', phase: 1 },
+  { key: 'vision', label: '🔭 Vision', phase: 1 },
+  { key: 'valeurs', label: '💎 Valeurs', phase: 1 },
+  { key: 'axes', label: '🧭 Axes & Lignes d’actions', phase: 1 },
+  { key: 'activite', label: '📦 Stratégie d’activité', phase: 1 },
+  { key: 'hoshin', label: '🔀 Matrice Hoshin', phase: 2 },
+  { key: 'bsc', label: '📊 Balanced Scorecard', phase: 2 },
+  { key: 'masterplan', label: '🗓️ Master Plan', phase: 2 },
 ]
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -149,6 +163,9 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
         d.valeurs = Array.isArray(row.valeurs) ? row.valeurs as Valeur[] : []
         d.axes = Array.isArray(row.axes) ? row.axes as Axe[] : []
         Object.assign(d.strategie_activite, row.strategie_activite ?? {})
+        if (row.hoshin) { const h = row.hoshin as Partial<Hoshin>; d.hoshin = { scores: h.scores ?? {}, sponsors: h.sponsors ?? {} } }
+        if (row.bsc) Object.assign(d.bsc, row.bsc)
+        d.master_plan = Array.isArray(row.master_plan) ? row.master_plan as MasterRow[] : []
       }
       setDoc(d); setDirty(false); initial.current = true
     } catch (e) { setError(String((e as Error).message ?? e)) }
@@ -214,13 +231,18 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
 
       {/* Onglets */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-3 py-2 text-sm whitespace-nowrap transition-colors ${tab === t.key
-              ? 'text-indigo-700 dark:text-indigo-400 font-semibold border-b-2 border-indigo-500'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-            {t.label}
-          </button>
+        {TABS.map((t, i) => (
+          <span key={t.key} className="flex items-center">
+            {i > 0 && TABS[i - 1].phase !== t.phase && (
+              <span className="mx-1 text-xs text-gray-300 dark:text-gray-600 select-none" title="Phase 2 — Déployer">·</span>
+            )}
+            <button onClick={() => setTab(t.key)}
+              className={`px-3 py-2 text-sm whitespace-nowrap transition-colors ${tab === t.key
+                ? 'text-indigo-700 dark:text-indigo-400 font-semibold border-b-2 border-indigo-500'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+              {t.label}
+            </button>
+          </span>
         ))}
       </div>
 
@@ -238,6 +260,9 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
           {tab === 'valeurs' && <ValeursTab valeurs={doc.valeurs} update={update} readOnly={readOnly} />}
           {tab === 'axes' && <AxesTab axes={doc.axes} update={update} readOnly={readOnly} />}
           {tab === 'activite' && <ActiviteTab sa={doc.strategie_activite} update={update} readOnly={readOnly} />}
+          {tab === 'hoshin' && <HoshinTab axes={doc.axes} hoshin={doc.hoshin} update={update} readOnly={readOnly} />}
+          {tab === 'bsc' && <BscTab bsc={doc.bsc} update={update} readOnly={readOnly} />}
+          {tab === 'masterplan' && <MasterPlanTab rows={doc.master_plan} update={update} readOnly={readOnly} />}
         </>
       )}
     </div>
@@ -518,6 +543,189 @@ function ActiviteTab({ sa, update, readOnly }: { sa: StrategieActivite; update: 
         <label className={label}>Notes (Business Model Canvas / Lean Canvas, plan produit…)</label>
         <textarea className={`${input} h-32`} value={sa.notes} disabled={readOnly} onChange={e => update(d => { d.strategie_activite.notes = e.target.value })} />
       </div>
+    </div>
+  )
+}
+
+// ── Matrice Hoshin d'alignement ────────────────────────────────────────────────
+function HoshinTab({ axes, hoshin, update, readOnly }: { axes: Axe[]; hoshin: Hoshin; update: Upd; readOnly: boolean }) {
+  // Lignes = toutes les lignes d'actions (aplaties) ; Colonnes = axes. Cellule = contribution 0..3.
+  const rows: { rk: string; label: string; texte: string }[] = []
+  axes.forEach((axe, ai) => axe.lignes.forEach((la, li) => {
+    rows.push({ rk: `${ai}.${li}`, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '—' })
+  }))
+  const cols = axes.map((axe, ai) => ({ ck: `${ai}`, label: `A${ai + 1}`, texte: axe.titre || '—' }))
+
+  if (!cols.length || !rows.length) {
+    return (
+      <div className={card}>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Matrice Hoshin d’alignement</h3>
+        <p className={hint}>Renseignez d’abord des <strong>axes stratégiques</strong> et des <strong>lignes d’actions</strong> (onglet « Axes & Lignes d’actions »). La matrice croisera automatiquement lignes d’actions × axes pour vérifier la contribution de chacune (impact fort 3 / moyen 2 / faible 1).</p>
+      </div>
+    )
+  }
+
+  const score = (rk: string, ck: string) => hoshin.scores[rk]?.[ck] ?? 0
+  function cycle(rk: string, ck: string) {
+    if (readOnly) return
+    update(d => {
+      const cur = d.hoshin.scores[rk]?.[ck] ?? 0
+      const next = (cur + 1) % 4 // 0→1→2→3→0
+      if (!d.hoshin.scores[rk]) d.hoshin.scores[rk] = {}
+      d.hoshin.scores[rk][ck] = next
+    })
+  }
+  const colTotal = (ck: string) => rows.reduce((s, r) => s + score(r.rk, ck), 0)
+  const rowTotal = (rk: string) => cols.reduce((s, c) => s + score(rk, c.ck), 0)
+  const cellCls = (v: number) => v === 3 ? 'bg-indigo-600 text-white' : v === 2 ? 'bg-indigo-300 dark:bg-indigo-700 text-gray-900 dark:text-white' : v === 1 ? 'bg-indigo-100 dark:bg-indigo-900/50 text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-gray-600'
+
+  return (
+    <div className={card}>
+      <div>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Matrice Hoshin d’alignement</h3>
+        <p className={hint}>Cliquez une cellule pour noter la contribution de chaque ligne d’action à chaque axe : <strong>3</strong> fort · <strong>2</strong> moyen · <strong>1</strong> faible · vide = aucune. Une ligne d’action sans contribution ou un axe faiblement couvert signalent un défaut d’alignement.</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="text-sm border-collapse">
+          <thead>
+            <tr>
+              <th className="p-2 text-left sticky left-0 bg-white dark:bg-gray-800/40 min-w-[220px]">Lignes d’actions \ Axes</th>
+              {cols.map(c => (
+                <th key={c.ck} className="p-2 align-bottom text-center min-w-[64px]" title={c.texte}>
+                  <div className="font-bold text-indigo-700 dark:text-indigo-400">{c.label}</div>
+                  <div className="text-[10px] font-normal text-gray-400 max-w-[80px] truncate mx-auto">{c.texte}</div>
+                </th>
+              ))}
+              <th className="p-2 text-center font-semibold">Σ</th>
+              <th className="p-2 text-left min-w-[140px]">Sponsor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.rk} className="border-t border-gray-100 dark:border-gray-700">
+                <td className="p-2 sticky left-0 bg-white dark:bg-gray-800/40">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">{r.label}</span>
+                  <span className="text-gray-400"> — {r.texte}</span>
+                </td>
+                {cols.map(c => {
+                  const v = score(r.rk, c.ck)
+                  return (
+                    <td key={c.ck} className="p-1 text-center">
+                      <button onClick={() => cycle(r.rk, c.ck)} disabled={readOnly}
+                        className={`w-9 h-9 rounded font-bold ${cellCls(v)} ${readOnly ? '' : 'hover:ring-2 hover:ring-indigo-400'}`}>
+                        {v || ''}
+                      </button>
+                    </td>
+                  )
+                })}
+                <td className="p-2 text-center font-semibold text-gray-700 dark:text-gray-200">{rowTotal(r.rk)}</td>
+                <td className="p-1">
+                  <input className={input} value={hoshin.sponsors[r.rk] ?? ''} disabled={readOnly}
+                    onChange={e => update(d => { d.hoshin.sponsors[r.rk] = e.target.value })} placeholder="Resp." />
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-gray-200 dark:border-gray-600">
+              <td className="p-2 sticky left-0 bg-white dark:bg-gray-800/40 font-semibold">Total par axe</td>
+              {cols.map(c => <td key={c.ck} className="p-2 text-center font-semibold text-indigo-700 dark:text-indigo-400">{colTotal(c.ck)}</td>)}
+              <td /><td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Balanced Scorecard ──────────────────────────────────────────────────────────
+function BscTab({ bsc, update, readOnly }: { bsc: Bsc; update: Upd; readOnly: boolean }) {
+  const persp: { key: keyof Bsc; title: string; sub: string }[] = [
+    { key: 'finances', title: 'Résultats financiers', sub: 'Comment nous voient nos actionnaires ?' },
+    { key: 'clients', title: 'Résultats clients', sub: 'Comment nous voient nos clients ?' },
+    { key: 'processus', title: 'Processus internes', sub: 'Quels processus maîtriser pour satisfaire clients et actionnaires ?' },
+    { key: 'apprentissage', title: 'Apprentissage organisationnel', sub: 'Comment continuer à progresser et créer de la valeur ?' },
+  ]
+  return (
+    <div className="space-y-4">
+      <div className={card}>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Balanced Scorecard — 4 perspectives</h3>
+        <p className={hint}>Traduisez la vision et la stratégie en objectifs et indicateurs équilibrés sur les 4 perspectives.</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {persp.map(p => (
+          <div key={p.key} className={card}>
+            <div><h4 className="font-medium text-gray-900 dark:text-white">{p.title}</h4><p className={hint}>{p.sub}</p></div>
+            <div className="space-y-2">
+              {bsc[p.key].map((it, i) => (
+                <div key={i} className="rounded-lg border border-gray-200 dark:border-gray-700 p-2 space-y-2 bg-gray-50/60 dark:bg-gray-800/30">
+                  <div className="flex items-center gap-2">
+                    <input className={input} value={it.objectif} disabled={readOnly} placeholder="Objectif"
+                      onChange={e => update(d => { d.bsc[p.key][i].objectif = e.target.value })} />
+                    {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.bsc[p.key].splice(i, 1) })}>✕</button>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input className={input} value={it.indicateur} disabled={readOnly} placeholder="Indicateur"
+                      onChange={e => update(d => { d.bsc[p.key][i].indicateur = e.target.value })} />
+                    <input className={input} value={it.cible} disabled={readOnly} placeholder="Cible"
+                      onChange={e => update(d => { d.bsc[p.key][i].cible = e.target.value })} />
+                  </div>
+                </div>
+              ))}
+              {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.bsc[p.key].push({ objectif: '', indicateur: '', cible: '' }) })}>+ Objectif</button>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Master Plan ──────────────────────────────────────────────────────────────────
+function MasterPlanTab({ rows, update, readOnly }: { rows: MasterRow[]; update: Upd; readOnly: boolean }) {
+  const pilotageLabel: Record<MasterRow['pilotage'], string> = { hierarchique: 'Hiérarchique', transversal: 'Transversal', projet: 'Projet' }
+  return (
+    <div className={card}>
+      <div>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Master Plan</h3>
+        <p className={hint}>Positionnez les actions/projets dans le temps. Précisez le type (action ou projet), le mode de pilotage (hiérarchique/vertical, transversal, ou projet), le responsable, les livrables et l’échéance.</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+              <th className="p-2 min-w-[220px]">Action / Projet</th>
+              <th className="p-2">Type</th>
+              <th className="p-2">Pilotage</th>
+              <th className="p-2 min-w-[120px]">Responsable</th>
+              <th className="p-2 min-w-[160px]">Livrables</th>
+              <th className="p-2 min-w-[110px]">Échéance</th>
+              {!readOnly && <th className="p-2" />}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-b border-gray-100 dark:border-gray-700 align-top">
+                <td className="p-1"><input className={input} value={r.libelle} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].libelle = e.target.value })} /></td>
+                <td className="p-1">
+                  <select className={input} value={r.type} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].type = e.target.value as MasterRow['type'] })}>
+                    <option value="action">Action</option><option value="projet">Projet</option>
+                  </select>
+                </td>
+                <td className="p-1">
+                  <select className={input} value={r.pilotage} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].pilotage = e.target.value as MasterRow['pilotage'] })}>
+                    {(Object.keys(pilotageLabel) as MasterRow['pilotage'][]).map(k => <option key={k} value={k}>{pilotageLabel[k]}</option>)}
+                  </select>
+                </td>
+                <td className="p-1"><input className={input} value={r.responsable} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].responsable = e.target.value })} /></td>
+                <td className="p-1"><input className={input} value={r.livrables} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].livrables = e.target.value })} /></td>
+                <td className="p-1"><input className={input} value={r.echeance} disabled={readOnly} onChange={e => update(d => { d.master_plan[i].echeance = e.target.value })} /></td>
+                {!readOnly && <td className="p-1 text-center"><button className={btnGhost} onClick={() => update(d => { d.master_plan.splice(i, 1) })}>✕</button></td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.master_plan.push({ libelle: '', type: 'action', pilotage: 'hierarchique', responsable: '', livrables: '', echeance: '' }) })}>+ Ajouter une ligne</button>}
     </div>
   )
 }
