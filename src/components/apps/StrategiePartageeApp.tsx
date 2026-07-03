@@ -24,6 +24,13 @@ interface Hoshin { scores: Record<string, Record<string, number>>; sponsors: Rec
 interface BscItem { objectif: string; indicateur: string; cible: string }
 interface Bsc { finances: BscItem[]; clients: BscItem[]; processus: BscItem[]; apprentissage: BscItem[] }
 interface MasterRow { libelle: string; type: 'action' | 'projet'; pilotage: 'hierarchique' | 'transversal' | 'projet'; responsable: string; livrables: string; echeance: string }
+// Phase 3 — Piloter
+type Feu = '' | 'vert' | 'orange' | 'rouge'
+interface Suivi { valeur: string; statut: Feu }
+interface Revue { date: string; note: string }
+interface Pilotage { suivi: Record<string, Suivi>; revues: Revue[] }
+type KotterStatut = 'afaire' | 'encours' | 'fait'
+interface KotterStep { statut: KotterStatut; note: string }
 
 interface Doc {
   horizon: string
@@ -37,7 +44,20 @@ interface Doc {
   hoshin: Hoshin
   bsc: Bsc
   master_plan: MasterRow[]
+  pilotage: Pilotage
+  kotter: KotterStep[]
 }
+
+const KOTTER_ETAPES = [
+  'Créer un sentiment d’urgence',
+  'Former une coalition puissante pour lancer la transformation',
+  'Développer une vision mobilisatrice',
+  'Communiquer la vision à l’ensemble du personnel',
+  'Lever les obstacles au changement',
+  'Démontrer des résultats à court terme',
+  'Bâtir sur les premiers résultats pour accélérer le changement',
+  'Ancrer les nouvelles pratiques dans la culture de l’organisation',
+]
 
 const MISSION_CRITERES: { key: string; label: string }[] = [
   { key: 'clients', label: 'Centrée sur la satisfaction des besoins des clients / usagers / parties prenantes' },
@@ -73,11 +93,13 @@ function emptyDoc(): Doc {
     hoshin: { scores: {}, sponsors: {} },
     bsc: { finances: [], clients: [], processus: [], apprentissage: [] },
     master_plan: [],
+    pilotage: { suivi: {}, revues: [] },
+    kotter: KOTTER_ETAPES.map(() => ({ statut: 'afaire' as KotterStatut, note: '' })),
   }
 }
 
-type TabKey = 'presentation' | 'mission' | 'swot' | 'attentes' | 'vision' | 'valeurs' | 'axes' | 'activite' | 'hoshin' | 'bsc' | 'masterplan'
-const TABS: { key: TabKey; label: string; phase: 1 | 2 }[] = [
+type TabKey = 'presentation' | 'mission' | 'swot' | 'attentes' | 'vision' | 'valeurs' | 'axes' | 'activite' | 'hoshin' | 'bsc' | 'masterplan' | 'tableaubord' | 'changement'
+const TABS: { key: TabKey; label: string; phase: 1 | 2 | 3 }[] = [
   { key: 'presentation', label: '📖 Présentation', phase: 1 },
   { key: 'mission', label: '🎯 Mission', phase: 1 },
   { key: 'swot', label: '⚖️ SWOT', phase: 1 },
@@ -89,6 +111,8 @@ const TABS: { key: TabKey; label: string; phase: 1 | 2 }[] = [
   { key: 'hoshin', label: '🔀 Matrice Hoshin', phase: 2 },
   { key: 'bsc', label: '📊 Balanced Scorecard', phase: 2 },
   { key: 'masterplan', label: '🗓️ Master Plan', phase: 2 },
+  { key: 'tableaubord', label: '📈 Tableau de bord', phase: 3 },
+  { key: 'changement', label: '🚀 Conduite du changement', phase: 3 },
 ]
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -166,6 +190,8 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
         if (row.hoshin) { const h = row.hoshin as Partial<Hoshin>; d.hoshin = { scores: h.scores ?? {}, sponsors: h.sponsors ?? {} } }
         if (row.bsc) Object.assign(d.bsc, row.bsc)
         d.master_plan = Array.isArray(row.master_plan) ? row.master_plan as MasterRow[] : []
+        if (row.pilotage) { const p = row.pilotage as Partial<Pilotage>; d.pilotage = { suivi: p.suivi ?? {}, revues: Array.isArray(p.revues) ? p.revues : [] } }
+        if (Array.isArray(row.kotter) && row.kotter.length === KOTTER_ETAPES.length) d.kotter = row.kotter as KotterStep[]
       }
       setDoc(d); setDirty(false); initial.current = true
     } catch (e) { setError(String((e as Error).message ?? e)) }
@@ -263,6 +289,8 @@ export default function StrategiePartageeApp({ ctx }: { ctx: RseContext }) {
           {tab === 'hoshin' && <HoshinTab axes={doc.axes} hoshin={doc.hoshin} update={update} readOnly={readOnly} />}
           {tab === 'bsc' && <BscTab bsc={doc.bsc} update={update} readOnly={readOnly} />}
           {tab === 'masterplan' && <MasterPlanTab rows={doc.master_plan} update={update} readOnly={readOnly} />}
+          {tab === 'tableaubord' && <TableauBordTab axes={doc.axes} bsc={doc.bsc} pilotage={doc.pilotage} update={update} readOnly={readOnly} />}
+          {tab === 'changement' && <ChangementTab kotter={doc.kotter} update={update} readOnly={readOnly} />}
         </>
       )}
     </div>
@@ -726,6 +754,149 @@ function MasterPlanTab({ rows, update, readOnly }: { rows: MasterRow[]; update: 
         </table>
       </div>
       {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.master_plan.push({ libelle: '', type: 'action', pilotage: 'hierarchique', responsable: '', livrables: '', echeance: '' }) })}>+ Ajouter une ligne</button>}
+    </div>
+  )
+}
+
+// ── Tableau de bord (Piloter / PDCA) ──────────────────────────────────────────────
+const FEUX: { v: Feu; label: string; cls: string }[] = [
+  { v: '', label: '—', cls: 'bg-gray-100 dark:bg-gray-700 text-gray-400' },
+  { v: 'vert', label: '● Atteint / en bonne voie', cls: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' },
+  { v: 'orange', label: '● À surveiller', cls: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' },
+  { v: 'rouge', label: '● En retard / non atteint', cls: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400' },
+]
+
+function TableauBordTab({ axes, bsc, pilotage, update, readOnly }: { axes: Axe[]; bsc: Bsc; pilotage: Pilotage; update: Upd; readOnly: boolean }) {
+  // Agrège les indicateurs de la stratégie : lignes d'actions (axes) + Balanced Scorecard.
+  type Row = { key: string; source: string; indicateur: string; depart: string; cible: string }
+  const rows: Row[] = []
+  axes.forEach((axe, ai) => axe.lignes.forEach((la, li) => {
+    if (la.indicateur || la.objectif) rows.push({ key: `la:${ai}.${li}`, source: `A${ai + 1}.${li + 1} — ${axe.titre || '…'}`, indicateur: la.indicateur || la.objectif, depart: la.niveauActuel, cible: la.cible })
+  }))
+  const bscLabel: Record<keyof Bsc, string> = { finances: 'BSC · Finances', clients: 'BSC · Clients', processus: 'BSC · Processus', apprentissage: 'BSC · Apprentissage' }
+  ;(Object.keys(bscLabel) as (keyof Bsc)[]).forEach(p => bsc[p].forEach((it, i) => {
+    if (it.indicateur || it.objectif) rows.push({ key: `bsc:${p}:${i}`, source: bscLabel[p], indicateur: it.indicateur || it.objectif, depart: '', cible: it.cible })
+  }))
+
+  const get = (k: string): Suivi => pilotage.suivi[k] ?? { valeur: '', statut: '' }
+  function setSuivi(k: string, patch: Partial<Suivi>) {
+    update(d => { d.pilotage.suivi[k] = { ...(d.pilotage.suivi[k] ?? { valeur: '', statut: '' }), ...patch } })
+  }
+
+  const counts = { vert: 0, orange: 0, rouge: 0 }
+  rows.forEach(r => { const s = get(r.key).statut; if (s === 'vert') counts.vert++; else if (s === 'orange') counts.orange++; else if (s === 'rouge') counts.rouge++ })
+
+  return (
+    <div className="space-y-4">
+      <div className={card}>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Tableau de bord stratégique (PDCA)</h3>
+        <p className={hint}>Suivi des indicateurs issus des lignes d’actions et de la Balanced Scorecard. Renseignez la valeur actuelle et l’état d’avancement à chaque revue de stratégie.</p>
+        {rows.length > 0 && (
+          <div className="flex gap-3 text-sm">
+            <span className="px-2 py-1 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400">{counts.vert} en bonne voie</span>
+            <span className="px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">{counts.orange} à surveiller</span>
+            <span className="px-2 py-1 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400">{counts.rouge} en retard</span>
+          </div>
+        )}
+      </div>
+
+      {rows.length === 0 ? (
+        <div className={card}><p className={hint}>Aucun indicateur pour l’instant. Ajoutez des indicateurs dans les lignes d’actions (onglet « Axes ») ou dans la Balanced Scorecard.</p></div>
+      ) : (
+        <div className={card}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                  <th className="p-2 min-w-[200px]">Origine</th>
+                  <th className="p-2 min-w-[180px]">Indicateur</th>
+                  <th className="p-2">Départ</th>
+                  <th className="p-2">Cible</th>
+                  <th className="p-2">Actuel</th>
+                  <th className="p-2 min-w-[190px]">État</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => {
+                  const s = get(r.key)
+                  return (
+                    <tr key={r.key} className="border-b border-gray-100 dark:border-gray-700 align-top">
+                      <td className="p-2 text-gray-500 dark:text-gray-400 text-xs">{r.source}</td>
+                      <td className="p-2 text-gray-800 dark:text-gray-200">{r.indicateur}</td>
+                      <td className="p-2 text-gray-500">{r.depart || '—'}</td>
+                      <td className="p-2 text-gray-500">{r.cible || '—'}</td>
+                      <td className="p-1"><input className={`${input} w-24`} value={s.valeur} disabled={readOnly} onChange={e => setSuivi(r.key, { valeur: e.target.value })} /></td>
+                      <td className="p-1">
+                        <select className={`${input} ${FEUX.find(f => f.v === s.statut)?.cls ?? ''}`} value={s.statut} disabled={readOnly}
+                          onChange={e => setSuivi(r.key, { statut: e.target.value as Feu })}>
+                          {FEUX.map(f => <option key={f.v} value={f.v}>{f.label}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className={card}>
+        <h4 className="font-medium text-gray-900 dark:text-white">Revues de stratégie</h4>
+        <p className={hint}>Roue PDCA : consignez les comptes rendus des revues (décisions, ajustements des plans).</p>
+        {pilotage.revues.map((rev, i) => (
+          <div key={i} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2 bg-gray-50/60 dark:bg-gray-800/30">
+            <div className="flex items-center gap-2">
+              <input className={`${input} w-40`} type="date" value={rev.date} disabled={readOnly} onChange={e => update(d => { d.pilotage.revues[i].date = e.target.value })} />
+              {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.pilotage.revues.splice(i, 1) })}>Supprimer</button>}
+            </div>
+            <textarea className={`${input} h-20`} value={rev.note} disabled={readOnly} placeholder="Compte rendu, décisions, ajustements…" onChange={e => update(d => { d.pilotage.revues[i].note = e.target.value })} />
+          </div>
+        ))}
+        {!readOnly && <button className={btnGhost} onClick={() => update(d => { d.pilotage.revues.push({ date: '', note: '' }) })}>+ Ajouter une revue</button>}
+      </div>
+    </div>
+  )
+}
+
+// ── Conduite du changement (8 étapes de Kotter) ────────────────────────────────────
+function ChangementTab({ kotter, update, readOnly }: { kotter: KotterStep[]; update: Upd; readOnly: boolean }) {
+  const statuts: { v: KotterStatut; label: string; cls: string }[] = [
+    { v: 'afaire', label: 'À faire', cls: 'bg-gray-100 dark:bg-gray-700 text-gray-500' },
+    { v: 'encours', label: 'En cours', cls: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' },
+    { v: 'fait', label: 'Fait', cls: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' },
+  ]
+  const done = kotter.filter(k => k.statut === 'fait').length
+  return (
+    <div className="space-y-4">
+      <div className={card}>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Conduite du changement — les 8 étapes de Kotter</h3>
+        <p className={hint}>D’après John P. Kotter (« Leading Change »). Suivez l’avancement de la transformation. {done}/{KOTTER_ETAPES.length} étapes réalisées.</p>
+      </div>
+      {KOTTER_ETAPES.map((etape, i) => {
+        const step = kotter[i] ?? { statut: 'afaire' as KotterStatut, note: '' }
+        return (
+          <div key={i} className={card}>
+            <div className="flex items-start gap-3">
+              <span className="shrink-0 w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">{i + 1}</span>
+              <div className="flex-1 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="font-medium text-gray-900 dark:text-white">{etape}</h4>
+                  <div className="flex gap-1">
+                    {statuts.map(s => (
+                      <button key={s.v} disabled={readOnly} onClick={() => update(d => { d.kotter[i] = { ...d.kotter[i], statut: s.v } })}
+                        className={`px-2 py-1 text-xs rounded-lg transition-colors ${step.statut === s.v ? s.cls + ' font-semibold ring-1 ring-inset ring-current' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <textarea className={`${input} h-16`} value={step.note} disabled={readOnly} placeholder="Actions, responsables, notes…" onChange={e => update(d => { d.kotter[i] = { ...d.kotter[i], note: e.target.value } })} />
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
