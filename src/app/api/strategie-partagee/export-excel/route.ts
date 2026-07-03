@@ -133,21 +133,42 @@ export async function GET(req: NextRequest) {
       })
     })
 
-    // 8. Matrice Hoshin
+    // 8. Matrice Hoshin — format du modèle officiel AQM : axes en lignes, LA en colonnes
     const s8 = wb.addWorksheet('Matrice Hoshin')
     const axes = d.axes ?? []
-    const laRows: { rk: string; label: string; texte: string }[] = []
-    axes.forEach((axe: any, ai: number) => (axe.lignes ?? []).forEach((la: any, li: number) => laRows.push({ rk: la.id ?? `${ai}.${li}`, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '' })))
-    s8.columns = [{ width: 40 }, ...axes.map(() => ({ width: 8 })), { width: 8 }, { width: 18 }]
-    title(s8, 'Matrice Hoshin d’alignement (3 fort · 2 moyen · 1 faible)', axes.length + 3)
-    head(s8, 3, ['Lignes d’actions \\ Axes', ...axes.map((_: any, ai: number) => `A${ai + 1}`), 'Σ', 'Sponsor'])
+    const laRows: { rk: string; label: string; texte: string; indicateur: string; cible: string; deployable: boolean }[] = []
+    axes.forEach((axe: any, ai: number) => (axe.lignes ?? []).forEach((la: any, li: number) => laRows.push({ rk: la.id ?? `${ai}.${li}`, label: `LA ${ai + 1}.${li + 1}`, texte: la.enonce || '', indicateur: la.indicateur ?? '', cible: la.cible ?? '', deployable: !!la.deployable })))
+    s8.columns = [{ width: 36 }, ...laRows.map(() => ({ width: 14 })), { width: 7 }, { width: 22 }, { width: 14 }]
+    const nCols = laRows.length + 4
+    title(s8, 'Matrice Hoshin d’alignement — 3 = Fort · 2 = Moyen · 1 = Faible · 0 = Nul', nCols)
+    head(s8, 3, ['Matrice Hoshin d’alignement', ...laRows.map(r => r.label), 'Σ', 'Indicateur', 'Objectif'])
+    // Énoncés des LA (ligne d'appoint sous l'en-tête)
+    sc(s8, 4, 1, '', { bg: C.grayL }); laRows.forEach((r, j) => sc(s8, 4, 2 + j, r.texte, { bg: C.grayL, sz: 8 })); sc(s8, 4, 2 + laRows.length, '', { bg: C.grayL }); sc(s8, 4, 3 + laRows.length, '', { bg: C.grayL }); sc(s8, 4, 4 + laRows.length, '', { bg: C.grayL })
     const scores = d.hoshin?.scores ?? {}; const sponsors = d.hoshin?.sponsors ?? {}
-    laRows.forEach((r, i) => {
-      sc(s8, 4 + i, 1, `${r.label} — ${r.texte}`)
+    // Ligne Sponsor + ligne Déployable (modèle officiel)
+    sc(s8, 5, 1, 'Responsable de la ligne d’action / Sponsor', { bold: true, bg: C.grayL })
+    laRows.forEach((r, j) => sc(s8, 5, 2 + j, txt(sponsors[r.rk]), { ha: 'center' }))
+    sc(s8, 6, 1, 'Déployable aux niveaux suivants', { bold: true, bg: C.grayL })
+    laRows.forEach((r, j) => sc(s8, 6, 2 + j, r.deployable ? 'Oui' : 'Non', { ha: 'center' }))
+    // Lignes = axes ; colonnes = LA
+    axes.forEach((axe: any, ai: number) => {
+      const row = 7 + ai
+      sc(s8, row, 1, `Axe ${ai + 1} — ${txt(axe.titre)}`, { bold: true })
       let tot = 0
-      axes.forEach((axe: any, ai: number) => { const val = scores[r.rk]?.[axe.id ?? `${ai}`] ?? 0; tot += val; sc(s8, 4 + i, 2 + ai, val || '', { ha: 'center', bg: val === 3 ? C.indigo : val ? C.indigoL : undefined, fg: val === 3 ? C.white : undefined }) })
-      sc(s8, 4 + i, 2 + axes.length, tot, { ha: 'center', bold: true }); sc(s8, 4 + i, 3 + axes.length, txt(sponsors[r.rk]))
+      laRows.forEach((r, j) => { const val = scores[r.rk]?.[axe.id ?? `${ai}`] ?? 0; tot += val; sc(s8, row, 2 + j, val, { ha: 'center', bg: val === 3 ? C.indigo : val ? C.indigoL : undefined, fg: val === 3 ? C.white : undefined }) })
+      sc(s8, row, 2 + laRows.length, tot, { ha: 'center', bold: true })
+      sc(s8, row, 3 + laRows.length, txt(axe.indicateur)); sc(s8, row, 4 + laRows.length, txt(axe.objectif))
     })
+    // Totaux par LA + lignes Indicateur / Objectif des LA (modèle officiel)
+    const rTot = 7 + axes.length
+    sc(s8, rTot, 1, 'Total par ligne d’action', { bold: true, bg: C.indigoL })
+    let grand = 0
+    laRows.forEach((r, j) => { const t = axes.reduce((s: number, axe: any, ai: number) => s + (scores[r.rk]?.[axe.id ?? `${ai}`] ?? 0), 0); grand += t; sc(s8, rTot, 2 + j, t, { ha: 'center', bold: true, bg: C.indigoL }) })
+    sc(s8, rTot, 2 + laRows.length, grand, { ha: 'center', bold: true, bg: C.indigoL })
+    sc(s8, rTot + 1, 1, 'Indicateur', { bold: true, bg: C.grayL })
+    laRows.forEach((r, j) => sc(s8, rTot + 1, 2 + j, txt(r.indicateur), { sz: 8 }))
+    sc(s8, rTot + 2, 1, 'Objectif', { bold: true, bg: C.grayL })
+    laRows.forEach((r, j) => sc(s8, rTot + 2, 2 + j, txt(r.cible), { sz: 8 }))
 
     // 9. Balanced Scorecard
     const s9 = wb.addWorksheet('Balanced Scorecard')

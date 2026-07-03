@@ -981,91 +981,145 @@ function ActiviteTab({ sa, canvas, update, readOnly }: { sa: StrategieActivite; 
   )
 }
 
-// ── Matrice Hoshin d'alignement ────────────────────────────────────────────────
+// ── Matrice Hoshin d'alignement (format du modèle officiel AQM : axes en lignes, LA en colonnes) ──
 function HoshinTab({ axes, hoshin, update, readOnly }: { axes: Axe[]; hoshin: Hoshin; update: Upd; readOnly: boolean }) {
-  // Lignes = toutes les lignes d'actions (aplaties) ; Colonnes = axes. Cellule = contribution 0..3.
-  const rows: { rk: string; label: string; texte: string }[] = []
+  // Colonnes = lignes d'actions (aplaties) ; Lignes = axes. Cellule = contribution 0..3 (0 = nul).
+  const laCols: { id: string; ai: number; li: number; label: string; texte: string }[] = []
   axes.forEach((axe, ai) => axe.lignes.forEach((la, li) => {
-    rows.push({ rk: la.id, label: `LA${ai + 1}.${li + 1}`, texte: la.enonce || '—' })
+    laCols.push({ id: la.id, ai, li, label: `LA ${ai + 1}.${li + 1}`, texte: la.enonce || '—' })
   }))
-  const cols = axes.map((axe, ai) => ({ ck: axe.id, label: `A${ai + 1}`, texte: axe.titre || '—', indicateur: axe.indicateur, objectif: axe.objectif }))
 
-  if (!cols.length || !rows.length) {
+  if (!axes.length || !laCols.length) {
     return (
       <div className={card}>
         <h3 className="font-semibold text-gray-900 dark:text-white">Matrice Hoshin d’alignement</h3>
-        <p className={hint}>Renseignez d’abord des <strong>axes stratégiques</strong> et des <strong>lignes d’actions</strong> (onglet « Axes & Lignes d’actions »). La matrice croisera automatiquement lignes d’actions × axes pour vérifier la contribution de chacune (impact fort 3 / moyen 2 / faible 1).</p>
+        <p className={hint}>Renseignez d’abord des <strong>axes stratégiques</strong> et des <strong>lignes d’actions</strong> (onglet « Axes & Lignes d’actions »). La matrice croisera automatiquement axes (en lignes) × lignes d’actions (en colonnes), conformément au modèle officiel.</p>
       </div>
     )
   }
 
-  const score = (rk: string, ck: string) => hoshin.scores[rk]?.[ck] ?? 0
-  function cycle(rk: string, ck: string) {
+  const score = (laId: string, axId: string) => hoshin.scores[laId]?.[axId] ?? 0
+  function cycle(laId: string, axId: string) {
     if (readOnly) return
     update(d => {
-      const cur = d.hoshin.scores[rk]?.[ck] ?? 0
-      const next = (cur + 1) % 4 // 0→1→2→3→0
-      if (!d.hoshin.scores[rk]) d.hoshin.scores[rk] = {}
-      d.hoshin.scores[rk][ck] = next
+      const cur = d.hoshin.scores[laId]?.[axId] ?? 0
+      if (!d.hoshin.scores[laId]) d.hoshin.scores[laId] = {}
+      d.hoshin.scores[laId][axId] = (cur + 1) % 4 // 0→1→2→3→0
     })
   }
-  const colTotal = (ck: string) => rows.reduce((s, r) => s + score(r.rk, ck), 0)
-  const rowTotal = (rk: string) => cols.reduce((s, c) => s + score(rk, c.ck), 0)
+  const laTotal = (laId: string) => axes.reduce((s, a) => s + score(laId, a.id), 0)
+  const axeTotal = (axId: string) => laCols.reduce((s, c) => s + score(c.id, axId), 0)
   const cellCls = (v: number) => v === 3 ? 'bg-indigo-600 text-white' : v === 2 ? 'bg-indigo-300 dark:bg-indigo-700 text-gray-900 dark:text-white' : v === 1 ? 'bg-indigo-100 dark:bg-indigo-900/50 text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-gray-600'
+  const headCls = 'p-2 sticky left-0 bg-white dark:bg-gray-800/40 text-left min-w-[190px]'
+  const smallInput = `${input} text-xs px-1.5 py-1`
 
   return (
     <div className={card}>
-      <div>
-        <h3 className="font-semibold text-gray-900 dark:text-white">Matrice Hoshin d’alignement</h3>
-        <p className={hint}>Cliquez une cellule pour noter la contribution de chaque ligne d’action à chaque axe : <strong>3</strong> fort · <strong>2</strong> moyen · <strong>1</strong> faible · vide = aucune. Une ligne d’action sans contribution ou un axe faiblement couvert signalent un défaut d’alignement.</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-semibold text-gray-900 dark:text-white">Matrice Hoshin d’alignement</h3>
+          <p className={hint}>Format du modèle officiel : <strong>axes stratégiques en lignes</strong>, <strong>lignes d’actions en colonnes</strong>. Cliquez une cellule pour noter la contribution. Les totaux horizontaux et verticaux permettent d’évaluer l’équilibrage global.</p>
+        </div>
+        <div className="text-xs rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-2 text-indigo-800 dark:text-indigo-300 whitespace-nowrap">
+          3 = Fort<br/>2 = Moyen<br/>1 = Faible<br/>0 = Nul
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="text-sm border-collapse">
           <thead>
             <tr>
-              <th className="p-2 text-left sticky left-0 bg-white dark:bg-gray-800/40 min-w-[220px]">Lignes d’actions \ Axes</th>
-              {cols.map(c => (
-                <th key={c.ck} className="p-2 align-bottom text-center min-w-[64px]" title={`${c.texte}${c.indicateur ? `\nIndicateur : ${c.indicateur}` : ''}${c.objectif ? `\nObjectif : ${c.objectif}` : ''}`}>
+              <th className={headCls}>Matrice Hoshin d’alignement</th>
+              {laCols.map(c => (
+                <th key={c.id} className="p-1.5 align-bottom text-center min-w-[86px]" title={c.texte}>
                   <div className="font-bold text-indigo-700 dark:text-indigo-400">{c.label}</div>
-                  <div className="text-[10px] font-normal text-gray-400 max-w-[80px] truncate mx-auto">{c.texte}</div>
-                  {(c.indicateur || c.objectif) && (
-                    <div className="text-[9px] font-normal text-indigo-400 max-w-[80px] truncate mx-auto">{[c.indicateur, c.objectif].filter(Boolean).join(' → ')}</div>
-                  )}
+                  <div className="text-[9px] font-normal text-gray-400 max-w-[86px] truncate mx-auto">{c.texte}</div>
                 </th>
               ))}
               <th className="p-2 text-center font-semibold">Σ</th>
-              <th className="p-2 text-left min-w-[140px]">Sponsor</th>
+              <th className="p-2 text-left min-w-[150px]">Indicateur</th>
+              <th className="p-2 text-left min-w-[110px]">Objectif</th>
+            </tr>
+            <tr className="border-t border-gray-100 dark:border-gray-700">
+              <th className={`${headCls} text-xs font-medium text-gray-500 dark:text-gray-400`}>Responsable de la ligne d’action / Sponsor</th>
+              {laCols.map(c => (
+                <td key={c.id} className="p-1">
+                  <input className={smallInput} value={hoshin.sponsors[c.id] ?? ''} disabled={readOnly}
+                    onChange={e => update(d => { d.hoshin.sponsors[c.id] = e.target.value })} placeholder="Resp." />
+                </td>
+              ))}
+              <td /><td /><td />
+            </tr>
+            <tr className="border-t border-gray-100 dark:border-gray-700">
+              <th className={`${headCls} text-xs font-medium text-gray-500 dark:text-gray-400`}>Déployable aux niveaux suivants</th>
+              {laCols.map(c => {
+                const dep = axes[c.ai]?.lignes[c.li]?.deployable ?? false
+                return (
+                  <td key={c.id} className="p-1 text-center">
+                    <button disabled={readOnly}
+                      onClick={() => update(d => { d.axes[c.ai].lignes[c.li].deployable = !d.axes[c.ai].lignes[c.li].deployable })}
+                      className={`px-2 py-0.5 rounded text-xs ${dep ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400'} ${readOnly ? '' : 'hover:ring-1 hover:ring-indigo-400'}`}>
+                      {dep ? 'Oui' : 'Non'}
+                    </button>
+                  </td>
+                )
+              })}
+              <td /><td /><td />
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
-              <tr key={r.rk} className="border-t border-gray-100 dark:border-gray-700">
-                <td className="p-2 sticky left-0 bg-white dark:bg-gray-800/40">
-                  <span className="font-medium text-gray-700 dark:text-gray-300">{r.label}</span>
-                  <span className="text-gray-400"> — {r.texte}</span>
+            {axes.map((axe, ai) => (
+              <tr key={axe.id} className="border-t border-gray-100 dark:border-gray-700">
+                <td className={headCls}>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Axe {ai + 1}</span>
+                  <span className="text-gray-400"> — {axe.titre || '—'}</span>
                 </td>
-                {cols.map(c => {
-                  const v = score(r.rk, c.ck)
+                {laCols.map(c => {
+                  const v = score(c.id, axe.id)
                   return (
-                    <td key={c.ck} className="p-1 text-center">
-                      <button onClick={() => cycle(r.rk, c.ck)} disabled={readOnly}
+                    <td key={c.id} className="p-1 text-center">
+                      <button onClick={() => cycle(c.id, axe.id)} disabled={readOnly}
                         className={`w-9 h-9 rounded font-bold ${cellCls(v)} ${readOnly ? '' : 'hover:ring-2 hover:ring-indigo-400'}`}>
-                        {v || ''}
+                        {v || '0'}
                       </button>
                     </td>
                   )
                 })}
-                <td className="p-2 text-center font-semibold text-gray-700 dark:text-gray-200">{rowTotal(r.rk)}</td>
+                <td className="p-2 text-center font-semibold text-indigo-700 dark:text-indigo-400">{axeTotal(axe.id)}</td>
                 <td className="p-1">
-                  <input className={input} value={hoshin.sponsors[r.rk] ?? ''} disabled={readOnly}
-                    onChange={e => update(d => { d.hoshin.sponsors[r.rk] = e.target.value })} placeholder="Resp." />
+                  <input className={smallInput} value={axe.indicateur} disabled={readOnly}
+                    onChange={e => update(d => { d.axes[ai].indicateur = e.target.value })} placeholder="Indicateur de l’axe" />
+                </td>
+                <td className="p-1">
+                  <input className={smallInput} value={axe.objectif} disabled={readOnly}
+                    onChange={e => update(d => { d.axes[ai].objectif = e.target.value })} placeholder="Objectif" />
                 </td>
               </tr>
             ))}
             <tr className="border-t-2 border-gray-200 dark:border-gray-600">
-              <td className="p-2 sticky left-0 bg-white dark:bg-gray-800/40 font-semibold">Total par axe</td>
-              {cols.map(c => <td key={c.ck} className="p-2 text-center font-semibold text-indigo-700 dark:text-indigo-400">{colTotal(c.ck)}</td>)}
+              <td className={`${headCls} font-semibold`}>Total par ligne d’action</td>
+              {laCols.map(c => <td key={c.id} className="p-2 text-center font-semibold text-gray-700 dark:text-gray-200">{laTotal(c.id)}</td>)}
+              <td className="p-2 text-center font-semibold text-indigo-700 dark:text-indigo-400">{laCols.reduce((s, c) => s + laTotal(c.id), 0)}</td>
               <td /><td />
+            </tr>
+            <tr className="border-t border-gray-100 dark:border-gray-700">
+              <td className={`${headCls} text-xs font-medium text-gray-500 dark:text-gray-400`}>Indicateur</td>
+              {laCols.map(c => (
+                <td key={c.id} className="p-1">
+                  <input className={smallInput} value={axes[c.ai]?.lignes[c.li]?.indicateur ?? ''} disabled={readOnly}
+                    onChange={e => update(d => { d.axes[c.ai].lignes[c.li].indicateur = e.target.value })} placeholder="Indicateur" />
+                </td>
+              ))}
+              <td /><td /><td />
+            </tr>
+            <tr className="border-t border-gray-100 dark:border-gray-700">
+              <td className={`${headCls} text-xs font-medium text-gray-500 dark:text-gray-400`}>Objectif</td>
+              {laCols.map(c => (
+                <td key={c.id} className="p-1">
+                  <input className={smallInput} value={axes[c.ai]?.lignes[c.li]?.cible ?? ''} disabled={readOnly}
+                    onChange={e => update(d => { d.axes[c.ai].lignes[c.li].cible = e.target.value })} placeholder="Cible" />
+                </td>
+              ))}
+              <td /><td /><td />
             </tr>
           </tbody>
         </table>
