@@ -6,7 +6,7 @@ import { findSharedOrgs } from '@/lib/rseShares'
 export const dynamic = 'force-dynamic'
 
 // Apps métier scopées par organisation : le partage utilise diagnostic_id = org_id (pas de table de diagnostic).
-const ORG_KEYED = new Set(['eudr-fournisseurs'])
+const ORG_KEYED = new Set(['eudr-fournisseurs', 'strategie-partagee'])
 
 /**
  * GET /api/rse/shared?app=<slug>
