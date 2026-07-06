@@ -80,9 +80,10 @@ function toBase64Geo(g: unknown): string {
 
 function goodsMeasureXml(m?: GoodsMeasure): string {
   if (!m) return ''
+  // Ordre imposé par le XSD common/v3 : percentageEstimationOrDeviation, netWeight, supplementaryUnit, qualifier.
   let x = '<eudrCommon:goodsMeasure>'
-  if (m.netWeight != null && m.netWeight !== undefined) x += `<eudrCommon:netWeight>${xml(m.netWeight)}</eudrCommon:netWeight>`
   if (m.percentageEstimationOrDeviation != null) x += `<eudrCommon:percentageEstimationOrDeviation>${xml(m.percentageEstimationOrDeviation)}</eudrCommon:percentageEstimationOrDeviation>`
+  if (m.netWeight != null) x += `<eudrCommon:netWeight>${xml(m.netWeight)}</eudrCommon:netWeight>`
   if (m.supplementaryUnit != null) x += `<eudrCommon:supplementaryUnit>${xml(m.supplementaryUnit)}</eudrCommon:supplementaryUnit>`
   if (m.supplementaryUnitQualifier) x += `<eudrCommon:supplementaryUnitQualifier>${xml(m.supplementaryUnitQualifier)}</eudrCommon:supplementaryUnitQualifier>`
   x += '</eudrCommon:goodsMeasure>'
