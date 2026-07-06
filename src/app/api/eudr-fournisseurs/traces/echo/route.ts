@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getTracesCredentials, makeEchoClient } from '@/lib/eudr/tracesClient'
+import { getTracesCredentials, makeEchoClient, describeTracesError } from '@/lib/eudr/tracesClient'
 import { guard } from '../_auth'
 
 export const dynamic = 'force-dynamic'
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     const result = await client.echo(message)
     return NextResponse.json({ ok: true, environment: creds.environment, echoed: result })
   } catch (err) {
-    return NextResponse.json({ ok: false, error: (err as Error).message ?? String(err) }, { status: 502 })
+    const info = describeTracesError(err)
+    return NextResponse.json({ ok: false, error: info.message, status: info.status, detail: info.detail }, { status: 502 })
   }
 }

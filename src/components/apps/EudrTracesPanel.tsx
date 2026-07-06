@@ -67,7 +67,7 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
 
   // ── Test Echo ─────────────────────────────────────────────────────────────
   const [echoing, setEchoing] = useState(false)
-  const [echoMsg, setEchoMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [echoMsg, setEchoMsg] = useState<{ ok: boolean; text: string; detail?: string } | null>(null)
   async function testEcho() {
     setEchoing(true); setEchoMsg(null)
     try {
@@ -76,7 +76,7 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
       })
       const j = await res.json().catch(() => ({}))
       if (res.ok && j.ok) setEchoMsg({ ok: true, text: `Connexion réussie (${j.environment}).` })
-      else setEchoMsg({ ok: false, text: j.error ?? 'Échec de la connexion.' })
+      else setEchoMsg({ ok: false, text: `${j.error ?? 'Échec de la connexion.'}${j.status ? ` (HTTP ${j.status})` : ''}`, detail: j.detail })
     } catch (e) { setEchoMsg({ ok: false, text: String((e as Error).message ?? e) }) }
     finally { setEchoing(false) }
   }
@@ -218,6 +218,9 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
             <button className={btnGhost} onClick={testEcho} disabled={echoing}>{echoing ? 'Test…' : '🔌 Tester la connexion'}</button>
             {echoMsg && <span className={`text-sm ${echoMsg.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{echoMsg.ok ? '✅ ' : '❌ '}{echoMsg.text}</span>}
           </div>
+        )}
+        {echoMsg?.detail && (
+          <pre className="mt-1 max-h-48 overflow-auto text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900/40 rounded p-2">{echoMsg.detail}</pre>
         )}
       </div>
 

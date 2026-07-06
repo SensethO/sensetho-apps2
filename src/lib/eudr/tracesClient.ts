@@ -36,6 +36,17 @@ export function clientIdFor(env: TracesEnvironment): string {
   return env === 'production' ? 'eudr-repository' : 'eudr-test'
 }
 
+/** Extrait un message exploitable d'une erreur SOAP/axios (statut HTTP + corps du fault). */
+export function describeTracesError(err: unknown): { message: string; status?: number; detail?: string } {
+  const e = err as { message?: string; response?: { status?: number; data?: unknown } }
+  const status = e?.response?.status
+  const data = e?.response?.data
+  let detail: string | undefined
+  if (typeof data === 'string') detail = data.slice(0, 2000)
+  else if (data) { try { detail = JSON.stringify(data).slice(0, 2000) } catch { /* ignore */ } }
+  return { message: e?.message ?? String(err), status, detail }
+}
+
 /** Charge et déchiffre les identifiants TRACES d'une organisation, ou null si absent. */
 export async function getTracesCredentials(orgId: string): Promise<TracesCredentials | null> {
   const admin = createAdminClient()
