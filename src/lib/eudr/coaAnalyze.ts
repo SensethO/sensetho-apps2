@@ -1,10 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 /**
- * Analyse d'un COA (Certificate of Analysis) par Claude (vision).
- * Extrait l'en-tête + le tableau (paramètre/méthode/spécification/résultat),
- * pré-évalue la conformité et liste les points à vérifier. Si une « demande
- * client » est fournie, elle sert de référence pour les items qualitatifs.
+ * Analyse d'un fichier COA (Certificate of Analysis) par Claude (vision).
+ * Un même fichier peut contenir PLUSIEURS certificats/produits → renvoie un
+ * tableau `documents`, un par produit analysé. Chaque document : en-tête,
+ * tableau (paramètre/méthode/spécification/résultat), verdict par ligne,
+ * points à vérifier. La « demande client » sert de référence pour le qualitatif.
  *
  * Modèle : claude-opus-4-8 (vision + adaptive thinking + sortie structurée).
  * Le fichier ne fait que transiter vers l'API Anthropic (rien n'est stocké).
@@ -18,29 +19,29 @@ export interface CoaRow {
   section: string; parametre: string; methode: string; specification: string; resultat: string
   verdict: 'conforme' | 'non_conforme' | 'a_verifier'; commentaire: string; source: string
 }
-export interface CoaExtraction {
-  header: {
-    producteur: string; numero_certificat: string; produit: string; numero_batch: string
-    reference_echantillon: string; date_fabrication: string; date_analyse: string; date_peremption: string
-  }
+export interface CoaHeader {
+  producteur: string; numero_certificat: string; produit: string; numero_batch: string
+  reference_echantillon: string; date_fabrication: string; date_analyse: string; date_peremption: string
+  date_document: string
+}
+export interface CoaDocument {
+  header: CoaHeader
   rows: CoaRow[]
   points_a_verifier: string[]
   summary: { conforme_global: boolean; resume: string }
 }
 
-const SCHEMA = {
+const HEADER_PROPS = {
+  producteur: { type: 'string' }, numero_certificat: { type: 'string' }, produit: { type: 'string' },
+  numero_batch: { type: 'string' }, reference_echantillon: { type: 'string' },
+  date_fabrication: { type: 'string' }, date_analyse: { type: 'string' }, date_peremption: { type: 'string' },
+  date_document: { type: 'string' },
+}
+const DOC_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['header', 'rows', 'points_a_verifier', 'summary'],
   properties: {
-    header: {
-      type: 'object', additionalProperties: false,
-      required: ['producteur', 'numero_certificat', 'produit', 'numero_batch', 'reference_echantillon', 'date_fabrication', 'date_analyse', 'date_peremption'],
-      properties: {
-        producteur: { type: 'string' }, numero_certificat: { type: 'string' }, produit: { type: 'string' },
-        numero_batch: { type: 'string' }, reference_echantillon: { type: 'string' },
-        date_fabrication: { type: 'string' }, date_analyse: { type: 'string' }, date_peremption: { type: 'string' },
-      },
-    },
+    header: { type: 'object', additionalProperties: false, required: Object.keys(HEADER_PROPS), properties: HEADER_PROPS },
     rows: {
       type: 'array',
       items: {
@@ -61,18 +62,24 @@ const SCHEMA = {
     },
   },
 }
+const SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['documents'],
+  properties: { documents: { type: 'array', items: DOC_SCHEMA } },
+}
 
 const SYSTEM = `Tu es un expert qualité qui analyse des Certificats d'Analyses (COA) de produits (agro-alimentaire / matières premières).
-À partir de l'image/PDF du COA fourni, tu dois :
-1. Extraire l'en-tête (producteur, n° certificat, produit, n° de batch, référence échantillon, dates de fabrication/analyse/péremption). Mets "" si absent.
-2. Extraire CHAQUE ligne du tableau d'analyses avec sa section (Organoleptique / Physico-chimique / Microbiologique ou autre), le paramètre, la méthode, la spécification attendue et le résultat obtenu — recopie fidèlement les valeurs telles qu'écrites.
-3. Pour chaque ligne, déterminer si le résultat est COHÉRENT avec la spécification :
+Le fichier fourni peut contenir PLUSIEURS certificats / produits distincts (par ex. une page = un certificat, ou plusieurs produits/lots). Tu dois produire un tableau "documents" avec UN objet PAR produit/certificat analysé. Ne fusionne jamais deux produits différents dans le même document.
+
+Pour CHAQUE document :
+1. En-tête : producteur, n° certificat, produit, n° de batch, référence échantillon, dates de fabrication/analyse/péremption, et "date_document" = la date figurant sur le certificat (date d'analyse ou d'émission). Mets "" si absent.
+2. Extrais CHAQUE ligne du tableau d'analyses : section (Organoleptique / Physico-chimique / Microbiologique ou autre), paramètre, méthode, spécification attendue, résultat obtenu — recopie fidèlement les valeurs.
+3. Pour chaque ligne, détermine si le résultat est COHÉRENT avec la spécification :
    - "conforme" si le résultat respecte clairement la spécification (ex. 4,47% ≤ 4,5% ; 120 ≤ 5000 ; Absence = Absence ; valeur dans l'intervalle).
    - "non_conforme" si le résultat viole la spécification (ex. 12,27% hors de [10% ; 12%]).
    - "a_verifier" si tu ne peux pas trancher mécaniquement — typiquement les critères qualitatifs (couleur, odeur) dont la valeur attendue n'est pas précisée, ou un résultat ambigu.
-4. Pour les critères qualitatifs (ex. couleur « Brun foncé » vs résultat « OK ») : la valeur attendue dépend généralement de la DEMANDE DU CLIENT. Si une demande client est fournie, utilise-la comme référence et cite-la comme source. Sinon, si tu connais une référence officielle (norme/réglementation), donne le verdict et cite précisément la source dans le champ "source". Si tu n'as ni l'une ni l'autre, mets "a_verifier" et ajoute un point à vérifier manuellement expliquant ce qui manque (ex. « Couleur : la teinte exacte attendue n'est pas spécifiée dans le COA »).
-5. Remplir "points_a_verifier" : liste des vérifications manuelles nécessaires (chaque item = une phrase claire).
-6. "summary.conforme_global" = true seulement si AUCUNE ligne n'est non_conforme ; "resume" = 1-2 phrases de synthèse en français.
+4. Critères qualitatifs (ex. couleur « Brun foncé » vs « OK ») : la valeur attendue dépend de la DEMANDE DU CLIENT. Si une demande client est fournie, utilise-la comme référence et cite-la comme source. Sinon, si tu connais une référence officielle (norme/réglementation), donne le verdict et cite précisément la source dans "source". Sinon "a_verifier" + ajoute un point à vérifier expliquant ce qui manque.
+5. "points_a_verifier" : vérifications manuelles nécessaires (une phrase claire par item).
+6. "summary.conforme_global" = true seulement si AUCUNE ligne n'est non_conforme ; "resume" = 1-2 phrases de synthèse.
 Sois rigoureux : ne te fie pas à la conclusion écrite du laboratoire, recalcule toi-même la cohérence. Réponds uniquement via le format structuré demandé.`
 
 function fileBlock(f: CoaFile): Anthropic.ContentBlockParam | null {
@@ -111,13 +118,13 @@ async function demandToText(f: CoaFile): Promise<string> {
   return ''
 }
 
-export async function analyzeCoa(coa: CoaFile, demand?: CoaFile | null): Promise<CoaExtraction> {
+export async function analyzeCoa(coa: CoaFile, demand?: CoaFile | null): Promise<CoaDocument[]> {
   const client = new Anthropic()
   const content: Anthropic.ContentBlockParam[] = []
 
   const coaBlock = fileBlock(coa)
   if (!coaBlock) throw new Error(`Type de fichier COA non pris en charge : ${coa.mime}. Utilisez un PDF ou une image.`)
-  content.push({ type: 'text', text: 'Voici le Certificat d\'Analyses (COA) à analyser :' })
+  content.push({ type: 'text', text: 'Voici le fichier de Certificat(s) d\'Analyses (COA) à analyser (il peut contenir plusieurs produits) :' })
   content.push(coaBlock)
 
   if (demand) {
@@ -133,7 +140,7 @@ export async function analyzeCoa(coa: CoaFile, demand?: CoaFile | null): Promise
 
   const params = {
     model: MODEL,
-    max_tokens: 8000,
+    max_tokens: 16000,
     thinking: { type: 'adaptive' },
     system: SYSTEM,
     output_config: { format: { type: 'json_schema', schema: SCHEMA } },
@@ -143,5 +150,6 @@ export async function analyzeCoa(coa: CoaFile, demand?: CoaFile | null): Promise
 
   const textBlock = msg.content.find(b => b.type === 'text') as Anthropic.TextBlock | undefined
   if (!textBlock) throw new Error('Réponse IA vide.')
-  return JSON.parse(textBlock.text) as CoaExtraction
+  const parsed = JSON.parse(textBlock.text) as { documents?: CoaDocument[] }
+  return Array.isArray(parsed.documents) && parsed.documents.length ? parsed.documents : []
 }

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const TABLE = 'eudr_coa'
-const COLS = 'id, label, supplier_id, contract_id, source_attachment_id, client_demand_attachment_id, status, extracted, analysis, summary, points_a_verifier, analyzed_at, analyzed_model, validated_by, validated_at, created_at, updated_at'
+const COLS = 'id, label, supplier_id, contract_id, source_attachment_id, client_demand_attachment_id, status, extracted, analysis, summary, points_a_verifier, document_date, uploaded_by_email, analyzed_at, analyzed_model, validated_by, validated_at, created_at, updated_at'
 
 /** GET ?org_id — liste des COA de l'organisation. */
 export async function GET(req: NextRequest) {
@@ -30,9 +30,11 @@ export async function POST(req: NextRequest) {
     const auth = await guard(body.org_id ?? null, { requireEdit: true })
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
     const admin = createAdminClient()
+    const { data: prof } = await admin.from('profiles').select('email').eq('id', auth.userId).maybeSingle()
     const { data, error } = await admin.from(TABLE).insert({
       org_id: body.org_id,
       user_id: auth.userId,
+      uploaded_by_email: (prof?.email as string | undefined)?.toLowerCase() ?? null,
       label: (body.label ?? '').trim() || 'COA',
       supplier_id: body.supplier_id || null,
       contract_id: body.contract_id || null,
