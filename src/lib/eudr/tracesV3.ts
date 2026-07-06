@@ -17,6 +17,7 @@ const DDS_PATH = '/ws/EUDRDueDiligenceStatementServiceV3'
 const NS_DDS = 'http://ec.europa.eu/tracesnt/certificate/eudr/due-diligence-statement/v3'
 const ACTION_SUBMIT = `${NS_DDS}/submitDds`
 const ACTION_GET_BY_ID = `${NS_DDS}/getDdsByIdentifiers`
+const ACTION_GET_DDS = `${NS_DDS}/getDds`
 
 function endpoint(creds: TracesCredentials): string {
   return (creds.environment === 'production' ? HOST.production : HOST.acceptance) + DDS_PATH
@@ -161,6 +162,30 @@ export async function submitDdsV3(
   const raw = await post(creds, ACTION_SUBMIT, body)
   const uuid = (raw.match(/<[^>]*:?uuid>([^<]+)<\/[^>]*:?uuid>/i) || [])[1] || null
   return { uuid, raw }
+}
+
+function pick(raw: string, tag: string): string | null {
+  const m = raw.match(new RegExp(`<[^>]*:?${tag}>([^<]+)</[^>]*:?${tag}>`, 'i'))
+  return m ? m[1] : null
+}
+
+/**
+ * getDds V3 (par UUID) → renvoie l'aperçu : n° de référence, n° de vérification, statut.
+ * Ces numéros ne sont attribués qu'une fois la DDS traitée (statut AVAILABLE).
+ */
+export async function getDdsV3(
+  creds: TracesCredentials,
+  uuid: string,
+): Promise<{ referenceNumber: string | null; verificationNumber: string | null; status: string | null; internalReferenceNumber: string | null; raw: string }> {
+  const body = `<dds:GetDdsRequest><dds:uuidList>${xml(uuid)}</dds:uuidList></dds:GetDdsRequest>`
+  const raw = await post(creds, ACTION_GET_DDS, body)
+  return {
+    referenceNumber: pick(raw, 'referenceNumber'),
+    verificationNumber: pick(raw, 'verificationNumber'),
+    status: pick(raw, 'status'),
+    internalReferenceNumber: pick(raw, 'internalReferenceNumber'),
+    raw,
+  }
 }
 
 /** getDdsByIdentifiers V3 → vérifie une DDS (référence + vérification). */
