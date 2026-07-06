@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getTracesCredentials, makeRetrievalClient, describeTracesError } from '@/lib/eudr/tracesClient'
+import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClient'
+import { getDdsByIdentifiersV3 } from '@/lib/eudr/tracesV3'
 import { guard } from '../_auth'
 
 export const dynamic = 'force-dynamic'
@@ -25,9 +26,8 @@ export async function POST(req: NextRequest) {
     const creds = await getTracesCredentials(body.org_id!)
     if (!creds) return NextResponse.json({ error: 'Identifiants TRACES non configurés pour cette organisation.' }, { status: 400 })
 
-    const client = makeRetrievalClient(creds)
-    const result = await client.getStatementByIdentifiers(referenceNumber, verificationNumber, { decodeGeojson: true })
-    return NextResponse.json({ ok: true, environment: creds.environment, result })
+    const result = await getDdsByIdentifiersV3(creds, referenceNumber, verificationNumber)
+    return NextResponse.json({ ok: true, environment: creds.environment, result: { status: result.status, ddsInfo: [{ status: result.status }] } })
   } catch (err) {
     const info = describeTracesError(err)
     return NextResponse.json({ ok: false, error: info.message, status: info.status, detail: info.detail }, { status: 502 })
