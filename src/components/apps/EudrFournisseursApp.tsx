@@ -414,7 +414,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
               onDelete={c => setToDelete({ entity: 'contracts', id: c.id, label: c.contract_number ?? 'ce contrat' })}
             />
           )}
-          {tab === 'traces' && <EudrTracesPanel orgId={orgId} canManage={!ctx.isShared} />}
+          {tab === 'traces' && <EudrTracesPanel orgId={orgId} canManage={!ctx.isShared} suppliers={suppliers} contracts={contracts} />}
         </>
       )}
 

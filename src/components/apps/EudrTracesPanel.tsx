@@ -14,7 +14,15 @@ const btnGhost = 'px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-g
 
 interface CredInfo { username: string; environment: 'acceptance' | 'production'; clientId: string; updatedAt: string | null }
 
-export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; canManage: boolean }) {
+interface SupplierLite { id: string; company?: string; country_origin?: string }
+interface ContractLite { id: string; contract_number?: string; product?: string; delivery_country?: string; supplier?: string }
+
+export default function EudrTracesPanel({ orgId, canManage, suppliers = [], contracts = [] }: {
+  orgId: string
+  canManage: boolean
+  suppliers?: SupplierLite[]
+  contracts?: ContractLite[]
+}) {
   // ── Identifiants ──────────────────────────────────────────────────────────
   const [configured, setConfigured] = useState(false)
   const [info, setInfo] = useState<CredInfo | null>(null)
@@ -114,6 +122,41 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
   const [submitRes, setSubmitRes] = useState<{ ok: boolean; text: string; detail?: string } | null>(null)
   function setF<K extends keyof typeof dds>(k: K, v: string) { setDds(d => ({ ...d, [k]: v })) }
 
+  // Pré-remplissage depuis un contrat existant (mappe les champs disponibles ; le code SH,
+  // le poids, l'espèce et la géométrie GeoJSON ne sont pas stockés et restent à compléter).
+  function prefillFromContract(contractId: string) {
+    const c = contracts.find(x => x.id === contractId)
+    if (!c) return
+    const sup = suppliers.find(s => (s.company ?? '').trim() && s.company === c.supplier)
+    setDds(d => ({
+      ...d,
+      internalReferenceNumber: c.contract_number ?? d.internalReferenceNumber,
+      descriptionOfGoods: c.product ?? d.descriptionOfGoods,
+      countryOfActivity: c.delivery_country || d.countryOfActivity,
+      producerName: c.supplier ?? d.producerName,
+      producerCountry: sup?.country_origin ?? d.producerCountry,
+    }))
+  }
+
+  // Suivi post-dépôt : récupère n° de référence + n° de vérification (getDds par UUID).
+  const [lastUuid, setLastUuid] = useState<string | null>(null)
+  const [statusChecking, setStatusChecking] = useState(false)
+  const [statusRes, setStatusRes] = useState<{ referenceNumber?: string | null; verificationNumber?: string | null; status?: string | null; error?: string } | null>(null)
+  async function checkStatus() {
+    if (!lastUuid) return
+    setStatusChecking(true); setStatusRes(null)
+    try {
+      const res = await fetch(`/api/eudr-fournisseurs/traces/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, uuid: lastUuid }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (res.ok && j.ok) setStatusRes({ referenceNumber: j.referenceNumber, verificationNumber: j.verificationNumber, status: j.status })
+      else setStatusRes({ error: j.error ?? 'Erreur' })
+    } catch (e) { setStatusRes({ error: String((e as Error).message ?? e) }) }
+    finally { setStatusChecking(false) }
+  }
+
   async function submitDds() {
     setSubmitting(true); setSubmitRes(null)
     try {
@@ -154,7 +197,7 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
         body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement }),
       })
       const j = await res.json().catch(() => ({}))
-      if (res.ok && j.ok) setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}` })
+      if (res.ok && j.ok) { setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}` }); setLastUuid(j.ddsIdentifier ?? null); setStatusRes(null) }
       else setSubmitRes({ ok: false, text: `${j.error ?? 'Échec du dépôt.'}${j.status ? ` (HTTP ${j.status})` : ''}`, detail: j.detail })
     } catch (e) { setSubmitRes({ ok: false, text: String((e as Error).message ?? e) }) }
     finally { setSubmitting(false) }
@@ -268,7 +311,19 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
       {/* Dépôt DDS */}
       <div className={cardCls}>
         <h3 className="font-semibold text-gray-900 dark:text-white">📤 Déposer une DDS</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Déclaration de diligence raisonnée (submitDds V2). La géolocalisation est un GeoJSON.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Déclaration de diligence raisonnée (submitDds V3). La géolocalisation est un GeoJSON.</p>
+        {contracts.length > 0 && (
+          <div>
+            <label className={labelCls}>Pré-remplir depuis un contrat</label>
+            <select className={inputCls} defaultValue="" onChange={e => { if (e.target.value) prefillFromContract(e.target.value) }}>
+              <option value="">— Choisir un contrat —</option>
+              {contracts.map(c => (
+                <option key={c.id} value={c.id}>{c.contract_number || '(sans n°)'}{c.product ? ` · ${c.product}` : ''}{c.supplier ? ` · ${c.supplier}` : ''}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Reprend référence, produit, pays et producteur. Le code SH, le poids, l&apos;espèce et le GeoJSON restent à compléter (non stockés dans la fiche).</p>
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Type d&apos;opérateur</label>
@@ -343,6 +398,22 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
             <p>{submitRes.ok ? '✅ ' : '❌ '}{submitRes.text}</p>
             {submitRes.detail && (
               <pre className="mt-2 max-h-64 overflow-auto text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{submitRes.detail}</pre>
+            )}
+          </div>
+        )}
+        {lastUuid && (
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2">
+            <div className="flex items-center gap-3">
+              <button className={btnGhost} onClick={checkStatus} disabled={statusChecking}>{statusChecking ? 'Vérification…' : '🔄 Récupérer n° de référence / statut'}</button>
+              <span className="text-xs text-gray-400">La DDS doit être traitée (statut AVAILABLE) pour obtenir les numéros.</span>
+            </div>
+            {statusRes && (statusRes.error
+              ? <p className="text-sm text-red-600 dark:text-red-400">❌ {statusRes.error}</p>
+              : <div className="text-sm text-gray-700 dark:text-gray-200 space-y-0.5">
+                  <p>Statut : <span className="font-medium">{statusRes.status ?? '—'}</span></p>
+                  <p>N° de référence : <span className="font-mono">{statusRes.referenceNumber ?? '—'}</span></p>
+                  <p>N° de vérification : <span className="font-mono">{statusRes.verificationNumber ?? '—'}</span></p>
+                </div>
             )}
           </div>
         )}
