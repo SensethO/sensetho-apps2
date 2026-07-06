@@ -138,6 +138,18 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
     }))
   }
 
+  // GeoJSON depuis un document SharePoint (au lieu du collage texte).
+  const [geoSupplierId, setGeoSupplierId] = useState('')
+  const [geoDocs, setGeoDocs] = useState<{ id: string; name: string }[]>([])
+  const [geojsonAttachmentId, setGeojsonAttachmentId] = useState('')
+  useEffect(() => {
+    setGeoDocs([]); setGeojsonAttachmentId('')
+    if (!geoSupplierId) return
+    fetch(`/api/eudr-fournisseurs/documents?org_id=${orgId}&entity_type=supplier&entity_id=${geoSupplierId}`)
+      .then(r => r.json()).then(j => setGeoDocs((j.data ?? []).filter((d: { doc_type: string }) => d.doc_type === 'geojson')))
+      .catch(() => {})
+  }, [geoSupplierId, orgId])
+
   // Suivi post-dépôt : récupère n° de référence + n° de vérification (getDds par UUID).
   const [lastUuid, setLastUuid] = useState<string | null>(null)
   const [statusChecking, setStatusChecking] = useState(false)
@@ -194,7 +206,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
       }
       const res = await fetch(`/api/eudr-fournisseurs/traces/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement }),
+        body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement, geojsonAttachmentId: geojsonAttachmentId || undefined }),
       })
       const j = await res.json().catch(() => ({}))
       if (res.ok && j.ok) { setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}` }); setLastUuid(j.ddsIdentifier ?? null); setStatusRes(null) }
@@ -385,8 +397,28 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
         <div>
           <label className={labelCls}>Géolocalisation (GeoJSON FeatureCollection)</label>
           <textarea className={`${inputCls} font-mono h-28`} value={dds.geojson} onChange={e => setF('geojson', e.target.value)}
+            disabled={!!geojsonAttachmentId}
             placeholder='{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-60.0,-3.0]},"properties":{}}]}' />
         </div>
+        {suppliers.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>…ou GeoJSON depuis un document (fournisseur)</label>
+              <select className={inputCls} value={geoSupplierId} onChange={e => setGeoSupplierId(e.target.value)}>
+                <option value="">— Choisir un fournisseur —</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.company || '(sans nom)'}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Document GeoJSON</label>
+              <select className={inputCls} value={geojsonAttachmentId} onChange={e => setGeojsonAttachmentId(e.target.value)} disabled={!geoSupplierId}>
+                <option value="">{geoSupplierId ? (geoDocs.length ? '— Choisir —' : 'Aucun GeoJSON pour ce fournisseur') : '—'}</option>
+                {geoDocs.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              {geojsonAttachmentId && <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ GeoJSON du document utilisé (le champ texte est ignoré).</p>}
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <button className={btnPrimary} onClick={submitDds} disabled={submitting || !ready || !dds.internalReferenceNumber.trim() || !dds.hsHeading.trim()}>
             {submitting ? 'Dépôt…' : 'Déposer la DDS'}

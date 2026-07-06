@@ -5,6 +5,7 @@ import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import EudrTracesPanel from '@/components/apps/EudrTracesPanel'
+import EudrDocumentsModal from '@/components/apps/EudrDocumentsModal'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -170,6 +171,8 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
   // Suppression
   const [toDelete, setToDelete] = useState<{ entity: Entity; id: string; label: string } | null>(null)
   const [exporting, setExporting] = useState(false)
+  // Modale documents (fournisseur / contrat)
+  const [docsFor, setDocsFor] = useState<{ entityType: 'supplier' | 'contract'; id: string; label: string } | null>(null)
 
   // Partage du dossier
   const [showShare, setShowShare] = useState(false)
@@ -404,6 +407,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
               onAdd={() => setEditing({ entity: 'suppliers', data: { priority: 'moyenne', eudr_risk_level: 'standard', geojson_status: 'unknown', farmer_questionnaire_status: 'unknown', ddr_status: 'unknown', certifications: [] } })}
               onEdit={s => setEditing({ entity: 'suppliers', data: { ...s, certifications: s.certifications ?? [] } })}
               onDelete={s => setToDelete({ entity: 'suppliers', id: s.id, label: s.company ?? 'ce fournisseur' })}
+              onDocuments={s => setDocsFor({ entityType: 'supplier', id: s.id, label: s.company ?? 'Fournisseur' })}
             />
           )}
           {tab === 'contracts' && (
@@ -412,6 +416,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
               onAdd={() => setEditing({ entity: 'contracts', data: { product_under_eudr: 'unknown', eudr_applied: 'unknown', plot_geolocation: 'unknown', due_diligence: 'unknown', risk_level: 'standard' } })}
               onEdit={c => setEditing({ entity: 'contracts', data: { ...c } })}
               onDelete={c => setToDelete({ entity: 'contracts', id: c.id, label: c.contract_number ?? 'ce contrat' })}
+              onDocuments={c => setDocsFor({ entityType: 'contract', id: c.id, label: c.contract_number ?? 'Contrat' })}
             />
           )}
           {tab === 'traces' && <EudrTracesPanel orgId={orgId} canManage={!ctx.isShared} suppliers={suppliers} contracts={contracts} />}
@@ -478,6 +483,18 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modale documents (SharePoint) */}
+      {docsFor && (
+        <EudrDocumentsModal
+          orgId={orgId}
+          entityType={docsFor.entityType}
+          entityId={docsFor.id}
+          entityLabel={docsFor.label}
+          canEdit={!ctx.isShared}
+          onClose={() => setDocsFor(null)}
+        />
       )}
 
       {/* Confirmation suppression */}
@@ -662,11 +679,12 @@ function BuyersTab({ buyers, onAdd, onEdit, onDelete }: {
 
 // ─── Onglet Fournisseurs ──────────────────────────────────────────────────────
 
-function SuppliersTab({ suppliers, onAdd, onEdit, onDelete }: {
+function SuppliersTab({ suppliers, onAdd, onEdit, onDelete, onDocuments }: {
   suppliers: Supplier[]
   onAdd: () => void
   onEdit: (s: Supplier) => void
   onDelete: (s: Supplier) => void
+  onDocuments: (s: Supplier) => void
 }) {
   const [search, setSearch] = useState('')
   const [riskFilter, setRiskFilter] = useState('')
@@ -722,6 +740,7 @@ function SuppliersTab({ suppliers, onAdd, onEdit, onDelete }: {
                 </div>
               )}
               <div className="flex justify-end gap-3 pt-1">
+                <button onClick={() => onDocuments(s)} className="text-xs text-gray-500 dark:text-gray-400 hover:underline">📎 Documents</button>
                 <button onClick={() => onEdit(s)} className="text-xs text-green-600 dark:text-green-400 hover:underline">Modifier</button>
                 <button onClick={() => onDelete(s)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Supprimer</button>
               </div>
@@ -735,11 +754,12 @@ function SuppliersTab({ suppliers, onAdd, onEdit, onDelete }: {
 
 // ─── Onglet Contrats ──────────────────────────────────────────────────────────
 
-function ContractsTab({ contracts, onAdd, onEdit, onDelete }: {
+function ContractsTab({ contracts, onAdd, onEdit, onDelete, onDocuments }: {
   contracts: Contract[]
   onAdd: () => void
   onEdit: (c: Contract) => void
   onDelete: (c: Contract) => void
+  onDocuments: (c: Contract) => void
 }) {
   const [search, setSearch] = useState('')
   const [riskFilter, setRiskFilter] = useState('')
@@ -786,6 +806,7 @@ function ContractsTab({ contracts, onAdd, onEdit, onDelete }: {
                   <Td><StatusPill value={c.plot_geolocation} /></Td>
                   <Td><RiskPill value={c.risk_level} /></Td>
                   <Td className="text-right whitespace-nowrap">
+                    <button onClick={() => onDocuments(c)} className="text-gray-500 dark:text-gray-400 hover:underline mr-3">📎</button>
                     <button onClick={() => onEdit(c)} className="text-green-600 dark:text-green-400 hover:underline mr-3">Modifier</button>
                     <button onClick={() => onDelete(c)} className="text-red-600 dark:text-red-400 hover:underline">Supprimer</button>
                   </Td>
