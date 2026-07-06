@@ -105,8 +105,9 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
 
   // ── Dépôt DDS (formulaire minimal V2) ────────────────────────────────────────
   const [dds, setDds] = useState({
-    operatorType: 'OPERATOR', internalReferenceNumber: '', activityType: 'IMPORT',
-    countryOfActivity: 'FR', hsHeading: '', descriptionOfGoods: '', netWeight: '', volume: '',
+    operatorType: 'OPERATOR', internalReferenceNumber: '', activityType: 'DOMESTIC',
+    countryOfActivity: 'FR', hsHeading: '', descriptionOfGoods: '', netWeight: '',
+    percentageEstimation: '', speciesScientific: '', speciesCommon: '',
     producerCountry: '', producerName: '', geojson: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -120,14 +121,23 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
       if (dds.geojson.trim()) {
         try { geojsonObj = JSON.parse(dds.geojson) } catch { throw new Error('GeoJSON invalide (JSON non valide).') }
       }
+      // goodsMeasure V2 : netWeight, et percentageEstimationOrDeviation (obligatoire Domestic/Trade,
+      // interdit Import/Export). Pas de `volume` en V2.
+      const isDomesticOrTrade = dds.activityType === 'DOMESTIC' || dds.activityType === 'TRADE'
       const goodsMeasure: Record<string, number> = {}
       if (dds.netWeight) goodsMeasure.netWeight = Number(dds.netWeight)
-      if (dds.volume) goodsMeasure.volume = Number(dds.volume)
+      if (isDomesticOrTrade && dds.percentageEstimation !== '') {
+        goodsMeasure.percentageEstimationOrDeviation = Number(dds.percentageEstimation)
+      }
       const producers = (dds.producerCountry || dds.producerName || geojsonObj) ? [{
         country: dds.producerCountry || undefined,
         name: dds.producerName || undefined,
         geometryGeojson: geojsonObj,
       }] : undefined
+      // speciesInfo obligatoire pour les produits bois (Annexe I) : nom scientifique + nom commun.
+      const speciesInfo = (dds.speciesScientific || dds.speciesCommon)
+        ? { scientificName: dds.speciesScientific || undefined, commonName: dds.speciesCommon || undefined }
+        : undefined
       const statement = {
         internalReferenceNumber: dds.internalReferenceNumber,
         activityType: dds.activityType,
@@ -135,6 +145,7 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
         commodities: [{
           descriptors: { descriptionOfGoods: dds.descriptionOfGoods, goodsMeasure },
           hsHeading: dds.hsHeading,
+          ...(speciesInfo ? { speciesInfo } : {}),
           ...(producers ? { producers } : {}),
         }],
       }
@@ -296,8 +307,16 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
             <input className={inputCls} type="number" value={dds.netWeight} onChange={e => setF('netWeight', e.target.value)} placeholder="1000" />
           </div>
           <div>
-            <label className={labelCls}>Volume (m³)</label>
-            <input className={inputCls} type="number" value={dds.volume} onChange={e => setF('volume', e.target.value)} placeholder="12" />
+            <label className={labelCls}>% estimation/déviation {(dds.activityType === 'DOMESTIC' || dds.activityType === 'TRADE') ? '(obligatoire)' : '(Domestique/Négoce)'}</label>
+            <input className={inputCls} type="number" value={dds.percentageEstimation} onChange={e => setF('percentageEstimation', e.target.value)} placeholder="0" min={0} max={25} />
+          </div>
+          <div>
+            <label className={labelCls}>Espèce — nom scientifique (bois)</label>
+            <input className={inputCls} value={dds.speciesScientific} onChange={e => setF('speciesScientific', e.target.value)} placeholder="Fagus sylvatica" />
+          </div>
+          <div>
+            <label className={labelCls}>Espèce — nom commun (bois)</label>
+            <input className={inputCls} value={dds.speciesCommon} onChange={e => setF('speciesCommon', e.target.value)} placeholder="Hêtre" />
           </div>
           <div>
             <label className={labelCls}>Pays producteur (ISO)</label>
