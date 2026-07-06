@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { toIso2 } from '@/lib/eudr/countries'
 
 // Connexion au système d'information EUDR (TRACES NT) de la Commission européenne.
 // Trois blocs : identifiants Web Service (+ test Echo), vérification d'une DDS reçue,
@@ -132,9 +133,9 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
       ...d,
       internalReferenceNumber: c.contract_number ?? d.internalReferenceNumber,
       descriptionOfGoods: c.product ?? d.descriptionOfGoods,
-      countryOfActivity: c.delivery_country || d.countryOfActivity,
+      countryOfActivity: toIso2(c.delivery_country) || d.countryOfActivity,
       producerName: c.supplier ?? d.producerName,
-      producerCountry: sup?.country_origin ?? d.producerCountry,
+      producerCountry: toIso2(sup?.country_origin) || d.producerCountry,
     }))
   }
 

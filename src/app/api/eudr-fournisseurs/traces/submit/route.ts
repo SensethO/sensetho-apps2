@@ -3,7 +3,18 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp } from '@/lib/sharepointMulti'
 import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClient'
 import { submitDdsV3, DdsStatement } from '@/lib/eudr/tracesV3'
+import { toIso2 } from '@/lib/eudr/countries'
 import { guard } from '../_auth'
+
+/** Normalise en ISO2 tous les pays de la déclaration (pays d'activité, transit, producteurs). */
+function normalizeCountries(s: DdsStatement): void {
+  if (s.countryOfActivity) s.countryOfActivity = toIso2(s.countryOfActivity)
+  if (s.borderCrossCountry) s.borderCrossCountry = toIso2(s.borderCrossCountry)
+  for (const c of (s.commodities ?? [])) {
+    const producers = Array.isArray(c.producers) ? c.producers : c.producers ? [c.producers] : []
+    for (const p of producers) if (p.country) p.country = toIso2(p.country)
+  }
+}
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -54,6 +65,8 @@ export async function POST(req: NextRequest) {
         c0.producers = producers
       }
     }
+
+    normalizeCountries(statement)
 
     // V3 : operatorType → operatorRole. La géométrie GeoJSON est encodée en base64 dans le client V3.
     const result = await submitDdsV3(creds, { operatorRole: body.operatorType, statement })
