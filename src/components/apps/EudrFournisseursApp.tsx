@@ -6,6 +6,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import EudrTracesPanel from '@/components/apps/EudrTracesPanel'
 import EudrDocumentsModal from '@/components/apps/EudrDocumentsModal'
+import EudrCoaPanel from '@/components/apps/EudrCoaPanel'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ interface Contract {
   notes: string | null
 }
 
-type TabKey = 'dashboard' | 'buyers' | 'suppliers' | 'contracts' | 'traces'
+type TabKey = 'dashboard' | 'buyers' | 'suppliers' | 'contracts' | 'coa' | 'traces'
 type Entity = 'buyers' | 'suppliers' | 'contracts'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -351,6 +352,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
     { key: 'buyers', label: '🏢 Acheteurs' },
     { key: 'suppliers', label: '🌱 Fournisseurs' },
     { key: 'contracts', label: '📄 Contrats' },
+    { key: 'coa', label: '🧪 Analyse COA' },
     { key: 'traces', label: '🇪🇺 EUDR / TRACES' },
   ]
 
@@ -419,6 +421,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
               onDocuments={c => setDocsFor({ entityType: 'contract', id: c.id, label: c.contract_number ?? 'Contrat' })}
             />
           )}
+          {tab === 'coa' && <EudrCoaPanel orgId={orgId} canManage={!ctx.isShared} suppliers={suppliers} contracts={contracts} />}
           {tab === 'traces' && <EudrTracesPanel orgId={orgId} canManage={!ctx.isShared} suppliers={suppliers} contracts={contracts} />}
         </>
       )}
