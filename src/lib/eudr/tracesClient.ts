@@ -1,7 +1,7 @@
 import {
   EudrEchoClient,
-  EudrSubmissionClientV2,
-  EudrRetrievalClientV2,
+  EudrSubmissionClient,
+  EudrRetrievalClient,
 } from 'eudr-api-client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { decryptSecret } from './crypto'
@@ -120,9 +120,10 @@ function baseConfig(creds: TracesCredentials) {
 export function makeEchoClient(creds: TracesCredentials): EudrEchoClient {
   return new EudrEchoClient(baseConfig(creds))
 }
-export function makeSubmissionClient(creds: TracesCredentials): EudrSubmissionClientV2 {
-  return new EudrSubmissionClientV2(baseConfig(creds))
+// V1 = version en service (V2 discontinuée côté serveur EUDR ; échec « use the V3 API endpoints »).
+export function makeSubmissionClient(creds: TracesCredentials): EudrSubmissionClient {
+  return new EudrSubmissionClient(baseConfig(creds))
 }
-export function makeRetrievalClient(creds: TracesCredentials): EudrRetrievalClientV2 {
-  return new EudrRetrievalClientV2(baseConfig(creds))
+export function makeRetrievalClient(creds: TracesCredentials): EudrRetrievalClient {
+  return new EudrRetrievalClient(baseConfig(creds))
 }
