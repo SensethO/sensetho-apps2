@@ -98,7 +98,7 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
         const dds = (j.result?.ddsInfo?.[0]) ?? j.result
         const status = dds?.status ?? '—'
         setVerifyRes({ ok: true, text: `Statut : ${status}`, data: j.result })
-      } else setVerifyRes({ ok: false, text: j.error ?? 'DDS introuvable ou erreur.' })
+      } else setVerifyRes({ ok: false, text: `${j.error ?? 'DDS introuvable ou erreur.'}${j.status ? ` (HTTP ${j.status})` : ''}`, data: j.detail })
     } catch (e) { setVerifyRes({ ok: false, text: String((e as Error).message ?? e) }) }
     finally { setVerifying(false) }
   }
@@ -110,7 +110,7 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
     producerCountry: '', producerName: '', geojson: '',
   })
   const [submitting, setSubmitting] = useState(false)
-  const [submitRes, setSubmitRes] = useState<{ ok: boolean; text: string } | null>(null)
+  const [submitRes, setSubmitRes] = useState<{ ok: boolean; text: string; detail?: string } | null>(null)
   function setF<K extends keyof typeof dds>(k: K, v: string) { setDds(d => ({ ...d, [k]: v })) }
 
   async function submitDds() {
@@ -144,7 +144,7 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
       })
       const j = await res.json().catch(() => ({}))
       if (res.ok && j.ok) setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}` })
-      else setSubmitRes({ ok: false, text: j.error ?? 'Échec du dépôt.' })
+      else setSubmitRes({ ok: false, text: `${j.error ?? 'Échec du dépôt.'}${j.status ? ` (HTTP ${j.status})` : ''}`, detail: j.detail })
     } catch (e) { setSubmitRes({ ok: false, text: String((e as Error).message ?? e) }) }
     finally { setSubmitting(false) }
   }
@@ -321,7 +321,10 @@ export default function EudrTracesPanel({ orgId, canManage }: { orgId: string; c
         </div>
         {submitRes && (
           <div className={`rounded-lg px-4 py-3 text-sm ${submitRes.ok ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'}`}>
-            {submitRes.ok ? '✅ ' : '❌ '}{submitRes.text}
+            <p>{submitRes.ok ? '✅ ' : '❌ '}{submitRes.text}</p>
+            {submitRes.detail && (
+              <pre className="mt-2 max-h-64 overflow-auto text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{submitRes.detail}</pre>
+            )}
           </div>
         )}
       </div>
