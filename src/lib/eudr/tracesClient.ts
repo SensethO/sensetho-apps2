@@ -36,14 +36,40 @@ export function clientIdFor(env: TracesEnvironment): string {
   return env === 'production' ? 'eudr-repository' : 'eudr-test'
 }
 
-/** Extrait un message exploitable d'une erreur SOAP/axios (statut HTTP + corps du fault). */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Extrait un message exploitable d'une erreur remontée par eudr-api-client.
+ * La lib throw un Error enrichi : { message, httpStatus, details: { status, soapFault, rawData },
+ * eudrErrors: [{code, message, technicalMessage}], originalError: <axios error> }.
+ */
 export function describeTracesError(err: unknown): { message: string; status?: number; detail?: string } {
-  const e = err as { message?: string; response?: { status?: number; data?: unknown } }
-  const status = e?.response?.status
-  const data = e?.response?.data
-  let detail: string | undefined
-  if (typeof data === 'string') detail = data.slice(0, 2000)
-  else if (data) { try { detail = JSON.stringify(data).slice(0, 2000) } catch { /* ignore */ } }
+  const e = err as any
+  const status = e?.httpStatus ?? e?.details?.status ?? e?.response?.status ?? e?.originalError?.response?.status
+
+  const parts: string[] = []
+  if (Array.isArray(e?.eudrErrors)) {
+    for (const er of e.eudrErrors) {
+      const line = `${er?.code ?? ''}${er?.code ? ' — ' : ''}${er?.message ?? er?.technicalMessage ?? ''}`.trim()
+      if (line) parts.push(line)
+    }
+  }
+  const sf = e?.details?.soapFault
+  if (sf) {
+    if (Array.isArray(sf.errorDetails)) {
+      for (const d of sf.errorDetails) {
+        const line = `${d?.errorCode ?? ''}${d?.errorCode ? ' — ' : ''}${d?.message ?? d?.userFriendlyMessage ?? ''}`.trim()
+        if (line) parts.push(line)
+      }
+    }
+    if (!parts.length && sf.faultString) parts.push(String(sf.faultString))
+  }
+
+  let detail: string | undefined = parts.length ? parts.join('\n') : undefined
+  if (!detail) {
+    const raw = e?.details?.rawData ?? e?.originalError?.response?.data ?? e?.response?.data
+    if (typeof raw === 'string') detail = raw.slice(0, 2000)
+    else if (raw) { try { detail = JSON.stringify(raw).slice(0, 2000) } catch { /* ignore */ } }
+  }
   return { message: e?.message ?? String(err), status, detail }
 }
 
