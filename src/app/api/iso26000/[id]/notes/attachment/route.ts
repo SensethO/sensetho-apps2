@@ -20,7 +20,7 @@ async function canWrite(userId: string, diagnosticId: string): Promise<boolean> 
   return share?.permission === 'edit'
 }
 
-/** PATCH /api/iso26000-diagnostic/[id]/notes/attachment?attachment_id=xxx
+/** PATCH /api/iso26000/[id]/notes/attachment?attachment_id=xxx
  *  Body: { fileName: string }
  *  Renames the attachment in DB and on SharePoint.
  */
@@ -81,7 +81,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-/** DELETE /api/iso26000-diagnostic/[id]/notes/attachment?attachment_id=xxx */
+/** DELETE /api/iso26000/[id]/notes/attachment?attachment_id=xxx */
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()

@@ -20,7 +20,7 @@ async function canWrite(userId: string, diagnosticId: string): Promise<boolean> 
 }
 
 /**
- * POST /api/iso26000-diagnostic/[id]/notes/upload-confirm
+ * POST /api/iso26000/[id]/notes/upload-confirm
  * Body: { actionKey, attachmentId, spItemId, name, mime, size }
  * Returns: { id, name, sharepoint_item_id, mime, size }
  *

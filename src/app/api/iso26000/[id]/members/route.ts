@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/iso26000-diagnostic/[id]/members — propriétaire + utilisateurs partagés (pattern RSE §14.A).
+ * GET /api/iso26000/[id]/members — propriétaire + utilisateurs partagés (pattern RSE §14.A).
  * ISO 26000 utilise sa table dédiée `iso26000_diagnostic_shares`.
  * Accessible au propriétaire, à un admin, ou à un utilisateur partagé (lecture suffit).
  */

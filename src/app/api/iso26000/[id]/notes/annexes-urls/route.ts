@@ -36,7 +36,7 @@ async function canRead(userId: string, diagnosticId: string): Promise<boolean> {
 }
 
 /**
- * GET /api/iso26000-diagnostic/[id]/notes/annexes-urls
+ * GET /api/iso26000/[id]/notes/annexes-urls
  *
  * Retourne toutes les pièces jointes du diagnostic avec leur URL de téléchargement
  * SharePoint directe (@microsoft.graph.downloadUrl).

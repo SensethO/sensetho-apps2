@@ -48,6 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const prefix = 'A' + String(annexeIndex).padStart(3, '0') + '_'
     const finalName = prefix + safeName
 
+    // appKey SharePoint historique (indexe sp_app_routes) — distincte du slug catalogue 'ecovadis'. Ne pas renommer.
     const config = await getConfigForApp('ecovadis-diagnostic')
     const spPath = `/root:/${config.rootFolder}/${diagnosticId}/notes/${actionKey}/${finalName}:/createUploadSession`
 

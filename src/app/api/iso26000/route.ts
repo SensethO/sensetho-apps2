@@ -23,7 +23,7 @@ async function checkSubscription(userId: string, appSlug: string): Promise<boole
   return true
 }
 
-/** GET /api/iso26000-diagnostic?org_id=xxx&year=2025 */
+/** GET /api/iso26000?org_id=xxx&year=2025 */
 export async function GET(req: NextRequest) {
   try {
     const supabase = createUserClient()
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/iso26000-diagnostic — créer un nouveau diagnostic */
+/** POST /api/iso26000 — créer un nouveau diagnostic */
 export async function POST(req: NextRequest) {
   try {
     const supabase = createUserClient()

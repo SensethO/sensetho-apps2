@@ -21,7 +21,7 @@ async function canWrite(userId: string, diagnosticId: string): Promise<boolean> 
 }
 
 /**
- * POST /api/iso26000-diagnostic/[id]/notes/upload-session
+ * POST /api/iso26000/[id]/notes/upload-session
  * Body: { filename, size, actionKey }
  * Returns: { uploadUrl, attachmentId, finalName }
  *

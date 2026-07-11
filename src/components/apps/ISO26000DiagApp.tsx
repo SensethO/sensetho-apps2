@@ -288,7 +288,7 @@ function ShareModal({ diagnosticId, onClose }: { diagnosticId: string; onClose: 
   const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
-    fetch(`/api/iso26000-diagnostic/${diagnosticId}/shares`)
+    fetch(`/api/iso26000/${diagnosticId}/shares`)
       .then(r => r.json())
       .then(j => { setShares(j.data ?? []); setStatus('idle') })
       .catch(() => setStatus('idle'))
@@ -297,7 +297,7 @@ function ShareModal({ diagnosticId, onClose }: { diagnosticId: string; onClose: 
   async function handleShare() {
     if (!email.trim()) return
     setStatus('sending'); setErrorMsg('')
-    const res = await fetch(`/api/iso26000-diagnostic/${diagnosticId}/shares`, {
+    const res = await fetch(`/api/iso26000/${diagnosticId}/shares`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim(), permission }),
     })
@@ -307,7 +307,7 @@ function ShareModal({ diagnosticId, onClose }: { diagnosticId: string; onClose: 
   }
 
   async function handleRevoke(shareId: string) {
-    await fetch(`/api/iso26000-diagnostic/${diagnosticId}/shares?share_id=${shareId}`, { method: 'DELETE' })
+    await fetch(`/api/iso26000/${diagnosticId}/shares?share_id=${shareId}`, { method: 'DELETE' })
     setShares(prev => prev.filter(s => s.id !== shareId))
   }
 
@@ -387,7 +387,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
 
     async function load() {
       // Load existing
-      const res = await fetch(`/api/iso26000-diagnostic?org_id=${org!.id}&year=${year}`)
+      const res = await fetch(`/api/iso26000?org_id=${org!.id}&year=${year}`)
       const j = await res.json()
       if (j.data) {
         setDiag(j.data); setIsOwner(j.isOwner ?? true)
@@ -398,7 +398,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           body: JSON.stringify({ org_id: org!.id, year, source: 'guided' }),
         }).then(r => r.json()).then(sync => {
           if ((sync.synced ?? 0) > 0) {
-            fetch(`/api/iso26000-diagnostic?org_id=${org!.id}&year=${year}`)
+            fetch(`/api/iso26000?org_id=${org!.id}&year=${year}`)
               .then(r => r.json()).then(fresh => { if (fresh.data) setDiag(fresh.data) })
               .catch(() => {})
           }
@@ -406,7 +406,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         return
       }
       // Create
-      const cr = await fetch('/api/iso26000-diagnostic', {
+      const cr = await fetch('/api/iso26000', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ org_id: org!.id, year }),
       })
@@ -443,7 +443,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   // ── Load notes ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!diagnostic) return
-    fetch(`/api/iso26000-diagnostic/${diagnostic.id}/notes`)
+    fetch(`/api/iso26000/${diagnostic.id}/notes`)
       .then(r => r.json())
       .then(j => {
       if (j.data?.sections) setNoteMap(j.data.sections)
@@ -460,7 +460,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     setSave('saving')
     saveTimerRef.current = setTimeout(async () => {
-      const res = await fetch(`/api/iso26000-diagnostic/${diagnostic.id}`, {
+      const res = await fetch(`/api/iso26000/${diagnostic.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       })
@@ -481,7 +481,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     const existing = notesSaveTimerRef.current.get(key)
     if (existing) clearTimeout(existing)
     const t = setTimeout(async () => {
-      await fetch(`/api/iso26000-diagnostic/${diagnostic.id}/notes`, {
+      await fetch(`/api/iso26000/${diagnostic.id}/notes`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_key: key, content: value }),
@@ -523,7 +523,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     if (!diagnostic) return
     setGenAI(true)
     try {
-      const res = await fetch(`/api/iso26000-diagnostic/${diagnostic.id}/analyze`, { method: 'POST' })
+      const res = await fetch(`/api/iso26000/${diagnostic.id}/analyze`, { method: 'POST' })
       const j = await res.json()
       if (j.data) setDiag(prev => prev ? { ...prev, ai_analysis: j.data.ai_analysis, ai_scores: j.data.ai_scores, ai_generated_at: j.data.ai_generated_at } : prev)
     } catch { /* */ } finally { setGenAI(false) }
@@ -532,7 +532,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   // ── Export Excel ──────────────────────────────────────────────────────────
   function handleExportExcel() {
     if (!diagnostic) return
-    window.open(`/api/iso26000-diagnostic/${diagnostic.id}/export-excel`, '_blank')
+    window.open(`/api/iso26000/${diagnostic.id}/export-excel`, '_blank')
   }
 
   // ── Header actions ─────────────────────────────────────────────────────────
@@ -1377,7 +1377,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
                     {noteOpen && (
                       <div className="px-3 pb-3 bg-white dark:bg-gray-800">
                         <ISO26000NotePanel
-                          apiBase="/api/iso26000-diagnostic"
+                          apiBase="/api/iso26000"
                           noteTable="iso26000_action_notes"
                           diagnosticId={diagnostic.id}
                           actionKey={noteKey}
@@ -1423,7 +1423,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
                   {expandedNoteKey === kpiKey && (
                     <div className="px-3 pb-3 pt-2">
                       <ISO26000NotePanel
-                        apiBase="/api/iso26000-diagnostic"
+                        apiBase="/api/iso26000"
                         noteTable="iso26000_action_notes"
                         diagnosticId={diagnostic.id}
                         actionKey={kpiKey}
@@ -1468,7 +1468,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
             <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>📝 Notes & documents</span>
           </div>
           <ISO26000NotePanel
-            apiBase="/api/iso26000-diagnostic"
+            apiBase="/api/iso26000"
             noteTable="iso26000_action_notes"
             diagnosticId={diagnostic.id}
             actionKey={`domain_${activeDomain.id}`}
@@ -1503,7 +1503,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
 interface IsoAction { id: string; titre: string; description: string | null; priorite: string; statut: string; echeance: string | null; responsable: string | null }
 
 function IsoActionPlanBlock({ diagnosticId }: { diagnosticId: string }) {
-  const members = useDiagnosticMembers('iso26000-diagnostic', diagnosticId)
+  const members = useDiagnosticMembers('iso26000', diagnosticId)
   const [actions, setActions] = useState<IsoAction[]>([])
   const [titre, setTitre] = useState('')
   const [priorite, setPriorite] = useState('moyenne')
@@ -1518,7 +1518,7 @@ function IsoActionPlanBlock({ diagnosticId }: { diagnosticId: string }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/iso26000-diagnostic/${diagnosticId}/actions`)
+      const res = await fetch(`/api/iso26000/${diagnosticId}/actions`)
       const j = await res.json(); if (res.ok) setActions(j.data ?? [])
     } catch { /* ignore */ }
   }, [diagnosticId])
@@ -1528,7 +1528,7 @@ function IsoActionPlanBlock({ diagnosticId }: { diagnosticId: string }) {
     if (!titre.trim()) return
     setSaving(true)
     try {
-      const res = await fetch(`/api/iso26000-diagnostic/${diagnosticId}/actions`, {
+      const res = await fetch(`/api/iso26000/${diagnosticId}/actions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ titre: titre.trim(), priorite, responsable: responsable || null, echeance: echeance || null }),
       })
@@ -1536,12 +1536,12 @@ function IsoActionPlanBlock({ diagnosticId }: { diagnosticId: string }) {
     } finally { setSaving(false) }
   }
   async function patch(id: string, body: Record<string, unknown>) {
-    await fetch(`/api/iso26000-diagnostic/${diagnosticId}/actions?action_id=${id}`, {
+    await fetch(`/api/iso26000/${diagnosticId}/actions?action_id=${id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     }); await load()
   }
   async function del(id: string) {
-    await fetch(`/api/iso26000-diagnostic/${diagnosticId}/actions?action_id=${id}`, { method: 'DELETE' }); await load()
+    await fetch(`/api/iso26000/${diagnosticId}/actions?action_id=${id}`, { method: 'DELETE' }); await load()
   }
 
   return (

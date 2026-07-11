@@ -1,5 +1,5 @@
 /**
- * GET /api/iso26000-diagnostic/[id]/export-excel
+ * GET /api/iso26000/[id]/export-excel
  * Génère un fichier Excel structuré du Diagnostic RSE ISO 26000 (37 domaines, 7 QC).
  *
  * Onglets :
