@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ViewTabs from '@/components/rse/ViewTabs'
+import ResponsableSelect, { useDiagnosticMembers } from '@/components/rse/ResponsableSelect'
 
 // ── Lazy annexes modal
 const ISO26000AnnexesModal = dynamic(
@@ -1038,6 +1039,9 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           </div>
         </div>
 
+        {/* Plan d'actions assignable (marbre RSE) */}
+        {diagnostic && <IsoActionPlanBlock diagnosticId={diagnostic.id} />}
+
         {/* Actions par QC / domaine */}
         {filteredQcs.map(qc => (
           <div key={qc.id} className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
@@ -1491,6 +1495,90 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
 
       {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
       {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
+    </div>
+  )
+}
+
+// ─── Plan d'actions assignable (marbre RSE §14) ────────────────────────────────
+interface IsoAction { id: string; titre: string; description: string | null; priorite: string; statut: string; echeance: string | null; responsable: string | null }
+
+function IsoActionPlanBlock({ diagnosticId }: { diagnosticId: string }) {
+  const members = useDiagnosticMembers('iso26000-diagnostic', diagnosticId)
+  const [actions, setActions] = useState<IsoAction[]>([])
+  const [titre, setTitre] = useState('')
+  const [priorite, setPriorite] = useState('moyenne')
+  const [responsable, setResponsable] = useState('')
+  const [echeance, setEcheance] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const inp = 'text-xs rounded-lg border px-2 py-1.5'
+  const inpStyle = { borderColor: 'var(--border)', backgroundColor: 'var(--bg)', color: 'var(--text)' } as const
+  const STATUTS: [string, string][] = [['a_faire', 'À faire'], ['en_cours', 'En cours'], ['termine', 'Terminé']]
+  const PRIOS: [string, string][] = [['haute', 'Haute'], ['moyenne', 'Moyenne'], ['basse', 'Basse']]
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/iso26000-diagnostic/${diagnosticId}/actions`)
+      const j = await res.json(); if (res.ok) setActions(j.data ?? [])
+    } catch { /* ignore */ }
+  }, [diagnosticId])
+  useEffect(() => { load() }, [load])
+
+  async function add() {
+    if (!titre.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/iso26000-diagnostic/${diagnosticId}/actions`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titre: titre.trim(), priorite, responsable: responsable || null, echeance: echeance || null }),
+      })
+      if (res.ok) { setTitre(''); setPriorite('moyenne'); setResponsable(''); setEcheance(''); await load() }
+    } finally { setSaving(false) }
+  }
+  async function patch(id: string, body: Record<string, unknown>) {
+    await fetch(`/api/iso26000-diagnostic/${diagnosticId}/actions?action_id=${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }); await load()
+  }
+  async function del(id: string) {
+    await fetch(`/api/iso26000-diagnostic/${diagnosticId}/actions?action_id=${id}`, { method: 'DELETE' }); await load()
+  }
+
+  return (
+    <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+      <div>
+        <h3 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>Actions assignées</h3>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Actions à responsable et échéance (incluses dans le récap quotidien).</p>
+      </div>
+
+      {/* Formulaire d'ajout */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <input className={`${inp} flex-1 min-w-[180px]`} style={inpStyle} value={titre} placeholder="Nouvelle action…" onChange={e => setTitre(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }} />
+        <select className={inp} style={inpStyle} value={priorite} onChange={e => setPriorite(e.target.value)}>{PRIOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        <ResponsableSelect className={inp + ' min-w-[140px]'} value={responsable} members={members} onChange={setResponsable} />
+        <input className={inp} style={inpStyle} type="date" value={echeance} onChange={e => setEcheance(e.target.value)} />
+        <button onClick={add} disabled={saving || !titre.trim()} className="text-xs px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: 'var(--accent, #6366f1)' }}>+ Ajouter</button>
+      </div>
+
+      {/* Liste */}
+      {actions.length > 0 && (
+        <div className="space-y-1.5">
+          {actions.map(a => {
+            const incomplete = !a.responsable && !a.echeance
+            return (
+              <div key={a.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-2"
+                style={{ borderColor: incomplete ? '#f59e0b' : 'var(--border)', backgroundColor: 'var(--bg)' }}>
+                <span className="text-sm flex-1 min-w-[160px]" style={{ color: 'var(--text)' }}>{a.titre}</span>
+                {incomplete && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">⚠ À compléter</span>}
+                <select className={inp} style={inpStyle} value={a.statut} onChange={e => patch(a.id, { statut: e.target.value })}>{STATUTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                <ResponsableSelect className={inp + ' min-w-[130px]'} value={a.responsable ?? ''} members={members} onChange={v => patch(a.id, { responsable: v || null })} />
+                <input className={inp} style={inpStyle} type="date" value={a.echeance ?? ''} onChange={e => patch(a.id, { echeance: e.target.value || null })} />
+                <button onClick={() => del(a.id)} className="text-xs text-gray-400 hover:text-red-500" title="Supprimer">✕</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
