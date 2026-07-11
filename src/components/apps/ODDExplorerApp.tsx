@@ -401,7 +401,7 @@ function DomainCard({
                           {noteOpen && (
                             <div className="px-3 pb-3 bg-white dark:bg-gray-800">
                               <ODDNotePanel
-                                apiBase="/api/iso26000-diagnostic"
+                                apiBase="/api/iso26000"
                                 noteTable="iso26000_action_notes"
                                 diagnosticId={diagId}
                                 actionKey={noteKey}
@@ -551,7 +551,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
   useEffect(() => {
     if (!org || !year) { setDiagId(null); setDiagScores({}); return }
     async function load() {
-      const res = await fetch(`/api/iso26000-diagnostic?org_id=${org!.id}&year=${year}`)
+      const res = await fetch(`/api/iso26000?org_id=${org!.id}&year=${year}`)
       const j = await res.json()
       if (j.data) {
         setDiagId(j.data.id)
@@ -562,7 +562,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         setActionNa(an);       actionNaRef.current       = an
         diagScoresRef.current = j.data.scores ?? {}
       } else {
-        const cr = await fetch('/api/iso26000-diagnostic', {
+        const cr = await fetch('/api/iso26000', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ org_id: org!.id, year }),
         })
@@ -574,7 +574,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         body: JSON.stringify({ org_id: org!.id, year, source: 'guided' }),
       }).then(r => r.json()).then(sync => {
         if ((sync.synced ?? 0) > 0) {
-          fetch(`/api/iso26000-diagnostic?org_id=${org!.id}&year=${year}`)
+          fetch(`/api/iso26000?org_id=${org!.id}&year=${year}`)
             .then(r => r.json()).then(fresh => {
               if (fresh.data?.scores) setDiagScores(fresh.data.scores)
             }).catch(() => {})
@@ -601,7 +601,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
       .subscribe((status: string) => { if (status === 'SUBSCRIBED') realtimeOk = true })
     const poll = setInterval(() => {
       if (realtimeOk) return
-      fetch(`/api/iso26000-diagnostic/${diagId}`)
+      fetch(`/api/iso26000/${diagId}`)
         .then(r => r.json())
         .then(j => { if (j.data?.scores) setDiagScores(j.data.scores) })
         .catch(() => {})
@@ -611,7 +611,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
 
   useEffect(() => {
     if (!diagId) return
-    fetch(`/api/iso26000-diagnostic/${diagId}/notes`)
+    fetch(`/api/iso26000/${diagId}/notes`)
       .then(r => r.json())
       .then(j => {
         if (j.data?.sections) setNoteMap(j.data.sections)
@@ -628,7 +628,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
     if (!diagId) return
     if (actionTimerRef.current) clearTimeout(actionTimerRef.current)
     actionTimerRef.current = setTimeout(async () => {
-      await fetch(`/api/iso26000-diagnostic/${diagId}`, {
+      await fetch(`/api/iso26000/${diagId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action_progress: actionProgressRef.current,
@@ -671,7 +671,7 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
     const existing = notesSaveTimerRef.current.get(key)
     if (existing) clearTimeout(existing)
     const t = setTimeout(async () => {
-      await fetch(`/api/iso26000-diagnostic/${diagId}/notes`, {
+      await fetch(`/api/iso26000/${diagId}/notes`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_key: key, content: value }),
       })

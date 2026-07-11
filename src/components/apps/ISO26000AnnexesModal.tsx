@@ -247,7 +247,7 @@ export default function ISO26000AnnexesModal({
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetch(`/api/iso26000-diagnostic/${diagnosticId}/notes/annexes-urls`)
+    fetch(`/api/iso26000/${diagnosticId}/notes/annexes-urls`)
       .then(r => r.json())
       .then((json: { data?: AnnexeItem[]; error?: string }) => {
         if (cancelled) return

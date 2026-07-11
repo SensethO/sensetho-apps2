@@ -33,7 +33,7 @@ async function canWrite(userId: string, diagnosticId: string): Promise<boolean> 
 }
 
 /**
- * GET /api/iso26000-diagnostic/[id]/notes
+ * GET /api/iso26000/[id]/notes
  * Returns { data: { sections: Record<string, NoteSection[]> } }
  */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 /**
- * PUT /api/iso26000-diagnostic/[id]/notes
+ * PUT /api/iso26000/[id]/notes
  * Body: { action_key, sections: NoteSection[] }
  */
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {

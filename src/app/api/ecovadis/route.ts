@@ -11,7 +11,7 @@ async function checkSubscription(userId: string): Promise<boolean> {
   const { data } = await admin
     .from('app_subscriptions')
     .select('id, expires_at, apps!inner(slug)')
-    .eq('apps.slug', 'ecovadis-diagnostic')
+    .eq('apps.slug', 'ecovadis')
     .eq('user_id', userId)
     .eq('status', 'active')
     .maybeSingle()

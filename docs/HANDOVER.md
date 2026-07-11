@@ -41,7 +41,9 @@ supabase/migrations/           ← schéma SQL (trace de référence — cf. MAI
 docs/                          ← cette documentation
 ```
 
-**Convention de nommage** : `slug` de l'app = préfixe des tables (`<slug>_*`), base des routes API (`/api/<slug>`), et dossier du composant. ⚠️ Quelques apps historiques ont un **slug de catalogue ≠ slug de code** : `diagnostic-initial → guided-diagnostic`, `iso26000 → iso26000-diagnostic`, `ecovadis-diagnostic → ecovadis`.
+**Convention de nommage** : `slug` de l'app = préfixe des tables (`<slug>_*`), base des routes API (`/api/<slug>`), et dossier du composant. ⚠️ Exceptions historiques :
+- `diagnostic-initial` (catalogue/page) ↔ `guided-diagnostic` (API + composants) — **alias assumé**, ne pas renommer (clés SharePoint et composants partagés en dépendent).
+- Les **appKeys SharePoint** (`getConfigForApp`/`spGraphForApp`) sont des clés de configuration indexant `sp_app_routes` en base — elles peuvent différer du slug (ex. `'ecovadis-diagnostic'`, `'iso26000-diagnostic'`) et **ne doivent jamais être renommées** sans migrer la config SharePoint.
 
 ## 2. Trois familles d'applications
 
@@ -60,7 +62,7 @@ Le patron **marbre** (obligatoire pour les diagnostics RSE) est décrit dans **[
 - **Vérification d'accès** :
   - Apps RSE marbre : `canAccessDiagnostic(appSlug, table, userId, diagnosticId, { requireEdit })` (`@/lib/rseShares`).
   - Apps org-keyed : `canAccessOrgDossier(appSlug, userId, orgId, { requireEdit })`.
-  - Cas spécifiques (tables de partage dédiées, rôles) : garde locale — ex. `eudr-fournisseurs/coa/_access.ts`, ou la route `iso26000-diagnostic/[id]/members`.
+  - Cas spécifiques (tables de partage dédiées, rôles) : garde locale — ex. `eudr-fournisseurs/coa/_access.ts`, ou la route `iso26000/[id]/members`.
 - **Membres / responsables** : chaque app expose `GET /api/<slug>/[id]/members` (propriétaire + partagés) consommée par `ResponsableSelect` (§14.A du marbre — protéger en **lecture**, pas `canManage`).
 
 ## 4. Ajouter une application

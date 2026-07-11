@@ -77,7 +77,7 @@ async function canWrite(userId: string, diagnosticId: string): Promise<boolean> 
   return data?.user_id === userId
 }
 
-/** POST /api/iso26000-diagnostic/[id]/analyze */
+/** POST /api/iso26000/[id]/analyze */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()

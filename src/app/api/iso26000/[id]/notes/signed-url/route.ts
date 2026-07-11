@@ -19,7 +19,7 @@ async function canRead(userId: string, diagnosticId: string): Promise<boolean> {
   return shares?.some(s => s.shared_with_user_id === userId) ?? false
 }
 
-/** GET /api/iso26000-diagnostic/[id]/notes/signed-url?item_id=xxx */
+/** GET /api/iso26000/[id]/notes/signed-url?item_id=xxx */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()

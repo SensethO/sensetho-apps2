@@ -15,7 +15,7 @@ async function assertOwner(userId: string, diagnosticId: string) {
   return data?.user_id === userId
 }
 
-/** GET /api/iso26000-diagnostic/[id]/shares — liste des partages */
+/** GET /api/iso26000/[id]/shares — liste des partages */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-/** POST /api/iso26000-diagnostic/[id]/shares — partager avec un email */
+/** POST /api/iso26000/[id]/shares — partager avec un email */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-/** DELETE /api/iso26000-diagnostic/[id]/shares?share_id=xxx */
+/** DELETE /api/iso26000/[id]/shares?share_id=xxx */
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()

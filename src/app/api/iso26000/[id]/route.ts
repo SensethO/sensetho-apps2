@@ -20,7 +20,7 @@ async function getAccessLevel(userId: string, diagnosticId: string): Promise<'ow
   return share.permission === 'edit' ? 'editor' : 'reader'
 }
 
-/** GET /api/iso26000-diagnostic/[id] — récupérer un diagnostic par ID */
+/** GET /api/iso26000/[id] — récupérer un diagnostic par ID */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()
@@ -44,7 +44,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-/** PATCH /api/iso26000-diagnostic/[id] — sauvegarder scores, progress, na, secteur */
+/** PATCH /api/iso26000/[id] — sauvegarder scores, progress, na, secteur */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createUserClient()
