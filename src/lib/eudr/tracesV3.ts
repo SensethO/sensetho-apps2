@@ -1,3 +1,4 @@
+// Client SOAP EUDR TRACES V3 (dépôt/vérif DDS). @see docs/MAINTENANCE.md §6 · docs/README.md
 import crypto from 'node:crypto'
 import type { TracesCredentials } from './tracesClient'
 

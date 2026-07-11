@@ -1,3 +1,4 @@
+// Accès & partage (RSE marbre + apps org-keyed). @see docs/HANDOVER.md §3 · docs/README.md
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**

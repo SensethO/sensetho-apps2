@@ -1,3 +1,4 @@
+// Analyse IA des COA (Claude vision). @see docs/MAINTENANCE.md §6 · docs/HANDOVER.md §7
 import Anthropic from '@anthropic-ai/sdk'
 
 /**

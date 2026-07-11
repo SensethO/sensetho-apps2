@@ -2,6 +2,7 @@
  * Sources d'actions RSE — toutes les apps « marbre » exposent une table
  * `<slug>_actions` partageant les mêmes colonnes (titre, statut, echeance, responsable).
  * Utilisé par le récap quotidien des actions (cron rse-actions-digest).
+ * @see docs/MAINTENANCE.md §7 · docs/RSE_APP_PATTERN.md §14.C
  *
  * gestion-temps (gt_actions) est volontairement exclu : ce n'est pas une app RSE.
  */

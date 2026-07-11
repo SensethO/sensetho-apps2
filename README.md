@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sens'ethO Apps (`sensetho-apps2`)
 
-## Getting Started
+Plateforme d'applications **RSE, Business et Métier** (Next.js 14 + Supabase + SharePoint), déployée sur Vercel à l'adresse **[apps.sensetho.com](https://apps.sensetho.com)**.
 
-First, run the development server:
+Un portail multi-tenant : chaque client (organisation) accède à un catalogue d'applications — diagnostics RSE, outils métier (suivi fournisseurs EUDR, stratégie partagée…), administration.
+
+---
+
+## Démarrage rapide
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3002
+npm run build      # build de production
+npm run lint       # ESLint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Il faut un fichier `.env.local` avec les variables listées dans **[docs/MAINTENANCE.md § Variables d'environnement](docs/MAINTENANCE.md)**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Documentation (à lire dans cet ordre)
 
-## Learn More
+| Document | Pour qui | Contenu |
+|---|---|---|
+| **[docs/README.md](docs/README.md)** | Tous | **Index** + carte **code ↔ documentation** (le point d'entrée) |
+| **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)** | Exploitant / mainteneur | Comment le site fonctionne, hébergement, secrets, base de données, déploiement, intégrations externes, tâches planifiées, runbook incidents |
+| **[docs/HANDOVER.md](docs/HANDOVER.md)** | Développeur qui reprend | Organisation du code, conventions, comment ajouter/modifier une application, pièges connus |
+| **[docs/RSE_APP_PATTERN.md](docs/RSE_APP_PATTERN.md)** | Développeur | Le patron « marbre » des applications RSE (règles gravées) |
+| **[CLAUDE.md](CLAUDE.md)** | Agent IA + dev | Règles non-négociables du projet (lues par Claude Code) |
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+> **Reprendre le projet sans l'auteur ?** Commencer par `docs/README.md`, puis `docs/MAINTENANCE.md` (faire tourner + déployer), puis `docs/HANDOVER.md` (modifier le code).

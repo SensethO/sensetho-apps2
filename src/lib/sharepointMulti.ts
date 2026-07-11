@@ -1,6 +1,7 @@
 /**
  * sharepointMulti.ts — Server-side only SharePoint/MS Graph helpers
  * Supports multiple tenant configurations stored in DB.
+ * Flux fichiers (jamais Vercel/Supabase). @see docs/MAINTENANCE.md §5 · docs/README.md
  */
 
 import { createAdminClient } from '@/lib/supabase/admin'

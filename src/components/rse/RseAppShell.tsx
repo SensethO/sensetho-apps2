@@ -1,5 +1,7 @@
 'use client'
 
+// Shell OBLIGATOIRE des applications RSE (organisation + année + header + partage).
+// @see docs/HANDOVER.md §2 · docs/RSE_APP_PATTERN.md · docs/README.md (carte code↔doc)
 import { useState, useRef, useEffect } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
