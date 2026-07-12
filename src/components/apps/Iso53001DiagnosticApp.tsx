@@ -194,7 +194,7 @@ function PresentationView() {
             <div key={axe.id} className="rounded-lg border p-4" style={{ borderColor: axe.color + '40', backgroundColor: axe.colorLight + '30' }}>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-xl">{axe.icon}</span>
-                <span className="font-semibold text-sm" style={{ color: axe.color }}>{axe.label}</span>
+                <span className="font-semibold text-sm dark:brightness-[1.7]" style={{ color: axe.color }}>{axe.label}</span>
                 <span className="ml-auto text-xs text-gray-400">{Math.round(axe.weight * 100)}%</span>
               </div>
               <p className="text-xs text-gray-600 dark:text-gray-300">{axe.description}</p>
@@ -646,7 +646,7 @@ function CriterePanel({ axe, critere, reponse, actions, diagnosticId, allNotes, 
   return (
     <div className="space-y-5">
       <div className="rounded-xl p-4 border border-gray-200 dark:border-gray-700" style={{ background: axe.colorLight + '80' }}>
-        <h3 className="font-bold text-base" style={{ color: axe.color }}>{critere.label}</h3>
+        <h3 className="font-bold text-base dark:brightness-[1.7]" style={{ color: axe.color }}>{critere.label}</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{critere.description}</p>
       </div>
 
