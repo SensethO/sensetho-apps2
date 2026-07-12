@@ -20,34 +20,34 @@ export const ISO53001_AXES = [
   {
     id: 'contexte', label: 'Contexte & Parties prenantes', icon: '🌍',
     color: '#0e7490', colorLight: '#cffafe', weight: 0.20,
-    description: "Compréhension des 17 ODD et du contexte de ’rganisation, identification des impacts (positifs et négatifs) sur la chaîne de valeur, écoute des parties prenantes et priorisation des ODD matériels.",
+    description: "Compréhension des 17 ODD et du contexte de l’organisation, identification des impacts (positifs et négatifs) sur la chaîne de valeur, écoute des parties prenantes et priorisation des ODD matériels.",
     criteres: [
-      { id: 'ctx-enjeux',      label: 'Compréhension des ODD et du contexte',       description: "’rganisation connaît les 17 ODD et leurs 169 cibles, analyse son contexte interne et externe (enjeux, réglementation, marché) et identifie les questions de durabilité pertinentes pour ses activités." },
-      { id: 'ctx-impacts',     label: 'Identification des impacts sur les ODD',     description: "Les impacts positifs et négatifs de ’rganisation sur les ODD sont identifiés sur ’nsemble de la chaîne de valeur (amont, opérations, aval), conformément à la logique de PAS 53002." },
-      { id: 'ctx-parties',     label: 'Parties prenantes et attentes',              description: "Les parties prenantes pertinentes (internes et externes) sont identifiées ; leurs besoins et attentes vis-à-vis de la contribution de ’rganisation aux ODD sont recueillis et pris en compte." },
+      { id: 'ctx-enjeux',      label: 'Compréhension des ODD et du contexte',       description: "L’organisation connaît les 17 ODD et leurs 169 cibles, analyse son contexte interne et externe (enjeux, réglementation, marché) et identifie les questions de durabilité pertinentes pour ses activités." },
+      { id: 'ctx-impacts',     label: 'Identification des impacts sur les ODD',     description: "Les impacts positifs et négatifs de l’organisation sur les ODD sont identifiés sur l’ensemble de la chaîne de valeur (amont, opérations, aval), conformément à la logique de PAS 53002." },
+      { id: 'ctx-parties',     label: 'Parties prenantes et attentes',              description: "Les parties prenantes pertinentes (internes et externes) sont identifiées ; leurs besoins et attentes vis-à-vis de la contribution de l’organisation aux ODD sont recueillis et pris en compte." },
       { id: 'ctx-priorisation', label: 'Priorisation des ODD matériels',            description: "Une sélection argumentée des ODD et cibles prioritaires est réalisée (analyse de matérialité) ; le périmètre du système de management des ODD est défini et documenté." },
     ],
   },
   {
     id: 'leadership', label: 'Leadership & Gouvernance', icon: '🧭',
     color: '#6d28d9', colorLight: '#ede9fe', weight: 0.20,
-    description: "Engagement de la direction, politique de contribution aux ODD, rôles et responsabilités, ressources allouées, culture ’ntreprise et communication engageante autour du développement durable.",
+    description: "Engagement de la direction, politique de contribution aux ODD, rôles et responsabilités, ressources allouées, culture d’entreprise et communication engageante autour du développement durable.",
     criteres: [
       { id: 'lead-engagement', label: 'Engagement de la direction',                  description: "La direction porte visiblement la démarche ODD (« tone from the top ») : elle valide les priorités, alloue les ressources, rend compte des résultats et intègre les ODD dans ses décisions." },
       { id: 'lead-politique',  label: 'Politique ODD formalisée',                    description: "Une politique de durabilité/contribution aux ODD est formalisée, cohérente avec la mission et la stratégie, communiquée en interne et disponible pour les parties prenantes." },
       { id: 'lead-roles',      label: 'Rôles, responsabilités et ressources',        description: "Les rôles et responsabilités du système de management des ODD sont attribués (référent développement durable, relais métiers) avec les moyens humains, techniques et budgétaires adaptés." },
-      { id: 'lead-culture',    label: 'Culture, communication et exemplarité',       description: "La culture ’ntreprise intègre les ODD : communication interne régulière, valorisation des initiatives, exemplarité du management, sensibilisation de ’nsemble des collaborateurs." },
+      { id: 'lead-culture',    label: 'Culture, communication et exemplarité',       description: "La culture d’entreprise intègre les ODD : communication interne régulière, valorisation des initiatives, exemplarité du management, sensibilisation de l’ensemble des collaborateurs." },
     ],
   },
   {
     id: 'planification', label: 'Planification ODD', icon: '📐',
     color: '#b45309', colorLight: '#fef3c7', weight: 0.20,
-    description: "Gestion des risques et opportunités liés aux ODD, définition ’bjectifs mesurables alignés sur les cibles de ’genda 2030, intégration dans la stratégie et plans ’ction dotés de moyens.",
+    description: "Gestion des risques et opportunités liés aux ODD, définition d’objectifs mesurables alignés sur les cibles de l’Agenda 2030, intégration dans la stratégie et plans d’action dotés de moyens.",
     criteres: [
       { id: 'plan-risques',    label: 'Risques et opportunités',                     description: "Les risques et opportunités liés aux ODD (transition, réputation, réglementation, marchés) sont identifiés et traités par des actions proportionnées, revues périodiquement." },
-      { id: 'plan-objectifs',  label: 'Objectifs ODD mesurables',                    description: "Des objectifs de contribution aux ODD sont définis : spécifiques, mesurables, alignés sur les cibles et indicateurs de ’NU, assortis ’chéances et de responsables." },
-      { id: 'plan-integration', label: 'Intégration à la stratégie',                 description: "Les objectifs ODD sont intégrés à la stratégie ’ntreprise et déclinés dans les processus métiers (budget, investissements, R&D, RH, achats) — pas une démarche parallèle." },
-      { id: 'plan-moyens',     label: "Plans ’ction et moyens",                    description: "Des plans ’ction documentés précisent les actions, moyens, responsables et échéances pour atteindre chaque objectif ODD ; leur avancement est suivi et ajusté." },
+      { id: 'plan-objectifs',  label: 'Objectifs ODD mesurables',                    description: "Des objectifs de contribution aux ODD sont définis : spécifiques, mesurables, alignés sur les cibles et indicateurs de l’ONU, assortis d’échéances et de responsables." },
+      { id: 'plan-integration', label: 'Intégration à la stratégie',                 description: "Les objectifs ODD sont intégrés à la stratégie d’entreprise et déclinés dans les processus métiers (budget, investissements, R&D, RH, achats) — pas une démarche parallèle." },
+      { id: 'plan-moyens',     label: "Plans d’action et moyens",                    description: "Des plans d’action documentés précisent les actions, moyens, responsables et échéances pour atteindre chaque objectif ODD ; leur avancement est suivi et ajusté." },
     ],
   },
   {
@@ -58,7 +58,7 @@ export const ISO53001_AXES = [
       { id: 'op-processus',    label: 'Maîtrise opérationnelle',                     description: "Les processus opérationnels intègrent les exigences ODD : critères de durabilité dans les opérations, maîtrise des impacts négatifs, procédures documentées où nécessaire." },
       { id: 'op-competences',  label: 'Compétences, formation et sensibilisation',   description: "Les compétences nécessaires sont identifiées et développées : formation des équipes aux ODD, sensibilisation générale, montée en compétence des fonctions clés (achats, R&D, RH)." },
       { id: 'op-chaine',       label: 'Chaîne de valeur et achats responsables',     description: "Les fournisseurs et partenaires sont embarqués dans la démarche : critères ODD dans les achats, évaluation des fournisseurs, coopération sur les impacts de la chaîne de valeur." },
-      { id: 'op-innovation',   label: 'Partenariats et innovation (ODD 17)',         description: "’rganisation développe des partenariats multi-acteurs (entreprises, collectivités, ONG, recherche) et innove dans ses produits/services pour amplifier sa contribution aux ODD." },
+      { id: 'op-innovation',   label: 'Partenariats et innovation (ODD 17)',         description: "L’organisation développe des partenariats multi-acteurs (entreprises, collectivités, ONG, recherche) et innove dans ses produits/services pour amplifier sa contribution aux ODD." },
     ],
   },
   {
@@ -67,9 +67,9 @@ export const ISO53001_AXES = [
     description: "Indicateurs de contribution aux ODD, surveillance et audit interne, revue de direction, reporting (lien CSRD/VSME) et amélioration continue du système de management.",
     criteres: [
       { id: 'eval-indicateurs', label: 'Indicateurs et mesure de la contribution',   description: "Des indicateurs pertinents mesurent la contribution réelle aux ODD prioritaires (résultats, pas seulement moyens) ; les données sont fiables, comparables et suivies dans le temps." },
-      { id: 'eval-surveillance', label: 'Surveillance et audit interne',             description: "Le système de management des ODD est surveillé : contrôles réguliers, audits internes planifiés, vérification de ’tteinte des objectifs et de la conformité aux engagements." },
+      { id: 'eval-surveillance', label: 'Surveillance et audit interne',             description: "Le système de management des ODD est surveillé : contrôles réguliers, audits internes planifiés, vérification de l’atteinte des objectifs et de la conformité aux engagements." },
       { id: 'eval-revue',      label: 'Revue de direction et reporting',             description: "La direction revoit périodiquement le système (résultats, écarts, opportunités) ; la contribution aux ODD est rapportée aux parties prenantes, en cohérence avec CSRD/VSME le cas échéant." },
-      { id: 'eval-amelioration', label: 'Amélioration continue',                     description: "Les écarts et non-conformités sont traités (corrections, causes racines) ; le système et la contribution aux ODD ’méliorent en continu, avec capitalisation des enseignements." },
+      { id: 'eval-amelioration', label: 'Amélioration continue',                     description: "Les écarts et non-conformités sont traités (corrections, causes racines) ; le système et la contribution aux ODD s’améliorent en continu, avec capitalisation des enseignements." },
     ],
   },
 ]
@@ -151,16 +151,16 @@ function PresentationView() {
           <span className="text-4xl">🎯</span>
           <div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">ISO/UNDP 53001 — Système de management des Objectifs de Développement Durable</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Le premier système de management dédié aux 17 ODD des Nations Unies, co-écrit par ’SO et le PNUD — et certifiable, à la différence ’SO 26000.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Le premier système de management dédié aux 17 ODD des Nations Unies, co-écrit par l’ISO et le PNUD — et certifiable, à la différence d’ISO 26000.</p>
             <p className="text-sm text-gray-600 dark:text-gray-300 mt-3">
               ISO 53001 fournit un cadre structuré pour intégrer, piloter et améliorer la contribution de toute organisation aux
-              Objectifs de Développement Durable de ’genda 2030. Bâtie sur la structure harmonisée des systèmes de management
-              (comme ISO 9001, 14001, 45001), elle couvre ’nalyse du contexte, ’coute des parties prenantes, la priorisation
-              des ODD matériels, la définition ’bjectifs mesurables et ’mélioration continue.
+              Objectifs de Développement Durable de l’Agenda 2030. Bâtie sur la structure harmonisée des systèmes de management
+              (comme ISO 9001, 14001, 45001), elle couvre l’analyse du contexte, l’écoute des parties prenantes, la priorisation
+              des ODD matériels, la définition d’objectifs mesurables et l’amélioration continue.
             </p>
             <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
-              Ce diagnostic évalue votre maturité sur 5 axes × 4 critères (20 points ’valuation), sur la base des lignes
-              directrices <strong>ISO/UNDP PAS 53002:2024</strong> (publiées, gratuites) dans ’ttente du texte final ’SO 53001.
+              Ce diagnostic évalue votre maturité sur 5 axes × 4 critères (20 points d’évaluation), sur la base des lignes
+              directrices <strong>ISO/UNDP PAS 53002:2024</strong> (publiées, gratuites) dans l’attente du texte final d’ISO 53001.
               Il vous prépare à une future certification et alimente vos reportings CSRD/VSME.
             </p>
           </div>
@@ -177,7 +177,7 @@ function PresentationView() {
           </div>
           <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3">
             <div className="font-semibold text-amber-800 dark:text-amber-300">ISO 53001 — publication 2026</div>
-            <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">Norme ’xigences certifiable, en fin de développement (enquête publique passée). Ce diagnostic sera aligné sur le texte final dès sa parution.</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">Norme d’exigences certifiable, en fin de développement (enquête publique passée). Ce diagnostic sera aligné sur le texte final dès sa parution.</p>
           </div>
           <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3">
             <div className="font-semibold text-blue-800 dark:text-blue-300">Certifiable</div>
@@ -226,12 +226,12 @@ function PresentationView() {
 
       {/* Points clés */}
       <div className={card('p-5')}>
-        <h3 className="font-semibold text-gray-900 dark:text-white mb-3">🔑 Points clés ’SO 53001</h3>
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-3">🔑 Points clés d’ISO 53001</h3>
         <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
           <li>• <strong>Co-écrite ISO × PNUD</strong> — première norme de système de management co-brandée avec les Nations Unies.</li>
-          <li>• <strong>Structure harmonisée (HLS)</strong> — ’ntègre à vos systèmes existants (9001, 14001, 45001, 50001).</li>
-          <li>• <strong>Matérialité ODD</strong> — ’rganisation priorise les ODD sur lesquels elle a un impact réel, positif ou négatif.</li>
-          <li>• <strong>Mesure de la contribution</strong> — objectifs et indicateurs alignés sur les cibles de ’genda 2030.</li>
+          <li>• <strong>Structure harmonisée (HLS)</strong> — s’intègre à vos systèmes existants (9001, 14001, 45001, 50001).</li>
+          <li>• <strong>Matérialité ODD</strong> — l’organisation priorise les ODD sur lesquels elle a un impact réel, positif ou négatif.</li>
+          <li>• <strong>Mesure de la contribution</strong> — objectifs et indicateurs alignés sur les cibles de l’Agenda 2030.</li>
           <li>• <strong>Synergie CSRD/VSME</strong> — le système structure les données et engagements utiles à vos rapports de durabilité.</li>
         </ul>
       </div>
@@ -392,7 +392,7 @@ interface CorrItem {
 const CORR_APPS: CorrItem[] = [
   {
     ref: 'ISO 26000 & ODD', icon: '🌍', route: '/rse/odd-iso26000',
-    desc: "Explorateur des liens entre les domaines ’ction ISO 26000 et les 17 ODD — idéal pour préparer la priorisation des ODD matériels demandée par ISO 53001.",
+    desc: "Explorateur des liens entre les domaines d’action ISO 26000 et les 17 ODD — idéal pour préparer la priorisation des ODD matériels demandée par ISO 53001.",
     correspondances: [
       { axe: 'contexte',      label: 'Contexte',      ref: 'Identification des ODD pertinents par domaine d’action' },
       { axe: 'planification', label: 'Planification', ref: 'Sélection des cibles ODD prioritaires' },
@@ -400,7 +400,7 @@ const CORR_APPS: CorrItem[] = [
   },
   {
     ref: 'Diagnostic RSE ISO 26000', icon: '🔎', route: '/rse/iso26000',
-    desc: "La maturité RSE ISO 26000 (7 questions centrales, 37 domaines) nourrit directement ’nalyse de contexte et ’mpacts du système de management ODD.",
+    desc: "La maturité RSE ISO 26000 (7 questions centrales, 37 domaines) nourrit directement l’analyse de contexte et d’impacts du système de management ODD.",
     correspondances: [
       { axe: 'contexte',   label: 'Contexte',   ref: 'Questions centrales = enjeux de durabilité de l’organisation' },
       { axe: 'leadership', label: 'Leadership', ref: 'Gouvernance de l’organisation (QC 6.2)' },
@@ -417,7 +417,7 @@ const CORR_APPS: CorrItem[] = [
   },
   {
     ref: 'Évaluation AFAQ 26000', icon: '🏅', route: '/rse/afaq26000',
-    desc: "’valuation AFAQ 26000 mesure la maturité RSE globale ; ISO 53001 y ajoute ’ngle « contribution mesurée aux ODD » et la certifiabilité.",
+    desc: "L’évaluation AFAQ 26000 mesure la maturité RSE globale ; ISO 53001 y ajoute l’angle « contribution mesurée aux ODD » et la certifiabilité.",
     correspondances: [
       { axe: 'leadership', label: 'Leadership', ref: 'Vision et gouvernance responsables' },
       { axe: 'evaluation', label: 'Évaluation', ref: 'Résultats et mesure de la performance RSE' },
@@ -425,7 +425,7 @@ const CORR_APPS: CorrItem[] = [
   },
   {
     ref: 'Bilan GES', icon: '🌡️', route: '/rse/bilan-ges',
-    desc: "La mesure carbone alimente les objectifs et indicateurs de ’DD 13 (lutte contre le changement climatique) du système ISO 53001.",
+    desc: "La mesure carbone alimente les objectifs et indicateurs de l’ODD 13 (lutte contre le changement climatique) du système ISO 53001.",
     correspondances: [
       { axe: 'planification', label: 'Planification', ref: 'Objectifs climat mesurables (ODD 13)' },
       { axe: 'evaluation',    label: 'Évaluation',    ref: 'Indicateurs d’émissions scopes 1-2-3' },
@@ -444,7 +444,7 @@ const CORR_APPS: CorrItem[] = [
 const CORR_REFERENTIELS: CorrItem[] = [
   {
     ref: 'Agenda 2030 — 17 ODD (ONU)', icon: '🇺🇳', route: null,
-    desc: "Le cadre de référence : 17 objectifs et 169 cibles adoptés par les Nations Unies en 2015. ISO 53001 en est ’util de management pour les organisations.",
+    desc: "Le cadre de référence : 17 objectifs et 169 cibles adoptés par les Nations Unies en 2015. ISO 53001 en est l’outil de management pour les organisations.",
     correspondances: [
       { axe: 'contexte',      label: 'Contexte',      ref: 'Compréhension des 17 ODD et de leurs cibles' },
       { axe: 'planification', label: 'Planification', ref: 'Objectifs alignés sur les cibles et indicateurs ONU' },
@@ -452,7 +452,7 @@ const CORR_REFERENTIELS: CorrItem[] = [
   },
   {
     ref: 'ISO/UNDP PAS 53002:2024', icon: '📘', route: null,
-    desc: "Lignes directrices publiées (et gratuites) pour contribuer aux ODD — le document précurseur ’SO 53001, base de ce diagnostic.",
+    desc: "Lignes directrices publiées (et gratuites) pour contribuer aux ODD — le document précurseur d’ISO 53001, base de ce diagnostic.",
     correspondances: [
       { axe: 'contexte',   label: 'Contexte',   ref: 'Analyse d’impacts et priorisation (guidance)' },
       { axe: 'evaluation', label: 'Évaluation', ref: 'Mesure de la contribution et amélioration' },
@@ -468,7 +468,7 @@ const CORR_REFERENTIELS: CorrItem[] = [
   },
   {
     ref: 'CSRD / ESRS', icon: '🇪🇺', route: null,
-    desc: "La directive européenne de reporting de durabilité : la double matérialité et les datapoints ESRS ’ppuient naturellement sur un système ISO 53001 opérationnel.",
+    desc: "La directive européenne de reporting de durabilité : la double matérialité et les datapoints ESRS s’appuient naturellement sur un système ISO 53001 opérationnel.",
     correspondances: [
       { axe: 'contexte',   label: 'Contexte',   ref: 'Double matérialité ↔ priorisation des ODD' },
       { axe: 'evaluation', label: 'Évaluation', ref: 'Indicateurs et publication (ESRS 2, E, S, G)' },
@@ -476,14 +476,14 @@ const CORR_REFERENTIELS: CorrItem[] = [
   },
   {
     ref: 'GRI Standards', icon: '📋', route: null,
-    desc: "Le référentiel de reporting le plus utilisé au monde ; le « SDG Mapping » GRI relie chaque indicateur aux cibles ODD, utile pour ’xe Évaluation.",
+    desc: "Le référentiel de reporting le plus utilisé au monde ; le « SDG Mapping » GRI relie chaque indicateur aux cibles ODD, utile pour l’axe Évaluation.",
     correspondances: [
       { axe: 'evaluation', label: 'Évaluation', ref: 'GRI ↔ cibles ODD (linkage document GRI/UNGC)' },
     ],
   },
   {
     ref: 'SDG Compass (GRI · UNGC · WBCSD)', icon: '🧭', route: null,
-    desc: "Guide méthodologique en 5 étapes pour aligner la stratégie ’ntreprise sur les ODD — la logique reprise et formalisée par ISO 53001.",
+    desc: "Guide méthodologique en 5 étapes pour aligner la stratégie d’entreprise sur les ODD — la logique reprise et formalisée par ISO 53001.",
     correspondances: [
       { axe: 'planification', label: 'Planification', ref: 'Définition des priorités et objectifs' },
       { axe: 'operation',     label: 'Opération',     ref: 'Intégration et communication' },
@@ -831,8 +831,8 @@ function CriterePanel({ axe, critere, reponse, actions, diagnosticId, allNotes, 
       </div>
       <ConfirmModal
         open={!!actionToDelete}
-        title="Supprimer ’ction"
-        message="’ction sera définitivement supprimée."
+        title="Supprimer l’action"
+        message="L’action sera définitivement supprimée."
         onConfirm={() => { if (actionToDelete) deleteAction(actionToDelete); setActionToDelete(null) }}
         onCancel={() => setActionToDelete(null)}
       />
@@ -960,7 +960,7 @@ function DiagnosticView({ diagnostic, reponses, actions, allNotes, allNoteSectio
   )
 }
 
-// ─── Vue Plan ’ctions ───────────────────────────────────────────────────────
+// ─── Vue Plan d’actions ───────────────────────────────────────────────────────
 
 function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: DiagnosticData; actions: Action[]; onActionsChange: (a: Action[]) => void }) {
   const [filterAxe, setFilterAxe] = useState<string>('all')
@@ -1127,8 +1127,8 @@ function ActionsView({ diagnostic, actions, onActionsChange }: { diagnostic: Dia
       )}
       <ConfirmModal
         open={!!actionToDelete}
-        title="Supprimer ’ction"
-        message="’ction sera définitivement supprimée."
+        title="Supprimer l’action"
+        message="L’action sera définitivement supprimée."
         onConfirm={() => { if (actionToDelete) deleteAction(actionToDelete); setActionToDelete(null) }}
         onCancel={() => setActionToDelete(null)}
       />
@@ -1142,7 +1142,7 @@ const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: 'presentation',  label: 'Présentation',   icon: '📖' },
   { id: 'dashboard',     label: 'Tableau de bord', icon: '📊' },
   { id: 'diagnostic',    label: 'Diagnostic ODD', icon: '🎯' },
-  { id: 'actions',       label: "Plan ’ctions",  icon: '🎯' },
+  { id: 'actions',       label: "Plan d’actions",  icon: '🎯' },
   { id: 'correspondances', label: 'Correspondances', icon: '🔗' },
 ]
 
@@ -1424,7 +1424,7 @@ export default function Iso53001DiagnosticApp({ ctx }: { ctx: RseContext }) {
                         <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
                           {s.permission === 'edit' ? 'Édition' : 'Lecture'}
                         </span>
-                        <button onClick={() => handleRemoveShare(s.id)} title="Retirer ’ccès"
+                        <button onClick={() => handleRemoveShare(s.id)} title="Retirer l’accès"
                           className="text-gray-400 hover:text-red-500 transition-colors">✕</button>
                       </span>
                     </div>
