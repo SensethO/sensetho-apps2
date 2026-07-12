@@ -27,6 +27,7 @@ const SLUG_TABLE: Record<string, string> = {
   'iso45001': 'iso45001_diagnostics',
   'iso50001': 'iso50001_diagnostics',
   'afaq26000': 'afaq26000_diagnostics',
+  'iso53001': 'iso53001_diagnostics',
   'eudr': 'eudr_diagnostics',
   'vigilance': 'vigilance_diagnostics',
 }

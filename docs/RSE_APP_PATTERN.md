@@ -429,6 +429,7 @@ gh run list --limit 1  # Doit être "success"
 | Label Engagé RSE AFNOR | `afnor-rse` | `/rse/afnor-rse` | Label AFNOR / ISO 26000 | 2026-06 |
 | Label Numérique Responsable | `label-nr` | `/rse/label-nr` | Label NR LUCIE/INR — GR491/RGESN | 2026-06 |
 | Collecte documentaire RSE | `collecte-rse` | `/rse/collecte-rse` | ISO 26000 — préparation diagnostic | 2026-06 |
+| Diagnostic ISO 53001 — ODD | `iso53001` | `/rse/iso53001` | ISO/UNDP 53001 (base PAS 53002:2024) | 2026-07 |
 
 ---
 

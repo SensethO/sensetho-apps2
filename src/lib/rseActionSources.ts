@@ -28,4 +28,5 @@ export const RSE_ACTION_SOURCES: RseActionSource[] = [
   { table: 'act_carbone_actions',  label: 'ACT — Stratégie bas-carbone' },
   { table: 'bilan_ges_actions',    label: 'Bilan GES / Carbone' },
   { table: 'iso26000_actions',     label: 'Diagnostic RSE ISO 26000' },
+  { table: 'iso53001_actions',     label: 'Diagnostic ISO 53001 — ODD' },
 ]
