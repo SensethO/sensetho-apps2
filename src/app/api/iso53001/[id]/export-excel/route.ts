@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * GET /api/iso53001/[id]/export-excel
- * Génère un fichier Excel structuré du diagnostic Loi ISO 53001.
+ * Génère un fichier Excel structuré du diagnostic ISO 53001 — Management des ODD.
  *
  * Onglets :
  *  1. Couverture         — org, année, score global, badge de conformité
@@ -9,7 +9,7 @@
  *  3. Critères détaillés — 20 critères, niveau, commentaire
  *  4. Plan d'actions     — toutes les actions, statut, échéance
  *  5. Notes & Annexes    — documents SharePoint (métadonnées)
- *  6. Correspondances    — liens ISO 37001, FCPA, UK Bribery Act, GRI 205, ODD 16
+ *  6. Correspondances    — liens Agenda 2030, PAS 53002, ISO 26000, CSRD/ESRS, GRI, SDG Compass
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
@@ -31,11 +31,11 @@ const C = {
 }
 
 const AXE_COLORS: Record<string, { h: string; l: string }> = {
-  gouvernance:   { h: C.teal,   l: C.tealL   },
-  cartographie:  { h: C.red,    l: C.redL    },
-  prevention:    { h: C.blue,   l: C.blueL   },
-  tiers:         { h: C.purple, l: C.purpleL },
-  detection:     { h: C.amber,  l: C.amberL  },
+  contexte:      { h: C.teal,   l: C.tealL   },
+  leadership:    { h: C.purple, l: C.purpleL },
+  planification: { h: C.amber,  l: C.amberL  },
+  operation:     { h: C.green,  l: C.greenL  },
+  evaluation:    { h: C.red,    l: C.redL    },
 }
 
 type CS = { bg?: string; fg?: string; bold?: boolean; sz?: number; ha?: 'left'|'right'|'center'; it?: boolean; wrap?: boolean; indent?: number }
@@ -55,62 +55,63 @@ function merge(ws: ExcelJS.Worksheet, r1: number, c1: number, r2: number, c2: nu
   ws.mergeCells(r1, c1, r2, c2)
 }
 
-const SAPIN2_AXES = [
-  { id: 'gouvernance',  label: 'Gouvernance & Engagement',      icon: '🏛️', weight: 0.20, criteres: [
-    { id: 'gouv-code',         label: 'Code de conduite anti-corruption' },
-    { id: 'gouv-direction',    label: 'Engagement de la direction générale' },
-    { id: 'gouv-ressources',   label: 'Ressources et organisation dédiées (Compliance Officer)' },
-    { id: 'gouv-strategie',    label: 'Intégration dans la stratégie d\'entreprise' },
+// IDs alignés sur ISO53001_AXES du composant Iso53001DiagnosticApp.tsx (source de vérité)
+const AXES = [
+  { id: 'contexte',      label: 'Contexte & Parties prenantes', icon: '🌍', weight: 0.20, criteres: [
+    { id: 'ctx-enjeux',        label: 'Compréhension des ODD et du contexte' },
+    { id: 'ctx-impacts',       label: 'Identification des impacts sur les ODD' },
+    { id: 'ctx-parties',       label: 'Parties prenantes et attentes' },
+    { id: 'ctx-priorisation',  label: 'Priorisation des ODD matériels' },
   ]},
-  { id: 'cartographie', label: 'Cartographie des risques',      icon: '🗺️', weight: 0.20, criteres: [
-    { id: 'carto-processus',   label: 'Identification des processus et activités à risque' },
-    { id: 'carto-evaluation',  label: 'Évaluation de la probabilité et de l\'impact' },
-    { id: 'carto-hierarchie',  label: 'Hiérarchisation et plan de mise à jour' },
-    { id: 'carto-couverture',  label: 'Couverture des filiales, sous-traitants et tiers' },
+  { id: 'leadership',    label: 'Leadership & Gouvernance',     icon: '🧭', weight: 0.20, criteres: [
+    { id: 'lead-engagement',   label: 'Engagement de la direction' },
+    { id: 'lead-politique',    label: 'Politique ODD formalisée' },
+    { id: 'lead-roles',        label: 'Rôles, responsabilités et ressources' },
+    { id: 'lead-culture',      label: 'Culture, communication et exemplarité' },
   ]},
-  { id: 'prevention',   label: 'Prévention & Contrôles internes', icon: '🛡️', weight: 0.20, criteres: [
-    { id: 'prev-formation',    label: 'Programme de formation et sensibilisation' },
-    { id: 'prev-procedures',   label: 'Procédures internes (cadeaux, hospitalités, mécénat)' },
-    { id: 'prev-comptable',    label: 'Procédures de contrôle comptable' },
-    { id: 'prev-audit',        label: 'Contrôle interne et audit de conformité' },
+  { id: 'planification', label: 'Planification ODD',            icon: '📐', weight: 0.20, criteres: [
+    { id: 'plan-risques',      label: 'Risques et opportunités' },
+    { id: 'plan-objectifs',    label: 'Objectifs ODD mesurables' },
+    { id: 'plan-integration',  label: 'Intégration à la stratégie' },
+    { id: 'plan-moyens',       label: "Plans d'action et moyens" },
   ]},
-  { id: 'tiers',        label: 'Gestion des tiers',             icon: '🤝', weight: 0.20, criteres: [
-    { id: 'tiers-carto',       label: 'Cartographie et identification des tiers à risque' },
-    { id: 'tiers-diligence',   label: 'Due diligence et évaluation des tiers' },
-    { id: 'tiers-contrats',    label: 'Clauses contractuelles anti-corruption' },
-    { id: 'tiers-suivi',       label: 'Suivi, surveillance et réévaluation des tiers' },
+  { id: 'operation',     label: 'Opération & Support',          icon: '⚙️', weight: 0.20, criteres: [
+    { id: 'op-processus',      label: 'Maîtrise opérationnelle' },
+    { id: 'op-competences',    label: 'Compétences, formation et sensibilisation' },
+    { id: 'op-chaine',         label: 'Chaîne de valeur et achats responsables' },
+    { id: 'op-innovation',     label: 'Partenariats et innovation (ODD 17)' },
   ]},
-  { id: 'detection',    label: 'Détection & Remédiation',       icon: '🔍', weight: 0.20, criteres: [
-    { id: 'det-alerte',        label: 'Dispositif d\'alerte interne (lanceurs d\'alerte)' },
-    { id: 'det-incidents',     label: 'Gestion des incidents et enquêtes internes' },
-    { id: 'det-sanctions',     label: 'Régime disciplinaire et sanctions' },
-    { id: 'det-reporting',     label: 'Reporting, mesure d\'efficacité et amélioration continue' },
+  { id: 'evaluation',    label: 'Évaluation & Amélioration',    icon: '📊', weight: 0.20, criteres: [
+    { id: 'eval-indicateurs',  label: 'Indicateurs et mesure de la contribution' },
+    { id: 'eval-surveillance', label: 'Surveillance et audit interne' },
+    { id: 'eval-revue',        label: 'Revue de direction et reporting' },
+    { id: 'eval-amelioration', label: 'Amélioration continue' },
   ]},
 ]
 
-const SAPIN2_NIVEAUX = [
-  { value: 0, label: 'Non conforme',     pct: 0    },
+const NIVEAUX = [
+  { value: 0, label: 'Inexistant',        pct: 0    },
   { value: 1, label: 'Initial',           pct: 0.25 },
   { value: 2, label: 'En développement',  pct: 0.50 },
-  { value: 3, label: 'Conforme AFA',      pct: 0.75 },
-  { value: 4, label: 'Leader',            pct: 1.00 },
+  { value: 3, label: 'Conforme',          pct: 0.75 },
+  { value: 4, label: 'Exemplaire',        pct: 1.00 },
 ]
 
 const BADGE_LEVELS = [
-  { label: 'Leader',          min: 85 },
-  { label: 'Conforme AFA',    min: 60 },
-  { label: 'En développement',min: 30 },
-  { label: 'Non conforme',    min: 0  },
+  { label: 'Exemplaire',       min: 85 },
+  { label: 'Conforme',         min: 60 },
+  { label: 'En développement', min: 30 },
+  { label: 'Insuffisant',      min: 0  },
 ]
 
 function calculateScore(niveaux: Record<string, number>): number {
   let total = 0
-  for (const axe of SAPIN2_AXES) {
+  for (const axe of AXES) {
     let axeScore = 0
     const nb = axe.criteres.length
     for (const c of axe.criteres) {
       const n = niveaux[c.id] ?? 0
-      axeScore += (SAPIN2_NIVEAUX[n]?.pct ?? 0) / nb
+      axeScore += (NIVEAUX[n]?.pct ?? 0) / nb
     }
     total += axeScore * axe.weight
   }
@@ -150,7 +151,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
     const actions = actRes.data ?? []
     const scoreGlobal = calculateScore(reponses)
-    const badge = BADGE_LEVELS.find(b => scoreGlobal >= b.min)?.label ?? 'Non conforme'
+    const badge = BADGE_LEVELS.find(b => scoreGlobal >= b.min)?.label ?? 'Insuffisant'
     const org = diag.organisations as { denomination?: string; siret_siege?: string; ville?: string } | null
     const orgNom = org?.denomination ?? 'Organisation'
     const dateExport = new Date().toLocaleDateString('fr-FR')
@@ -165,7 +166,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       ws.columns = [{ width: 4 }, { width: 40 }, { width: 25 }, { width: 25 }]
       ws.getRow(2).height = 50
       merge(ws, 2, 2, 2, 4)
-      sc(ws, 2, 2, 'Loi ISO 53001 — Conformité Anti-Corruption (Loi n°2016-1691)', { bg: C.teal, fg: C.white, bold: true, sz: 13, ha: 'center' })
+      sc(ws, 2, 2, 'ISO/UNDP 53001 — Système de management des ODD (base PAS 53002:2024)', { bg: C.teal, fg: C.white, bold: true, sz: 13, ha: 'center' })
 
       let row = 4
       for (const [label, val] of [
@@ -178,20 +179,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       }
 
       row++
-      sc(ws, row, 2, 'Score de conformité ISO 53001', { bold: true, sz: 13, bg: C.teal, fg: C.white, ha: 'center' })
+      sc(ws, row, 2, 'Score de maturité ODD', { bold: true, sz: 13, bg: C.teal, fg: C.white, ha: 'center' })
       sc(ws, row, 3, scoreGlobal, { bold: true, sz: 18, bg: C.teal, fg: C.white, ha: 'center' })
       sc(ws, row, 4, `/ 100 — ${badge}`, { bold: true, bg: C.teal, fg: C.white, ha: 'center' })
       ws.getRow(row).height = 35
 
       row += 2
-      sc(ws, row, 2, 'Cadre légal', { bold: true, sz: 11, bg: C.grayL })
+      sc(ws, row, 2, 'Statut de la norme', { bold: true, sz: 11, bg: C.grayL })
       merge(ws, row, 2, row, 4); row++
       for (const line of [
-        'Loi n°2016-1691 du 9 décembre 2016 relative à la transparence, à la lutte contre la corruption et à la modernisation de la vie économique',
-        'Entreprises concernées : > 500 salariés ET > 100 M€ CA (ou entreprises d\'un groupe répondant à ces critères)',
-        'Autorité de contrôle : Agence Française Anticorruption (AFA) — contrôles et mise en demeure',
-        'Sanctions AFA : jusqu\'à 200 000 € (personnes physiques) et 1 000 000 € (personnes morales)',
-        'Publication de la sanction AFA sur le site de l\'Agence (name & shame)',
+        'PAS 53002:2024 — lignes directrices publiées (téléchargement gratuit), base du présent diagnostic',
+        'ISO 53001 — norme certifiable co-écrite par l\'ISO et le PNUD, publication attendue en 2026 (enquête publique passée)',
+        'Structure harmonisée HLS : compatible ISO 9001, ISO 14001, ISO 45001 — intégrable au système de management existant',
+        'Démarche volontaire ouverte à toute organisation, quelle que soit sa taille ou son secteur',
+        'Synergie reporting : les données du diagnostic alimentent CSRD/ESRS, VSME et le reporting GRI',
       ]) {
         sc(ws, row, 2, `• ${line}`, { sz: 9, bg: C.white, wrap: true, indent: 1 })
         merge(ws, row, 2, row, 4)
@@ -210,17 +211,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       headers.forEach((h, i) => sc(ws, 4, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
 
       let row = 5
-      for (const axe of SAPIN2_AXES) {
+      for (const axe of AXES) {
         const clr = AXE_COLORS[axe.id]
         const niveaux = axe.criteres.map(c => reponses[c.id] ?? 0)
-        const pct = Math.round(niveaux.reduce((s, n) => s + (SAPIN2_NIVEAUX[n]?.pct ?? 0), 0) / axe.criteres.length * 100)
+        const pct = Math.round(niveaux.reduce((s, n) => s + (NIVEAUX[n]?.pct ?? 0), 0) / axe.criteres.length * 100)
         const renseignes = niveaux.filter(n => n > 0).length
         const moy = niveaux.reduce((s, n) => s + n, 0) / axe.criteres.length
         sc(ws, row, 2, `${axe.icon} ${axe.label}`, { bg: clr.l, bold: true, sz: 10 })
         sc(ws, row, 3, `${Math.round(axe.weight * 100)}%`, { bg: clr.l, ha: 'center' })
         sc(ws, row, 4, `${pct}%`, { bg: clr.l, bold: true, ha: 'center', fg: pct >= 60 ? C.green : pct >= 30 ? C.amber : C.red })
         sc(ws, row, 5, `${renseignes} / ${axe.criteres.length}`, { bg: clr.l, ha: 'center' })
-        sc(ws, row, 6, SAPIN2_NIVEAUX[Math.round(moy)]?.label ?? 'Non conforme', { bg: clr.l, ha: 'center' })
+        sc(ws, row, 6, NIVEAUX[Math.round(moy)]?.label ?? 'Inexistant', { bg: clr.l, ha: 'center' })
         ws.getRow(row).height = 22; row++
       }
       row += 2
@@ -240,15 +241,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       hdrs.forEach((h, i) => sc(ws, 4, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
 
       let row = 5
-      for (const axe of SAPIN2_AXES) {
+      for (const axe of AXES) {
         const clr = AXE_COLORS[axe.id]
         for (const c of axe.criteres) {
           const n = reponses[c.id] ?? 0
-          const niv = SAPIN2_NIVEAUX[n]
+          const niv = NIVEAUX[n]
           const pct = Math.round((niv?.pct ?? 0) * 100)
           sc(ws, row, 2, `${axe.icon} ${axe.label}`, { bg: clr.l, sz: 9 })
           sc(ws, row, 3, c.label, { bg: C.white, sz: 9 })
-          sc(ws, row, 4, niv?.label ?? 'Non conforme', { bg: C.white, ha: 'center', sz: 9, bold: n > 0 })
+          sc(ws, row, 4, niv?.label ?? 'Inexistant', { bg: C.white, ha: 'center', sz: 9, bold: n > 0 })
           sc(ws, row, 5, pct === 0 ? '—' : `${pct}%`, { bg: C.white, ha: 'center', sz: 9, fg: pct >= 75 ? C.green : pct >= 50 ? C.amber : C.red })
           sc(ws, row, 6, commentaires[c.id] ?? '—', { bg: C.white, sz: 8, wrap: true, indent: 1 })
           ws.getRow(row).height = commentaires[c.id] ? 30 : 18; row++
@@ -271,7 +272,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       const PRIORITE_LABELS: Record<string, string> = { haute: '🔴 Haute', moyenne: '🟡 Moyenne', basse: '🟢 Basse' }
 
       for (const a of actions as any[]) {
-        const axe = SAPIN2_AXES.find(x => x.criteres.some(c => c.id === a.critere_id))
+        const axe = AXES.find(x => x.criteres.some(c => c.id === a.critere_id))
         const clr = axe ? (AXE_COLORS[axe.id] ?? { l: C.grayL }) : { l: C.grayL }
         const statBg = a.statut === 'termine' ? C.greenL : a.statut === 'en_cours' ? C.blueL : C.grayL
         sc(ws, row, 2, axe ? `${axe.icon} ${axe.label}` : a.critere_id, { bg: clr.l, sz: 9 })
@@ -305,24 +306,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     {
       const ws = wb.addWorksheet('Correspondances', { views: [{ showGridLines: false }] })
       ws.columns = [{ width: 4 }, { width: 30 }, { width: 25 }, { width: 60 }]
-      sc(ws, 2, 2, 'Correspondances avec les référentiels — Loi ISO 53001', { bold: true, sz: 13, bg: C.teal, fg: C.white })
+      sc(ws, 2, 2, 'Correspondances avec les référentiels — ISO 53001 (ODD)', { bold: true, sz: 13, bg: C.teal, fg: C.white })
       merge(ws, 2, 2, 2, 4); ws.getRow(2).height = 28
 
       const hdrs = ['Référentiel', 'Axe ISO 53001', 'Correspondance']
       hdrs.forEach((h, i) => sc(ws, 4, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
 
       const correspondances = [
-        { ref: 'Loi ISO 53001 (n°2016-1691)',      axe: 'Tous les axes',         corr: 'Loi du 9 décembre 2016 — art. 17 : obligation de programme anti-corruption pour les grandes entreprises' },
-        { ref: 'ISO 37001',                        axe: 'Gouvernance + Prévention', corr: 'Norme internationale de management anti-corruption — certification reconnue par l\'AFA comme bonne pratique' },
-        { ref: 'Convention OCDE anti-corruption',  axe: 'Gouvernance + Tiers',   corr: 'Convention OCDE 1997 — prévention de la corruption d\'agents publics étrangers dans les transactions commerciales' },
-        { ref: 'FCPA (États-Unis)',                axe: 'Gouvernance + Tiers',   corr: 'Foreign Corrupt Practices Act — applicable aux entreprises françaises cotées ou opérant aux États-Unis' },
-        { ref: 'UK Bribery Act',                   axe: 'Tiers + Prévention',    corr: 'Loi britannique anti-corruption — applicable aux entreprises ayant des activités au Royaume-Uni' },
-        { ref: 'GRI 205 — Anti-corruption',        axe: 'Détection + Gouvernance', corr: 'GRI 205 : disclosure sur les risques, formations, incidents et procédures disciplinaires liés à la corruption' },
-        { ref: 'UN SDG 16',                        axe: 'Tous les axes',         corr: 'ODD 16 — Paix, Justice et Institutions efficaces : réduire la corruption et renforcer l\'état de droit' },
-        { ref: 'CSRD — ESRS G1 Éthique',          axe: 'Gouvernance + Prévention', corr: 'ESRS G1-1 à G1-4 : politiques anti-corruption, formation, incidents, procédures de vigilance sur les tiers' },
-        { ref: 'Devoir de Vigilance (plateforme)', axe: 'Cartographie + Tiers',  corr: 'Loi 2017-399 — cartographie des risques et due diligence tiers complémentaires à ISO 53001' },
-        { ref: 'EcoVadis (plateforme)',             axe: 'Gouvernance + Tiers',   corr: 'Thème Éthique EcoVadis — code de conduite, anti-corruption, procédures fournisseurs évaluées' },
-        { ref: 'VSME EFRAG (plateforme)',          axe: 'Gouvernance',           corr: 'VSME G1 — Gouvernance, gestion des risques et contrôle interne : ISO 53001 contribue directement' },
+        { ref: 'Agenda 2030 — 17 ODD (ONU)',       axe: 'Tous les axes',              corr: 'Résolution ONU 2015 : les 17 Objectifs de Développement Durable et leurs 169 cibles — cadre de référence du diagnostic' },
+        { ref: 'PAS 53002:2024',                   axe: 'Tous les axes',              corr: 'Lignes directrices publiées (gratuites) pour contribuer aux ODD — base directe des 20 critères du diagnostic' },
+        { ref: 'ISO 26000',                        axe: 'Contexte + Leadership',      corr: 'Lignes directrices sur la responsabilité sociétale — les 7 questions centrales nourrissent l\'analyse de contexte et la gouvernance ODD' },
+        { ref: 'CSRD — ESRS',                      axe: 'Planification + Évaluation', corr: 'Double matérialité ESRS et plans de transition : les objectifs et indicateurs ODD alimentent directement le reporting de durabilité' },
+        { ref: 'GRI + SDG mapping',                axe: 'Évaluation',                 corr: 'Tables de correspondance officielles GRI ↔ ODD : chaque disclosure GRI est reliée aux cibles ODD pour le reporting' },
+        { ref: 'SDG Compass',                      axe: 'Planification + Opération',  corr: 'Guide GRI / Pacte mondial / WBCSD en 5 étapes pour aligner la stratégie d\'entreprise sur les ODD' },
+        { ref: 'ISO 26000 & ODD (plateforme)',     axe: 'Contexte',                   corr: 'Le diagnostic ISO 26000 de la plateforme identifie les domaines d\'action prioritaires reliés aux ODD' },
+        { ref: 'VSME EFRAG (plateforme)',          axe: 'Évaluation',                 corr: 'Le rapport VSME structure les indicateurs de durabilité des PME — réutilise les données du diagnostic ODD' },
+        { ref: 'Bilan GES (plateforme)',           axe: 'Opération + Évaluation',     corr: 'Mesure des émissions carbone — contribution directe aux ODD 7, 12 et 13 (énergie, consommation, climat)' },
+        { ref: 'Devoir de Vigilance (plateforme)', axe: 'Opération',                  corr: 'Cartographie des risques chaîne de valeur — contribution aux ODD 8 et 12 (travail décent, production responsable)' },
       ]
 
       let row = 5
