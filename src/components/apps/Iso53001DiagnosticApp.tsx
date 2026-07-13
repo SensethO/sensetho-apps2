@@ -8,10 +8,17 @@ import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
 import ResponsableSelect, { useDiagnosticMembers, notifyMembersChanged } from '@/components/rse/ResponsableSelect'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
+import type { Iso53001PdfData } from '@/components/apps/Iso53001PDFReport'
 
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
   ssr: false,
   loading: () => <div className="py-3 text-xs text-gray-400 animate-pulse">Chargement éditeur…</div>
+})
+
+// Rapport PDF chargé en lazy (html2canvas + jspdf hors du bundle principal)
+const Iso53001PDFReport = dynamic(() => import('@/components/apps/Iso53001PDFReport'), {
+  ssr: false,
+  loading: () => null,
 })
 
 // ─── Données statiques ISO 53001 (basé PAS 53002:2024) ───────────────────────────────────────────────
@@ -1157,6 +1164,8 @@ export default function Iso53001DiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [allNoteSections, setAllNoteSections] = useState<Record<string, NoteSection[]>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [exportingPDF, setExportingPDF] = useState(false)
+  const [pdfData, setPdfData] = useState<Iso53001PdfData | null>(null)
   const [showShare, setShowShare] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
   const [sharePermission, setSharePermission] = useState<'read'|'edit'>('read')
@@ -1242,6 +1251,61 @@ export default function Iso53001DiagnosticApp({ ctx }: { ctx: RseContext }) {
     a.click(); URL.revokeObjectURL(url)
   }, [diagnostic, org, year])
 
+  const handleExportPDF = useCallback(async () => {
+    if (!diagnostic || exportingPDF) return
+    setExportingPDF(true)
+    try {
+      const niveauxMap: Record<string, number> = {}
+      const commentaires: Record<string, string> = {}
+      for (const [k, v] of Object.entries(reponses)) {
+        niveauxMap[k] = v.niveau
+        if (v.commentaire) commentaires[k] = v.commentaire
+      }
+      const scorePdf = calculateIso53001Score(niveauxMap)
+      const badge = getBadge(scorePdf)
+      const data: Iso53001PdfData = {
+        organisation: org?.denomination ?? null,
+        siren: org?.siren ?? null,
+        ville: org?.ville ?? null,
+        year,
+        date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+        scoreLabel: 'Score de maturité',
+        scoreValue: scorePdf,
+        badge: { label: badge.label, emoji: badge.icon, color: badge.color },
+        axes: ISO53001_AXES,
+        niveaux: ISO53001_NIVEAUX,
+        reponses: niveauxMap,
+        commentaires,
+        actions,
+      }
+      // 1. Pré-charger le moteur PDF pendant que le composant se monte
+      const enginePromise = import('@/lib/pdf/exportReport')
+      setPdfData(data)
+      // 2. Attendre que les éléments DOM du rapport soient présents
+      await new Promise<void>(resolve => {
+        if (document.querySelector('#iso53001-pdf-root [data-pdf-page]')) { resolve(); return }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('#iso53001-pdf-root [data-pdf-page]')) {
+            observer.disconnect()
+            resolve()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => { observer.disconnect(); resolve() }, 4000)
+      })
+      // 3. Laisser le navigateur peindre (RAF x2)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const { exportReport } = await enginePromise
+      const orgSlug = (org?.denomination ?? 'diagnostic').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      await exportReport('iso53001-pdf-root', `Diagnostic-ISO-53001-${orgSlug}-${year}.pdf`)
+    } catch (e) {
+      console.error('[iso53001/exportPDF]', e)
+    } finally {
+      setExportingPDF(false)
+      setPdfData(null)
+    }
+  }, [diagnostic, exportingPDF, reponses, actions, org, year])
+
   // Header actions
   useEffect(() => {
     if (view === 'presentation' || !diagnostic) { setHeaderActions(null); return }
@@ -1251,9 +1315,9 @@ export default function Iso53001DiagnosticApp({ ctx }: { ctx: RseContext }) {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-medium transition-colors">
           ⬇ Excel
         </button>
-        <button onClick={() => window.print()}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium transition-colors">
-          📄 PDF
+        <button onClick={handleExportPDF} disabled={exportingPDF}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium transition-colors disabled:opacity-50">
+          {exportingPDF ? '⟳' : '📄'} PDF
         </button>
         <button onClick={() => setShowShare(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium transition-colors">
@@ -1262,7 +1326,7 @@ export default function Iso53001DiagnosticApp({ ctx }: { ctx: RseContext }) {
       </div>
     )
     return () => setHeaderActions(null)
-  }, [view, diagnostic, setHeaderActions, handleExportExcel])
+  }, [view, diagnostic, setHeaderActions, handleExportExcel, handleExportPDF, exportingPDF])
 
   const handleReponseChange = useCallback(async (critere_id: string, niveau: number, commentaire: string) => {
     if (!diagnostic) return
@@ -1337,6 +1401,13 @@ export default function Iso53001DiagnosticApp({ ctx }: { ctx: RseContext }) {
 
   return (
     <div className="space-y-4">
+      {/* ── Rapport PDF (monté hors-écran le temps de l’export) ─────────────── */}
+      {pdfData && (
+        <div style={{ position: 'absolute', left: -9999, top: 0 }} aria-hidden="true">
+          <Iso53001PDFReport id="iso53001-pdf-root" data={pdfData} />
+        </div>
+      )}
+
       {/* Onglets de navigation */}
       <div className="flex overflow-x-auto gap-1 pb-1 border-b border-gray-200 dark:border-gray-700">
         {VIEWS.map(v => (

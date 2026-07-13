@@ -224,7 +224,7 @@ export default function <Slug>DiagnosticApp({ ctx }: { ctx: RseContext }) {
     setActions(
       <div className="flex items-center gap-2">
         <button onClick={handleExportExcel}>⬇ Excel</button>
-        <button onClick={() => window.print()}>📄 PDF</button>
+        <button onClick={handleExportPDF}>📄 PDF</button>  {/* rapport jsPDF dédié — voir §9.bis */}
         <button onClick={() => setShowShare(true)}>👥 Partager</button>
       </div>
     )
@@ -334,9 +334,16 @@ Deux sections minimum :
 2. Tableau de bord  — scores par axe, radar data, progression
 3. Critères         — 20 critères, niveau, commentaire
 4. Plan d'actions   — statut, priorité, échéance, responsable
-5. Notes & Annexes  — pièces jointes avec réf A001_, taille, critère
+5. Notes & Annexes  — LISTE RÉELLE des pièces jointes : réf A00x, nom, critère, type, taille
 6. Correspondances  — liens avec autres référentiels
 ```
+
+**Onglet 5 — liste réelle obligatoire (standard « diagnostic-initial », appliqué le 2026-07-13) :**
+les métadonnées sont dans `<slug>_notes.sections` (JSON `NoteSection[].attachments`).
+La route export-excel ajoute `admin.from('<slug>_notes').select('critere_id, sections')`
+au `Promise.all`, aplatit les `attachments` (en excluant `deleted_at`), extrait la réf
+depuis le préfixe `A00x_` du nom et retrouve le libellé du critère via `<SLUG>_AXES`.
+Un simple renvoi « Consultez l'application » n'est PLUS conforme.
 
 **Pattern ExcelJS :**
 ```typescript
@@ -347,6 +354,29 @@ import ExcelJS from 'exceljs'
 // Palette couleurs ARGB thématique à l'app
 // Palette vert pour EcoVadis, rouge pour Vigilance, vert pour EUDR, violet pour AFNOR
 ```
+
+---
+
+## 9.bis Export PDF — rapport dédié (standard « diagnostic-initial »)
+
+Le PDF de référence est celui du Diagnostic initial guidé (`/rse/diagnostic-initial`) :
+un composant `<Slug>PDFReport.tsx` rendu hors-écran, capturé par html2canvas et
+assemblé en PDF A4 multi-pages par jsPDF — PAS un simple `window.print()`.
+
+```
+src/components/apps/<Slug>PDFReport.tsx   — composant visuel, styles UNIQUEMENT inline
+                                            (html2canvas ne lit pas Tailwind)
+Dans <Slug>DiagnosticApp.tsx :
+  const <Slug>PDFReport = dynamic(() => import('./<Slug>PDFReport'), ...)  // lazy,
+                                            html2canvas + jspdf hors du bundle principal
+  async function handleExportPDF() { ... }  // pré-charge le moteur, monte le composant
+                                            // hors-écran, capture, assemble, télécharge
+```
+
+Contenu minimal du rapport : couverture (référentiel, org, année, score global, badge),
+synthèse par axe, détail des critères (niveau + commentaire), plan d'actions.
+Modèles : `GuidedDiagnosticPDFReport.tsx`, `Iso45001PDFReport.tsx`.
+`window.print()` n'est toléré que transitoirement, le temps de créer le rapport dédié.
 
 ---
 

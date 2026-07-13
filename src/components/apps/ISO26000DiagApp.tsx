@@ -7,6 +7,7 @@ import Link from 'next/link'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import ViewTabs from '@/components/rse/ViewTabs'
 import ResponsableSelect, { useDiagnosticMembers } from '@/components/rse/ResponsableSelect'
+import type { IsoPDFData, IsoPDFQc, IsoPDFDomain, IsoPlanAction, IsoPilierScore } from './ISO26000PDFReport'
 
 // ── Lazy annexes modal
 const ISO26000AnnexesModal = dynamic(
@@ -17,6 +18,12 @@ const ISO26000AnnexesModal = dynamic(
 // ── Lazy note panel
 const ISO26000NotePanel = dynamic(
   () => import('./GuidedActionNotePanel'),
+  { ssr: false, loading: () => null },
+)
+
+// ── Lazy PDF Report (html2canvas + jspdf — ne pas inclure dans le bundle principal)
+const IsoPdfReportLazy = dynamic(
+  () => import('./ISO26000PDFReport').then(m => ({ default: m.default })),
   { ssr: false, loading: () => null },
 )
 
@@ -372,6 +379,8 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
   const [notesRemoteVersion, setNotesRemoteVersion] = useState(0)
   const [expandedNoteKey, setExpandedNoteKey] = useState<string | null>(null)
   const [selectedOdd, setSelectedOdd]         = useState<string | null>(null)
+  const [exportingPDF, setExportingPDF]       = useState(false)
+  const [pdfData, setPdfData]                 = useState<IsoPDFData | null>(null)
   const [searchQuery, setSearchQuery]         = useState('')
   const [planQcFilter, setPlanQcFilter]       = useState('all')
   // Fermer les notes quand on change de domaine (hook avant tout early return)
@@ -535,6 +544,115 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
     window.open(`/api/iso26000/${diagnostic.id}/export-excel`, '_blank')
   }
 
+  // ── Export PDF ────────────────────────────────────────────────────────────
+  function buildPDFData(planActions: IsoPlanAction[], toText: (html: string) => string): IsoPDFData {
+    // Scores par pilier — même calcul que le tableau de bord
+    const pilierScores: IsoPilierScore[] = (['G', 'E', 'S'] as const).map(p => {
+      const qcs = QC_LIST.filter(qc => qc.pilier === p)
+      const all = qcs.flatMap(qc => qc.domaines)
+      const ds = all.filter(d => (scores[d.id] ?? 0) > 0)
+      const avg = ds.length > 0 ? ds.reduce((a, d) => a + scores[d.id], 0) / ds.length : 0
+      return { pilier: p, label: p === 'G' ? 'Gouvernance' : p === 'E' ? 'Environnement' : 'Social', avg, count: ds.length, total: all.length }
+    })
+    const oddCovered = Array.from(new Set(ALL_DOMAINS.filter(d => (scores[d.id] ?? 0) > 0).flatMap(d => d.ods)))
+
+    const qcs: IsoPDFQc[] = QC_LIST.map(qc => {
+      const qcEval = qc.domaines.filter(d => (scores[d.id] ?? 0) > 0).length
+      const qcScore = getQcScore(qc, scores)
+      let isFirst = true
+      const domaines = qc.domaines.map((d): IsoPDFDomain => {
+        const sc = scores[d.id] ?? 0
+        const domainActions = d.actions.map((text, i) => {
+          const key = actionKey(d.id, i)
+          const rawNote = noteTextMap[`${d.id}_action_${i}`] ?? ''
+          return {
+            key,
+            text,
+            progress: actionProgress[key] ?? 0,
+            na: actionNa[key] ?? false,
+            note: rawNote.trim() ? toText(rawNote) : undefined,
+          }
+        })
+        const rawDomainNote = noteTextMap[`domain_${d.id}`] ?? ''
+        const domainReport: IsoPDFDomain = {
+          id: d.id,
+          isoRef: d.isoRef,
+          nom: d.nom,
+          description: d.description,
+          score: sc,
+          scoreLabel: SCORE_LABELS[sc] ?? 'Non évalué',
+          actions: domainActions,
+          kpis: d.kpis,
+          ods: d.ods,
+          note: rawDomainNote.trim() ? toText(rawDomainNote) : undefined,
+          isFirstInQc: isFirst,
+          ...(isFirst ? {
+            qcNom: qc.nom,
+            qcIsoRef: qc.isoRef,
+            qcIcone: qc.icone,
+            qcCouleur: qc.couleur,
+            qcScore,
+            qcEvaluated: qcEval,
+            qcTotal: qc.domaines.length,
+          } : {}),
+        }
+        isFirst = false
+        return domainReport
+      })
+      return { id: qc.id, isoRef: qc.isoRef, nom: qc.nom, icone: qc.icone, pilier: qc.pilier, couleur: qc.couleur, score: qcScore, evaluated: qcEval, total: qc.domaines.length, domaines }
+    })
+
+    return {
+      organisation: org?.denomination ?? null,
+      year,
+      date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      evaluatedCount: evalCount,
+      totalCount: ALL_DOMAINS.length,
+      globalScore,
+      pilierScores,
+      oddCovered,
+      qcs,
+      planActions,
+      aiAnalysis: diagnostic?.ai_analysis ?? null,
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!diagnostic || exportingPDF) return
+    setExportingPDF(true)
+    try {
+      // 1. Pré-charger le module PDF pendant la récupération des données
+      const pdfModulePromise = import('./ISO26000PDFReport')
+      // 2. Récupérer les actions assignées du plan d'actions (non bloquant)
+      let planActions: IsoPlanAction[] = []
+      try {
+        const res = await fetch(`/api/iso26000/${diagnostic.id}/actions`)
+        const j = await res.json()
+        if (res.ok) planActions = j.data ?? []
+      } catch { /* non bloquant */ }
+      const pdfModule = await pdfModulePromise
+      const data = buildPDFData(planActions, pdfModule.isoHtmlToText)
+      setPdfData(data)
+      // 3. Attendre que les éléments DOM du rapport soient présents (MutationObserver + fallback)
+      await new Promise<void>(resolve => {
+        if (document.querySelector('[data-iso-pdf-page]')) { resolve(); return }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('[data-iso-pdf-page]')) {
+            observer.disconnect()
+            resolve()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => { observer.disconnect(); resolve() }, 4000)
+      })
+      // 4. Laisser html2canvas rendre les images (RAF x2)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const orgSlug = (org?.denomination ?? 'diagnostic').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      await pdfModule.exportIsoPDF(data, `Diagnostic-ISO26000-${orgSlug}-${year}.pdf`)
+    } catch (e) { console.error('[exportPDF]', e) }
+    finally { setExportingPDF(false); setPdfData(null) }
+  }
+
   // ── Header actions ─────────────────────────────────────────────────────────
   useEffect(() => {
     setActions(
@@ -547,7 +665,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         {diagnostic && isOwner && (
           <>
             <button onClick={handleExportExcel} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
-            <button onClick={() => window.print()} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
+            <button onClick={handleExportPDF} disabled={exportingPDF} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70 disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>{exportingPDF ? '…' : 'PDF'}</button>
             <button onClick={() => setShowAnnexes(true)} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
             <button onClick={() => setShowShare(true)} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Partager</button>
           </>
@@ -555,7 +673,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
       </div>
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diagnostic, isOwner, saveStatus, view])
+  }, [diagnostic, isOwner, saveStatus, view, exportingPDF])
 
   // ── Computed values ────────────────────────────────────────────────────────
   const scores         = diagnostic?.scores ?? {}
@@ -677,6 +795,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           </div>
         </div>
 
+        {pdfData && <IsoPdfReportLazy data={pdfData} />}
         {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
         {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
@@ -786,11 +905,12 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         {diagnostic && (
           <div className="flex gap-2 justify-center pt-2">
             <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
-            <button onClick={() => window.print()} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
+            <button onClick={handleExportPDF} disabled={exportingPDF} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70 disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>{exportingPDF ? 'Génération…' : 'PDF'}</button>
             <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
           </div>
         )}
 
+        {pdfData && <IsoPdfReportLazy data={pdfData} />}
         {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
         {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
@@ -884,10 +1004,11 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         {/* Bottom export */}
         <div className="flex gap-2 justify-center pt-2">
           <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
-          <button disabled className="px-4 py-2 text-sm rounded-lg border transition-colors opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
+          <button onClick={handleExportPDF} disabled={exportingPDF} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70 disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>{exportingPDF ? 'Génération…' : 'PDF'}</button>
           <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
         </div>
 
+        {pdfData && <IsoPdfReportLazy data={pdfData} />}
         {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
         {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
@@ -989,6 +1110,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           </div>
         )}
 
+        {pdfData && <IsoPdfReportLazy data={pdfData} />}
         {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
         {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
@@ -1099,6 +1221,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
         </div>
 
+        {pdfData && <IsoPdfReportLazy data={pdfData} />}
         {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
         {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
@@ -1198,6 +1321,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
           </div>
         )}
 
+        {pdfData && <IsoPdfReportLazy data={pdfData} />}
         {showShare && diagnostic && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
         {showAnnexes && diagnostic && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
       </div>
@@ -1487,12 +1611,13 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         {/* Bottom export */}
         <div className="flex gap-2 pt-2">
           <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
-          <button disabled className="px-4 py-2 text-sm rounded-lg border transition-colors opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
+          <button onClick={handleExportPDF} disabled={exportingPDF} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70 disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>{exportingPDF ? 'Génération…' : 'PDF'}</button>
           <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
         </div>
       </div>
       </div>{/* fin body sidebar+contenu */}
 
+      {pdfData && <IsoPdfReportLazy data={pdfData} />}
       {showShare && <ShareModal diagnosticId={diagnostic.id} onClose={() => setShowShare(false)} />}
       {showAnnexes && <ISO26000AnnexesModal diagnosticId={diagnostic.id} onClose={() => setShowAnnexes(false)} />}
     </div>

@@ -6,11 +6,18 @@ import Link from 'next/link'
 import ViewTabs from '@/components/rse/ViewTabs'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import type { NoteSection } from './GuidedActionNotePanel'
+import type { VsmeEfragPdfData } from './VsmeEfragPDFReport'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Lazy note panel (Tiptap + SharePoint) ────────────────────────────────────
 const VsmeNotePanel = dynamic(
   () => import('./GuidedActionNotePanel'),
+  { ssr: false, loading: () => null },
+)
+
+// ─── Lazy rapport PDF (html2canvas + jsPDF) ───────────────────────────────────
+const VsmeEfragPDFReport = dynamic(
+  () => import('./VsmeEfragPDFReport'),
   { ssr: false, loading: () => null },
 )
 
@@ -1084,10 +1091,14 @@ function CorrespondancesView() {
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function VsmeEfragApp({ ctx }: { ctx: RseContext }) {
+  const { setActions: setHeaderActions } = ctx
   const [view, setView] = useState<View>('accueil')
   const [responses, setResponses] = useState<Map<string, VsmeResponse>>(new Map())
   const [loading, setLoading] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const [exportingExcel, setExportingExcel] = useState(false)
+  const [exportingPDF, setExportingPDF] = useState(false)
+  const [pdfData, setPdfData] = useState<VsmeEfragPdfData | null>(null)
   const supabase = createClient()
 
   // ── Notes & Documents ───────────────────────────────────────────────────────
@@ -1204,9 +1215,106 @@ export default function VsmeEfragApp({ ctx }: { ctx: RseContext }) {
       }, { onConflict: 'org_id,year,datapoint_code' })
   }, [ctx.org, ctx.year, responses, supabase])
 
+  // ── Export Excel ────────────────────────────────────────────────────────────
+  async function handleExportExcel() {
+    if (!vsmeId || exportingExcel) return
+    setExportingExcel(true)
+    try {
+      const res = await fetch(`/api/vsme-efrag/${vsmeId}/export-excel`)
+      if (!res.ok) throw new Error('Échec export')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `VSME_EFRAG_${ctx.org?.denomination ?? 'reporting'}_${ctx.year}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      alert('Erreur export Excel : ' + String(e))
+    } finally {
+      setExportingExcel(false)
+    }
+  }
+
+  // ── Export PDF ──────────────────────────────────────────────────────────────
+  function buildPdfData(): VsmeEfragPdfData {
+    const resp: VsmeEfragPdfData['responses'] = {}
+    responses.forEach((r, code) => {
+      resp[code] = { status: r.status, value_text: r.value_text, value_number: r.value_number }
+    })
+    return {
+      organisation: ctx.org?.denomination ?? null,
+      siret: ctx.org?.siret_siege ?? null,
+      ville: ctx.org?.ville ?? null,
+      year: ctx.year,
+      date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      baseSections: BASE_SECTIONS,
+      completSections: COMPLET_SECTIONS,
+      responses: resp,
+      correspondances: CORRESPONDANCES,
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!ctx.org || exportingPDF) return
+    setExportingPDF(true)
+    try {
+      const data = buildPdfData()
+      // 1. Pré-charger le moteur PDF pendant que le composant se monte
+      const enginePromise = import('@/lib/pdf/exportReport')
+      setPdfData(data)
+      // 2. Attendre que les éléments DOM du rapport soient présents
+      await new Promise<void>(resolve => {
+        if (document.querySelector('#vsme-efrag-pdf-root [data-pdf-page]')) { resolve(); return }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('#vsme-efrag-pdf-root [data-pdf-page]')) {
+            observer.disconnect()
+            resolve()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => { observer.disconnect(); resolve() }, 4000)
+      })
+      // 3. Laisser le navigateur peindre (RAF x2)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const { exportReport } = await enginePromise
+      const orgSlug = (ctx.org?.denomination ?? 'reporting').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      await exportReport('vsme-efrag-pdf-root', `VSME-EFRAG-${orgSlug}-${ctx.year}.pdf`)
+    } catch (e) {
+      console.error('[vsme-efrag/exportPDF]', e)
+    } finally {
+      setExportingPDF(false)
+      setPdfData(null)
+    }
+  }
+
+  // ── Boutons injectés dans le header RseAppShell ─────────────────────────────
+  useEffect(() => {
+    if (!ctx.org || !vsmeId) { setHeaderActions(null); return }
+    setHeaderActions(
+      <div className="flex items-center gap-2">
+        <button onClick={handleExportExcel} disabled={exportingExcel}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
+          {exportingExcel ? '⟳' : '⬇'} Excel
+        </button>
+        <button onClick={handleExportPDF} disabled={exportingPDF}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
+          {exportingPDF ? '⟳' : '📄'} PDF
+        </button>
+      </div>
+    )
+    return () => { setHeaderActions(null) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx.org, vsmeId, exportingExcel, exportingPDF])
+
   return (
     <div>
       {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
+
+      {/* ── Rapport PDF (monté hors-écran le temps de l’export) ─────────────── */}
+      {pdfData && (
+        <VsmeEfragPDFReport id="vsme-efrag-pdf-root" data={pdfData} />
+      )}
 
       <ViewTabs
         tabs={TABS}

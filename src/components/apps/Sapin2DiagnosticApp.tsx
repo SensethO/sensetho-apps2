@@ -8,10 +8,17 @@ import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
 import ResponsableSelect, { useDiagnosticMembers, notifyMembersChanged } from '@/components/rse/ResponsableSelect'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
+import type { Sapin2PdfData } from '@/components/apps/Sapin2PDFReport'
 
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
   ssr: false,
   loading: () => <div className="py-3 text-xs text-gray-400 animate-pulse">Chargement éditeur…</div>
+})
+
+// Rapport PDF chargé en lazy (html2canvas + jspdf hors du bundle principal)
+const Sapin2PDFReport = dynamic(() => import('@/components/apps/Sapin2PDFReport'), {
+  ssr: false,
+  loading: () => null,
 })
 
 // ─── Données statiques Sapin II ───────────────────────────────────────────────
@@ -1268,6 +1275,8 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [allNoteSections, setAllNoteSections] = useState<Record<string, NoteSection[]>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [exportingPDF, setExportingPDF] = useState(false)
+  const [pdfData, setPdfData] = useState<Sapin2PdfData | null>(null)
   const [showShare, setShowShare] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
   const [sharePermission, setSharePermission] = useState<'read'|'edit'>('read')
@@ -1353,6 +1362,65 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
     a.click(); URL.revokeObjectURL(url)
   }, [diagnostic, org, year])
 
+  const buildPdfData = useCallback((): Sapin2PdfData => {
+    const niveauxMap: Record<string, number> = {}
+    const commentaires: Record<string, string> = {}
+    for (const [k, v] of Object.entries(reponses)) {
+      niveauxMap[k] = v.niveau
+      if (v.commentaire) commentaires[k] = v.commentaire
+    }
+    const scoreValue = calculateSapin2Score(niveauxMap)
+    const badge = getBadge(scoreValue)
+    return {
+      organisation: org?.denomination ?? null,
+      siren: org?.siren ?? null,
+      ville: org?.ville ?? null,
+      year,
+      date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      scoreLabel: 'Score global',
+      scoreValue,
+      badge: { label: badge.label, emoji: badge.icon, color: badge.color },
+      axes: SAPIN2_AXES,
+      niveaux: SAPIN2_NIVEAUX,
+      reponses: niveauxMap,
+      commentaires,
+      actions,
+    }
+  }, [reponses, actions, org, year])
+
+  const handleExportPDF = useCallback(async () => {
+    if (!diagnostic || exportingPDF) return
+    setExportingPDF(true)
+    try {
+      const data = buildPdfData()
+      // 1. Pré-charger le moteur PDF pendant que le composant se monte
+      const enginePromise = import('@/lib/pdf/exportReport')
+      setPdfData(data)
+      // 2. Attendre que les éléments DOM du rapport soient présents
+      await new Promise<void>(resolve => {
+        if (document.querySelector('#sapin2-pdf-root [data-pdf-page]')) { resolve(); return }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('#sapin2-pdf-root [data-pdf-page]')) {
+            observer.disconnect()
+            resolve()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => { observer.disconnect(); resolve() }, 4000)
+      })
+      // 3. Laisser le navigateur peindre (RAF x2)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const { exportReport } = await enginePromise
+      const orgSlug = (org?.denomination ?? 'diagnostic').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      await exportReport('sapin2-pdf-root', `Loi-Sapin-II-${orgSlug}-${year}.pdf`)
+    } catch (e) {
+      console.error('[sapin2/exportPDF]', e)
+    } finally {
+      setExportingPDF(false)
+      setPdfData(null)
+    }
+  }, [diagnostic, exportingPDF, buildPdfData, org, year])
+
   // Header actions
   useEffect(() => {
     if (view === 'presentation' || !diagnostic) { setHeaderActions(null); return }
@@ -1362,9 +1430,9 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-medium transition-colors">
           ⬇ Excel
         </button>
-        <button onClick={() => window.print()}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium transition-colors">
-          📄 PDF
+        <button onClick={handleExportPDF} disabled={exportingPDF}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium transition-colors disabled:opacity-50">
+          {exportingPDF ? '⟳' : '📄'} PDF
         </button>
         <button onClick={() => setShowShare(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium transition-colors">
@@ -1373,7 +1441,7 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
       </div>
     )
     return () => setHeaderActions(null)
-  }, [view, diagnostic, setHeaderActions, handleExportExcel])
+  }, [view, diagnostic, setHeaderActions, handleExportExcel, handleExportPDF, exportingPDF])
 
   const handleReponseChange = useCallback(async (critere_id: string, niveau: number, commentaire: string) => {
     if (!diagnostic) return
@@ -1448,6 +1516,14 @@ export default function Sapin2DiagnosticApp({ ctx }: { ctx: RseContext }) {
 
   return (
     <div className="space-y-4">
+
+      {/* ── Rapport PDF (monté hors-écran le temps de l'export) ─────────────── */}
+      {pdfData && (
+        <div style={{ position: 'absolute', left: -9999, top: 0 }} aria-hidden="true">
+          <Sapin2PDFReport id="sapin2-pdf-root" data={pdfData} />
+        </div>
+      )}
+
       {/* Onglets de navigation */}
       <div className="flex overflow-x-auto gap-1 pb-1 border-b border-gray-200 dark:border-gray-700">
         {VIEWS.map(v => (

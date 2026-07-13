@@ -6,12 +6,19 @@ import type { RseContext } from '@/components/rse/RseAppShell'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import type { NoteSection } from '@/components/apps/GuidedActionNotePanel'
+import type { EcoVadisPdfData } from '@/components/apps/EcoVadisPDFReport'
 import ResponsableSelect, { useDiagnosticMembers } from '@/components/rse/ResponsableSelect'
 
 // GuidedActionNotePanel chargé en lazy — même pattern que les autres apps RSE
 const GuidedActionNotePanel = dynamic(() => import('@/components/apps/GuidedActionNotePanel'), {
   ssr: false,
   loading: () => <div className="py-3 text-xs text-gray-400 animate-pulse">Chargement éditeur…</div>
+})
+
+// Rapport PDF chargé en lazy (html2canvas + jspdf hors du bundle principal)
+const EcoVadisPDFReport = dynamic(() => import('@/components/apps/EcoVadisPDFReport'), {
+  ssr: false,
+  loading: () => null,
 })
 
 // ─── Données statiques EcoVadis ───────────────────────────────────────────────
@@ -1223,6 +1230,8 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
+  const [exportingPDF, setExportingPDF] = useState(false)
+  const [pdfData, setPdfData] = useState<EcoVadisPdfData | null>(null)
   const [showAnnexes, setShowAnnexes] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [annexes, setAnnexes] = useState<EcoAnnexe[]>([])
@@ -1351,8 +1360,63 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
     finally { setExportingExcel(false) }
   }
 
-  function handleExportPDF() {
-    window.print()
+  function buildPdfData(): EcoVadisPdfData {
+    const niveaux: Record<string, number> = {}
+    const commentaires: Record<string, string> = {}
+    for (const [k, v] of Object.entries(reponses)) {
+      niveaux[k] = v.niveau
+      if (v.commentaire) commentaires[k] = v.commentaire
+    }
+    const score = diagnostic?.score_global ?? calculateScore(niveaux)
+    const badge = getBadge(score)
+    return {
+      organisation: org?.denomination ?? null,
+      siren: org?.siren ?? null,
+      ville: org?.ville ?? null,
+      year,
+      date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      scoreLabel: 'Score simulé',
+      scoreValue: score,
+      badge: { label: badge.label, emoji: badge.icon, color: badge.color },
+      themes: ECOVADIS_THEMES,
+      niveaux: NIVEAUX,
+      reponses: niveaux,
+      commentaires,
+      actions,
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!diagnostic || exportingPDF) return
+    setExportingPDF(true)
+    try {
+      const data = buildPdfData()
+      // 1. Pré-charger le moteur PDF pendant que le composant se monte
+      const enginePromise = import('@/lib/pdf/exportReport')
+      setPdfData(data)
+      // 2. Attendre que les éléments DOM du rapport soient présents
+      await new Promise<void>(resolve => {
+        if (document.querySelector('#ecovadis-pdf-root [data-pdf-page]')) { resolve(); return }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('#ecovadis-pdf-root [data-pdf-page]')) {
+            observer.disconnect()
+            resolve()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => { observer.disconnect(); resolve() }, 4000)
+      })
+      // 3. Laisser le navigateur peindre (RAF x2)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const { exportReport } = await enginePromise
+      const orgSlug = (org?.denomination ?? 'diagnostic').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      await exportReport('ecovadis-pdf-root', `Diagnostic-EcoVadis-${orgSlug}-${year}.pdf`)
+    } catch (e) {
+      console.error('[ecovadis/exportPDF]', e)
+    } finally {
+      setExportingPDF(false)
+      setPdfData(null)
+    }
   }
 
   async function handleOpenAnnexes() {
@@ -1404,9 +1468,9 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
           {exportingExcel ? '⟳' : '⬇'} Excel
         </button>
-        <button onClick={handleExportPDF}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-          📄 PDF
+        <button onClick={handleExportPDF} disabled={exportingPDF}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
+          {exportingPDF ? '⟳' : '📄'} PDF
         </button>
         <button onClick={handleOpenAnnexes}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
@@ -1419,7 +1483,7 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
       </div>
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diagnostic, exportingExcel])
+  }, [diagnostic, exportingExcel, exportingPDF])
 
   const lockedTabs = !org || !diagnostic ? ['dashboard', 'diagnostic', 'actions'] : []
 
@@ -1431,6 +1495,13 @@ export default function EcoVadisDiagnosticApp({ ctx }: { ctx: RseContext }) {
 
   return (
     <div className="space-y-4">
+
+      {/* ── Rapport PDF (monté hors-écran le temps de l'export) ─────────────── */}
+      {pdfData && (
+        <div style={{ position: 'absolute', left: -9999, top: 0 }} aria-hidden="true">
+          <EcoVadisPDFReport id="ecovadis-pdf-root" data={pdfData} />
+        </div>
+      )}
 
       {/* ── Modale Annexes ──────────────────────────────────────────────────── */}
       {showAnnexes && (
