@@ -139,10 +139,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const admin = createAdminClient()
 
     // Charger toutes les données
-    const [diagRes, repRes, actRes] = await Promise.all([
+    const [diagRes, repRes, actRes, notesRes] = await Promise.all([
       admin.from('gpsr_diagnostics').select('*, organisations(denomination, siret_siege, ville)').eq('id', params.id).single(),
       admin.from('gpsr_reponses').select('*').eq('diagnostic_id', params.id),
       admin.from('gpsr_actions').select('*').eq('diagnostic_id', params.id).order('created_at'),
+      admin.from('gpsr_notes').select('critere_id, sections').eq('diagnostic_id', params.id),
     ])
 
     const diag = diagRes.data as any
@@ -326,17 +327,47 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     // ─── Onglet 5 : Notes & Annexes ───────────────────────────────────────────
     {
       const ws = wb.addWorksheet('Notes & Annexes', { views: [{ showGridLines: false }] })
-      ws.columns = [{ width: 4 }, { width: 30 }, { width: 20 }]
+      ws.columns = [{ width: 4 }, { width: 8 }, { width: 40 }, { width: 32 }, { width: 16 }, { width: 10 }]
 
-      sc(ws, 2, 2, 'Notes & Documents', { bold: true, sz: 14, bg: C.sky, fg: C.white })
-      merge(ws, 2, 2, 2, 3)
+      sc(ws, 2, 2, 'Pièces jointes & Annexes', { bold: true, sz: 14, bg: C.sky, fg: C.white })
+      merge(ws, 2, 2, 2, 6)
       ws.getRow(2).height = 30
 
-      sc(ws, 3, 2, 'Note : Les documents sont stockés dans SharePoint. Accédez aux URLs de téléchargement depuis l\'application.', { it: true, fg: C.gray, sz: 9 })
-      merge(ws, 3, 2, 3, 3)
+      sc(ws, 3, 2, 'Note : Les fichiers sont stockés dans SharePoint. Les URLs de téléchargement sont générées à la demande depuis l’application.', { it: true, fg: C.gray, sz: 9 })
+      merge(ws, 3, 2, 3, 6)
 
-      sc(ws, 5, 2, 'Consultez l\'application pour accéder aux pièces jointes par critère.', { it: true, fg: C.gray, sz: 10 })
-      merge(ws, 5, 2, 5, 3)
+      const hdrs = ['Réf.', 'Nom du fichier', 'Critère', 'Type', 'Taille']
+      hdrs.forEach((h, i) => sc(ws, 5, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
+
+      const annexes: { ref: string; name: string; critere: string; mime: string; size: number | null }[] = []
+      for (const n of (notesRes.data ?? []) as any[]) {
+        const axe = GPSR_AXES.find(a => a.criteres.some((c: any) => c.id === n.critere_id)) as any
+        const crit = axe?.criteres.find((c: any) => c.id === n.critere_id)
+        const critLabel = crit ? `${axe?.icon ?? ''} ${crit.label}`.trim() : (n.critere_id ?? '—')
+        for (const s of ((n.sections ?? []) as any[])) {
+          for (const att of ((s.attachments ?? []) as any[])) {
+            if (att.deleted_at) continue
+            const m = /^A(\d{3})_/.exec(att.name ?? '')
+            annexes.push({ ref: m ? `A${m[1]}` : '—', name: att.name ?? '—', critere: critLabel, mime: att.mime ?? '—', size: att.size ?? null })
+          }
+        }
+      }
+      annexes.sort((a, b) => a.ref.localeCompare(b.ref))
+
+      let row = 6
+      for (const a of annexes) {
+        sc(ws, row, 2, a.ref, { ha: 'center', sz: 9, bold: true })
+        sc(ws, row, 3, a.name, { sz: 9 })
+        sc(ws, row, 4, a.critere, { sz: 9 })
+        sc(ws, row, 5, a.mime, { ha: 'center', sz: 9 })
+        sc(ws, row, 6, a.size ? `${Math.round(a.size / 1024)} Ko` : '—', { ha: 'center', sz: 9 })
+        ws.getRow(row).height = 18
+        row++
+      }
+      if (annexes.length === 0) {
+        sc(ws, 6, 2, 'Aucune pièce jointe', { it: true, fg: C.gray, ha: 'center' })
+        merge(ws, 6, 2, 6, 6)
+      }
     }
 
     // ─── Onglet 6 : Correspondances ───────────────────────────────────────────
