@@ -34,6 +34,25 @@ UPDATE apps SET icon = 'star' WHERE slug = 'admin-vente';           -- était 't
 -- ── Correction encodage nom Board (mojibake UTF-8→cp1252) ────────────────────
 UPDATE apps SET name = 'Board — Tableau collaboratif' WHERE slug = 'board' AND name LIKE 'Board â%';
 
+-- ── Corrections mojibake U+FFFD (accents perdus) + typo, appliquées le 2026-07-13 ──
+UPDATE apps SET name = 'Paramètres du site',
+                description = 'Configurer les textes et paramètres de la plateforme'
+  WHERE slug = 'admin-parametres';
+UPDATE apps SET description = 'Gérez les comptes utilisateurs et validez les demandes d''inscription.'
+  WHERE slug = 'admin-users';
+UPDATE apps SET description = 'Plan de vigilance conforme à la loi n°2017-399 — cartographie des risques, évaluation des acteurs, actions d''atténuation, mécanisme d''alerte, dispositif de suivi'
+  WHERE slug = 'vigilance';
+UPDATE apps SET description = 'Évaluez votre système de management de la santé et de la sécurité au travail selon ISO 45001:2018 — leadership et participation des travailleurs, maîtrise des risques, support, réalisation opérationnelle, évaluation et amélioration continue'
+  WHERE slug = 'iso45001';
+UPDATE apps SET description = 'Suivi de conformité EUDR de vos acheteurs, fournisseurs et contrats : niveau de risque pays, géolocalisation, questionnaires producteurs, due diligence, certifications.'
+  WHERE slug = 'eudr-fournisseurs';
+UPDATE apps SET description = 'Gérez le Secure Score Microsoft 365 de vos tenants : diagnostic, déblocage de pipeline gelé, optimisation vers 278/278 pts.'
+  WHERE slug = 'secure-score-m365';
+UPDATE apps SET description = 'Configurez les tarifs et la visibilité des applications dans le catalogue.'
+  WHERE slug = 'admin-vente';
+UPDATE app_categories SET description = 'Applications pour les entreprises'  -- était 'entreprisesses'
+  WHERE slug = 'PRO';
+
 -- ROLLBACK (valeurs antérieures) :
 -- UPDATE apps SET icon = 'shieldCheck' WHERE slug IN ('diagnostic-initial','secure-score-m365');
 -- UPDATE apps SET icon = 'shield' WHERE slug = 'vigilance'; ... (voir git blame de ce fichier)
