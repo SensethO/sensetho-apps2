@@ -67,6 +67,17 @@ interface IconProps {
 }
 
 export default function Icon({ name, size = 20, className = '', style }: IconProps) {
+  // Icône emoji (catalogue) : rendue en texte, même taille que le SVG
+  if (name && !icons[name] && !/^[a-zA-Z]+$/.test(name)) {
+    return (
+      <span
+        className={className}
+        style={{ fontSize: size * 0.85, lineHeight: `${size}px`, width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...style }}
+      >
+        {name}
+      </span>
+    )
+  }
   const path = icons[name] ?? icons.app
   return (
     <svg
