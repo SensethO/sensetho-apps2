@@ -547,7 +547,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         {diagnostic && isOwner && (
           <>
             <button onClick={handleExportExcel} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
-            <button disabled className="px-3 py-1.5 text-xs rounded-lg border transition-colors opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
+            <button onClick={() => window.print()} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
             <button onClick={() => setShowAnnexes(true)} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
             <button onClick={() => setShowShare(true)} className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Partager</button>
           </>
@@ -786,7 +786,7 @@ export default function ISO26000DiagApp({ ctx }: { ctx: RseContext }) {
         {diagnostic && (
           <div className="flex gap-2 justify-center pt-2">
             <button onClick={handleExportExcel} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Excel</button>
-            <button disabled className="px-4 py-2 text-sm rounded-lg border transition-colors opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
+            <button onClick={() => window.print()} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>PDF</button>
             <button onClick={() => setShowAnnexes(true)} className="px-4 py-2 text-sm rounded-lg border transition-colors hover:opacity-70" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Annexes</button>
           </div>
         )}

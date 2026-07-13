@@ -8,6 +8,7 @@
  *  3. Critères détaillés — 20 critères, niveau, commentaire
  *  4. Plan d'actions     — toutes les actions, statut, échéance
  *  5. Notes & Annexes    — documents SharePoint (métadonnées seulement)
+ *  6. Correspondances    — liens ISO 26000, VSME, GRI, CSRD/ESRS, ODD, certifications
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
@@ -317,6 +318,42 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       if (documents.length === 0) {
         sc(ws, 6, 2, 'Aucun document uploadé', { it: true, fg: C.gray, ha: 'center' })
         merge(ws, 6, 2, 6, 6)
+      }
+    }
+
+    // ─── Onglet 6 : Correspondances ───────────────────────────────────────────
+    {
+      const ws = wb.addWorksheet('Correspondances', { views: [{ showGridLines: false }] })
+      ws.columns = [{ width: 4 }, { width: 28 }, { width: 24 }, { width: 60 }]
+      sc(ws, 2, 2, 'Correspondances avec les référentiels — EcoVadis', { bold: true, sz: 13, bg: C.emerald, fg: C.white })
+      merge(ws, 2, 2, 2, 4); ws.getRow(2).height = 28
+
+      const hdrs = ['Référentiel', 'Thème EcoVadis', 'Correspondance']
+      hdrs.forEach((h, i) => sc(ws, 4, i + 2, h, { bold: true, bg: C.grayL, ha: 'center', sz: 10 }))
+
+      const correspondances = [
+        { ref: 'ISO 26000 (plateforme)',        theme: 'Les 4 thèmes',            corr: 'Domaines RSE transverses : Environnement (dom. 6), Social & RH (dom. 3-4), Éthique (dom. 2 et 7), Achats (dom. 5)' },
+        { ref: 'VSME EFRAG (plateforme)',        theme: 'Env + Social + Éthique',  corr: 'Standard PME européen — modules ENV (énergie, eau, déchets, GES), SOC (travailleurs, droits humains) et GOV (gouvernance, corruption)' },
+        { ref: 'Green Claims (plateforme)',      theme: 'Environnement',           corr: 'Directive européenne sur les allégations environnementales — allégations vérifiables et reporting' },
+        { ref: 'Parties Prenantes (plateforme)', theme: 'Achats + Social',         corr: 'Cartographie des parties prenantes — sous-traitants et fournisseurs pour les Achats Responsables, dialogue social' },
+        { ref: 'ISO 14001',                      theme: 'Environnement',           corr: 'Système de management environnemental — certification validée par EcoVadis (politique, objectifs, reporting)' },
+        { ref: 'ISO 45001',                      theme: 'Social & RH',             corr: 'Santé & Sécurité au travail — certification valorisée dans le thème Social (management SST)' },
+        { ref: 'SA8000',                         theme: 'Social & RH',             corr: 'Standard de responsabilité sociale — conditions de travail, droits humains, droit d\'association (audits fournisseurs)' },
+        { ref: 'ISO 37001',                      theme: 'Éthique',                 corr: 'Système de management anti-corruption — fortement valorisé en Éthique (pots-de-vin, programme de conformité)' },
+        { ref: 'B Corp',                         theme: 'Env + Social + Éthique',  corr: 'Certification entreprise à mission — exigences similaires aux 4 thèmes EcoVadis' },
+        { ref: 'RGPD / GDPR',                    theme: 'Éthique',                 corr: 'Protection des données personnelles — critère clé de l\'Éthique EcoVadis (vie privée, cybersécurité)' },
+        { ref: 'GRI Standards',                  theme: 'Les 4 thèmes',            corr: 'Global Reporting Initiative — GRI 200 Économie (Éthique), GRI 300 Environnement, GRI 400 Social' },
+        { ref: 'CDP',                            theme: 'Environnement',           corr: 'Carbon Disclosure Project — divulgation carbone : émissions GES, eau, biodiversité, chaîne d\'approvisionnement' },
+        { ref: 'CSRD / ESRS',                    theme: 'Les 4 thèmes',            corr: 'Directive européenne de reporting de durabilité — ESRS E1-E5 (Env), S1-S4 (Social), G1 (Gouvernance et Éthique)' },
+        { ref: 'ODD / SDGs',                     theme: 'Les 4 thèmes',            corr: 'ODD 6-7-12-13-14-15 (Env), 3-4-5-8-10-11 (Social), 16-17 (Éthique), 12-17 (Achats)' },
+      ]
+
+      let row = 5
+      for (const c of correspondances) {
+        sc(ws, row, 2, c.ref, { bg: C.white, sz: 9, bold: true })
+        sc(ws, row, 3, c.theme, { bg: C.emeraldL, sz: 9 })
+        sc(ws, row, 4, c.corr, { bg: C.white, sz: 8, wrap: true })
+        ws.getRow(row).height = 22; row++
       }
     }
 
