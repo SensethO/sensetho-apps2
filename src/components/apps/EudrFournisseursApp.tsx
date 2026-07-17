@@ -7,10 +7,12 @@ import ShareAutocomplete from '@/components/apps/ShareAutocomplete'
 import EudrTracesPanel from '@/components/apps/EudrTracesPanel'
 import EudrDocumentsModal from '@/components/apps/EudrDocumentsModal'
 import EudrCoaPanel from '@/components/apps/EudrCoaPanel'
+import EudrCrmPanel from '@/components/apps/EudrCrmPanel'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface FollowUp { date: string; type: string; text: string }
+interface CrmContact { name: string; role: string; email: string; phone: string }
 
 interface Buyer {
   id: string
@@ -25,6 +27,10 @@ interface Buyer {
   relationship_status: string | null
   follow_ups: FollowUp[] | null
   notes: string | null
+  contacts?: CrmContact[] | null
+  next_action?: string | null
+  next_action_date?: string | null
+  owner?: string | null
 }
 
 interface Certification {
@@ -49,6 +55,10 @@ interface Supplier {
   relationship_status: string | null
   follow_ups: FollowUp[] | null
   notes: string | null
+  contacts?: CrmContact[] | null
+  next_action?: string | null
+  next_action_date?: string | null
+  owner?: string | null
 }
 
 interface Contract {
@@ -71,7 +81,7 @@ interface Contract {
   notes: string | null
 }
 
-type TabKey = 'dashboard' | 'buyers' | 'suppliers' | 'contracts' | 'coa' | 'traces'
+type TabKey = 'dashboard' | 'buyers' | 'suppliers' | 'contracts' | 'crm' | 'coa' | 'traces'
 type Entity = 'buyers' | 'suppliers' | 'contracts'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -419,6 +429,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
     { key: 'buyers', label: '🏢 Acheteurs' },
     { key: 'suppliers', label: '🌱 Fournisseurs' },
     { key: 'contracts', label: '📄 Contrats' },
+    { key: 'crm', label: '🤝 Relation (CRM)' },
     { key: 'coa', label: '🧪 Analyse COA' },
     { key: 'traces', label: '🇪🇺 EUDR / TRACES' },
   ]
@@ -488,6 +499,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
               onDocuments={c => setDocsFor({ entityType: 'contract', id: c.id, label: c.contract_number ?? 'Contrat' })}
             />
           )}
+          {tab === 'crm' && <EudrCrmPanel orgId={orgId} canWrite={!ctx.isShared} suppliers={suppliers} buyers={buyers} onChanged={reload} />}
           {tab === 'coa' && <EudrCoaPanel orgId={orgId} canManage={!ctx.isShared} suppliers={suppliers} contracts={contracts} />}
           {tab === 'traces' && <EudrTracesPanel orgId={orgId} canManage={!ctx.isShared} suppliers={suppliers} contracts={contracts} />}
         </>

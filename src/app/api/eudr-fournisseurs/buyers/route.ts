@@ -11,7 +11,8 @@ const TABLE = 'eudr_buyers'
 const FIELDS = [
   'name', 'eudr_contact', 'email', 'commodity', 'country_import',
   'geojson_status', 'questionnaire_status', 'dds_number',
-  'relationship_status', 'follow_ups', 'notes',
+  'relationship_status', 'follow_ups',
+  'contacts', 'next_action', 'next_action_date', 'owner', 'notes',
 ]
 
 async function getRole(userId: string): Promise<string | null> {

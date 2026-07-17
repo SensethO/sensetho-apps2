@@ -11,7 +11,8 @@ const TABLE = 'eudr_suppliers'
 const FIELDS = [
   'company', 'priority', 'contact_person', 'email', 'commodity', 'country_origin',
   'eudr_risk_level', 'geojson_status', 'farmer_questionnaire_status',
-  'ddr_status', 'certifications', 'relationship_status', 'follow_ups', 'notes',
+  'ddr_status', 'certifications', 'relationship_status', 'follow_ups',
+  'contacts', 'next_action', 'next_action_date', 'owner', 'notes',
 ]
 
 async function getRole(userId: string): Promise<string | null> {
