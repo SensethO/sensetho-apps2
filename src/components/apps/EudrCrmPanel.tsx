@@ -47,8 +47,10 @@ export default function EudrCrmPanel({ orgId, canWrite, suppliers = [], buyers =
 }) {
   void orgId
   const [kind, setKind] = useState<'suppliers' | 'buyers'>('suppliers')
+  const [view, setView] = useState<'list' | 'kanban'>('list')
   const [stageFilter, setStageFilter] = useState('')
   const [editing, setEditing] = useState<Rec | null>(null)
+  const [dragId, setDragId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -104,7 +106,17 @@ export default function EudrCrmPanel({ orgId, canWrite, suppliers = [], buyers =
             </button>
           ))}
         </div>
-        <span className={hint}>{records.length} relation(s)</span>
+        <div className="flex items-center gap-3">
+          <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            {(['list', 'kanban'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                className={`px-3 py-1.5 text-sm ${view === v ? 'bg-gray-800 dark:bg-gray-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+                {v === 'list' ? '≣ Liste' : '▤ Kanban'}
+              </button>
+            ))}
+          </div>
+          <span className={hint}>{records.length} relation(s)</span>
+        </div>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-2 text-sm text-red-700 dark:text-red-400">{error}</div>}
@@ -135,6 +147,7 @@ export default function EudrCrmPanel({ orgId, canWrite, suppliers = [], buyers =
         </div>
       )}
 
+      {view === 'list' && (<>
       {/* Pipeline */}
       <div className="flex flex-wrap gap-2">
         <button onClick={() => setStageFilter('')} className={`text-xs px-2.5 py-1 rounded-full border ${!stageFilter ? 'border-green-500 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'border-gray-200 dark:border-gray-700 text-gray-500'}`}>Tous ({records.length})</button>
@@ -188,6 +201,43 @@ export default function EudrCrmPanel({ orgId, canWrite, suppliers = [], buyers =
           </tbody>
         </table>
       </div>
+      </>)}
+
+      {/* Vue Kanban (glisser-déposer une carte pour changer de statut) */}
+      {view === 'kanban' && (
+        <div className="overflow-x-auto pb-2">
+          <div className="flex gap-3 min-w-max">
+            {STAGES.map(s => {
+              const col = records.filter(r => (r.relationship_status || 'nouveau') === s.value)
+              return (
+                <div key={s.value} className="w-64 shrink-0 rounded-xl bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700"
+                  onDragOver={e => { if (canWrite && dragId) e.preventDefault() }}
+                  onDrop={() => { if (canWrite && dragId) { const r = records.find(x => x.id === dragId); if (r && (r.relationship_status || 'nouveau') !== s.value) patch(dragId, { relationship_status: s.value }); setDragId(null) } }}>
+                  <div className={`px-3 py-2 rounded-t-xl text-xs font-semibold flex items-center justify-between ${s.cls}`}>
+                    <span>{s.label}</span><span>{col.length}</span>
+                  </div>
+                  <div className="p-2 space-y-2 min-h-[60px]">
+                    {col.map(r => {
+                      const fu = lastFu(r)
+                      const overdue = r.next_action_date && r.next_action_date < today
+                      return (
+                        <div key={r.id} draggable={canWrite} onDragStart={() => setDragId(r.id)} onDragEnd={() => setDragId(null)}
+                          onClick={() => setEditing(r)}
+                          className={`rounded-lg border bg-white dark:bg-gray-800 p-2 text-xs cursor-pointer hover:shadow ${dragId === r.id ? 'opacity-50' : ''} border-gray-200 dark:border-gray-700`}>
+                          <p className="font-medium text-gray-900 dark:text-white truncate">{nameOf(r)}</p>
+                          {r.next_action && <p className={`mt-0.5 ${overdue ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>📌 {r.next_action}{r.next_action_date ? ` · ${fmt(r.next_action_date)}` : ''}{overdue ? ' ⚠' : ''}</p>}
+                          <p className="mt-0.5 text-gray-400">{r.owner ? `👤 ${r.owner}` : ''}{fu ? `${r.owner ? ' · ' : ''}${fmt(fu.date)}` : ''}</p>
+                        </div>
+                      )
+                    })}
+                    {col.length === 0 && <p className="text-[11px] text-gray-300 dark:text-gray-600 text-center py-2">—</p>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {editing && <CrmDrawer record={editing} nameOf={nameOf} canWrite={canWrite} busy={busy}
         onClose={() => setEditing(null)} onSave={async (body) => { await patch(editing.id, body); setEditing(null) }} />}
