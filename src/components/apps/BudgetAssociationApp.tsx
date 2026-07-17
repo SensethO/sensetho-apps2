@@ -630,7 +630,6 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
   const [txs, setTxs] = useState<QontoTx[]>([])
   const [meta, setMeta] = useState<QontoTxMeta | null>(null)
   const [fetchingTx, setFetchingTx] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [txError, setTxError] = useState<string | null>(null)
   const [hasFetched, setHasFetched] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -750,36 +749,44 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
     setHasFetched(false)
   }
 
-  // ── Transactions ───────────────────────────────────────────────────────────
-  const fetchTransactions = useCallback(async (page: number, append: boolean) => {
+  // ── Transactions — charge TOUTES les pages Qonto (100/page max) ─────────────
+  const MAX_QONTO_PAGES = 50
+  const fetchTransactions = useCallback(async () => {
     if (!selectedAccountId) return
-    if (append) setLoadingMore(true)
-    else { setFetchingTx(true); setTxs([]); setMeta(null); setSelected(new Set()) }
+    setFetchingTx(true); setTxs([]); setMeta(null); setSelected(new Set())
     setTxError(null)
     try {
-      const params = new URLSearchParams({
-        organisation_id: organisationId,
-        bank_account_id: selectedAccountId,
-        page: String(page),
-      })
-      if (fromDate) params.set('settled_from', fromDate)
-      if (toDate) params.set('settled_to', toDate)
-      if (sideFilter !== 'all') params.set('side', sideFilter)
-      const r = await fetch(`${QONTO_API}/transactions?${params.toString()}`)
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) {
-        setTxError(d.error ?? 'Impossible de récupérer les transactions.')
-      } else {
+      const all: QontoTx[] = []
+      let page = 1
+      let lastMeta: QontoTxMeta | null = null
+      for (let i = 0; i < MAX_QONTO_PAGES; i++) {
+        const params = new URLSearchParams({
+          organisation_id: organisationId,
+          bank_account_id: selectedAccountId,
+          page: String(page),
+        })
+        if (fromDate) params.set('settled_from', fromDate)
+        if (toDate) params.set('settled_to', toDate)
+        if (sideFilter !== 'all') params.set('side', sideFilter)
+        const r = await fetch(`${QONTO_API}/transactions?${params.toString()}`)
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) { setTxError(d.error ?? 'Impossible de récupérer les transactions.'); break }
         const list: QontoTx[] = Array.isArray(d.transactions) ? d.transactions : []
-        setTxs(prevTx => append ? [...prevTx, ...list] : list)
-        setMeta(d.meta ?? null)
+        all.push(...list)
+        lastMeta = d.meta ?? null
+        setTxs([...all]) // affichage progressif pendant le chargement
         setHasFetched(true)
+        if (!lastMeta?.next_page) break
+        page = lastMeta.next_page
       }
+      if (lastMeta?.next_page) {
+        setTxError(`Liste tronquée à ${all.length} transactions (${lastMeta.total_count} au total) — resserrez les dates pour tout couvrir.`)
+      }
+      setMeta(lastMeta)
     } catch (e) {
       setTxError(e instanceof Error ? e.message : String(e))
     }
     setFetchingTx(false)
-    setLoadingMore(false)
   }, [organisationId, selectedAccountId, fromDate, toDate, sideFilter])
 
   function toggleTx(txId: string) {
@@ -1008,7 +1015,7 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
                     <option value="credit">Crédits</option>
                   </select>
                 </div>
-                <button onClick={() => fetchTransactions(1, false)} disabled={fetchingTx || !selectedAccountId}
+                <button onClick={() => fetchTransactions()} disabled={fetchingTx || !selectedAccountId}
                   style={{ ...btnPrimary, opacity: fetchingTx || !selectedAccountId ? 0.6 : 1, cursor: fetchingTx || !selectedAccountId ? 'not-allowed' : 'pointer' }}>
                   {fetchingTx ? 'Chargement…' : '🔄 Récupérer'}
                 </button>
@@ -1031,7 +1038,7 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
                     </div>
                     <button onClick={toggleSelectAllPage}
                       style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '0.45rem', padding: '0.25rem 0.7rem', fontSize: '0.78rem', color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>
-                      {allPageSelected ? 'Tout désélectionner' : 'Tout sélectionner la page'}
+                      {allPageSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
                     </button>
                   </div>
 
@@ -1077,11 +1084,10 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
                     </table>
                   </div>
 
-                  {meta?.next_page != null && (
-                    <button onClick={() => fetchTransactions(meta.next_page as number, true)} disabled={loadingMore}
-                      style={{ ...btnGhost, alignSelf: 'center', opacity: loadingMore ? 0.6 : 1 }}>
-                      {loadingMore ? 'Chargement…' : `⬇ Charger la page suivante (${meta.current_page + 1}/${meta.total_pages})`}
-                    </button>
+                  {meta && (
+                    <div style={{ alignSelf: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {txs.length} transaction(s) chargée(s) sur {meta.total_count}
+                    </div>
                   )}
                 </>
               )}

@@ -765,25 +765,38 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, dateDeb
     }
   }
 
-  // ── Récupération des transactions ───────────────────────────────────────────
-  const fetchTxs = useCallback(async (page: number) => {
+  // ── Récupération des transactions (toutes les pages Qonto — 100/page max) ────
+  const MAX_PAGES = 50
+  const fetchTxs = useCallback(async () => {
     if (!accountId) return
     setFetching(true)
     setFetchError(null)
     try {
-      const params = new URLSearchParams({
-        organisation_id: organisationId,
-        bank_account_id: accountId,
-        settled_from: fromDate,
-        settled_to: toDate,
-        page: String(page),
-      })
-      if (sideFilter) params.set('side', sideFilter)
-      const r = await fetch(`/api/qonto/transactions?${params.toString()}`)
-      const d = await r.json()
-      if (!r.ok) { setFetchError(d.error ?? 'Erreur lors de la récupération des transactions.'); return }
-      setTxs(d.transactions ?? [])
-      setMeta(d.meta ?? null)
+      const all: QontoTx[] = []
+      let page = 1
+      let lastMeta: QontoTxMeta | null = null
+      for (let i = 0; i < MAX_PAGES; i++) {
+        const params = new URLSearchParams({
+          organisation_id: organisationId,
+          bank_account_id: accountId,
+          settled_from: fromDate,
+          settled_to: toDate,
+          page: String(page),
+        })
+        if (sideFilter) params.set('side', sideFilter)
+        const r = await fetch(`/api/qonto/transactions?${params.toString()}`)
+        const d = await r.json()
+        if (!r.ok) { setFetchError(d.error ?? 'Erreur lors de la récupération des transactions.'); return }
+        all.push(...(d.transactions ?? []))
+        lastMeta = d.meta ?? null
+        setTxs([...all]) // affichage progressif pendant le chargement
+        if (!lastMeta?.next_page) break
+        page = lastMeta.next_page
+      }
+      if (lastMeta?.next_page) {
+        setFetchError(`Liste tronquée à ${all.length} transactions (${lastMeta.total_count} au total) — resserrez les dates pour tout couvrir.`)
+      }
+      setMeta(lastMeta)
       setHasFetched(true)
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : 'Erreur réseau.')
@@ -1018,7 +1031,7 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, dateDeb
                     <option value="credit">Crédits (entrées)</option>
                   </select>
                 </div>
-                <button onClick={() => fetchTxs(1)} disabled={fetching}
+                <button onClick={() => fetchTxs()} disabled={fetching}
                   style={{ ...btnPrimary, opacity: fetching ? 0.6 : 1, cursor: fetching ? 'not-allowed' : 'pointer' }}>
                   {fetching ? 'Chargement…' : '🔄 Récupérer'}
                 </button>
@@ -1079,19 +1092,9 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, dateDeb
                       </tbody>
                     </table>
                   </div>
-                  {meta && meta.total_pages > 1 && (
-                    <div style={{ padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', borderTop: '1px solid var(--border)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                      <span>{meta.total_count} transaction(s) — page {meta.current_page}/{meta.total_pages}</span>
-                      <div style={{ display: 'flex', gap: '0.4rem' }}>
-                        <button onClick={() => fetchTxs(meta.current_page - 1)} disabled={fetching || meta.current_page <= 1}
-                          style={{ ...btnGhost, padding: '0.2rem 0.6rem', fontSize: '0.78rem', opacity: meta.current_page <= 1 ? 0.4 : 1, cursor: meta.current_page <= 1 ? 'not-allowed' : 'pointer' }}>
-                          ← Précédent
-                        </button>
-                        <button onClick={() => fetchTxs(meta.current_page + 1)} disabled={fetching || !meta.next_page}
-                          style={{ ...btnGhost, padding: '0.2rem 0.6rem', fontSize: '0.78rem', opacity: !meta.next_page ? 0.4 : 1, cursor: !meta.next_page ? 'not-allowed' : 'pointer' }}>
-                          Suivant →
-                        </button>
-                      </div>
+                  {meta && (
+                    <div style={{ padding: '0.4rem 0.75rem', background: 'var(--bg)', borderTop: '1px solid var(--border)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {txs.length} transaction(s) chargée(s) sur {meta.total_count}
                     </div>
                   )}
                 </div>
@@ -1197,7 +1200,7 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, dateDeb
           )}
           {step === 'result' && (
             <>
-              <button onClick={() => { setStep('main'); setImportResult(null); setSelected({}); if (accountId) fetchTxs(meta?.current_page ?? 1) }} style={btnGhost}>
+              <button onClick={() => { setStep('main'); setImportResult(null); setSelected({}); if (accountId) fetchTxs() }} style={btnGhost}>
                 ← Nouvel import
               </button>
               <button onClick={onClose} style={btnPrimary}>Fermer</button>
