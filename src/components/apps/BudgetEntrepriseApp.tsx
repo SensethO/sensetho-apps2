@@ -30,10 +30,28 @@ interface Detail {
   id: string
   ligne_id: string
   commentaire: string
+  date_valeur?: string | null // date de valeur ISO (aaaa-mm-jj)
   montant_previsionnel: number
   montant_realise: number
   sort_order: number
   draft?: boolean // brouillon local uniquement — non persisté en base
+}
+
+/** Champ éditable d'un détail (édition inline + import). */
+type DetailField = 'commentaire' | 'montant_previsionnel' | 'montant_realise' | 'date_valeur'
+
+/** Pièce justificative rattachée à un détail (fichier SharePoint). */
+interface Piece {
+  id: string
+  ligne_id: string | null
+  detail_id: string | null
+  nom: string
+  sharepoint_item_id: string | null
+  url: string | null
+  type_piece: string | null
+  montant: number | null
+  date_piece: string | null
+  created_at: string
 }
 interface Ligne {
   id: string
@@ -120,6 +138,29 @@ function parseAmt(s: string): number {
   return parseFloat(s.replace(',', '.').replace(/\s/g, '')) || 0
 }
 
+/** Date de valeur → ISO aaaa-mm-jj. Accepte Date (ExcelJS), jj/mm/aaaa, jj-mm-aaaa, jj.mm.aaaa ou ISO. */
+function parseDateValeur(v: unknown): string | null {
+  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10)
+  const s = String(v ?? '').trim()
+  if (!s) return null
+  const fr = s.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})$/)
+  if (fr) {
+    const d = fr[1].padStart(2, '0')
+    const mo = fr[2].padStart(2, '0')
+    const y = fr[3].length === 2 ? `20${fr[3]}` : fr[3]
+    if (Number(mo) >= 1 && Number(mo) <= 12 && Number(d) >= 1 && Number(d) <= 31) return `${y}-${mo}-${d}`
+    return null
+  }
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`
+  return null
+}
+
+/** ISO aaaa-mm-jj → « jj/mm » (affichage compact des lignes de détail). */
+const fmtDayMonth = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
+/** ISO aaaa-mm-jj → « jj/mm/aaaa ». */
+const fmtDateFr = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+
 // ── Couleurs sémantiques (compatibles clair / sombre via rgba) ────────────────
 
 const RED = '#dc2626'
@@ -144,6 +185,61 @@ const STATUT_LABEL: Record<string, { label: string; color: string; bg: string }>
   ouvert: { label: 'Ouvert', color: 'var(--accent)', bg: 'rgba(99,102,241,0.12)' },
   cloture: { label: 'Clôturé', color: AMBER, bg: AMBER_BG },
   archive: { label: 'Archivé', color: 'var(--text-subtle)', bg: 'rgba(148,163,184,0.15)' },
+}
+
+// ── Pièces justificatives : types + upload SharePoint ────────────────────────
+
+const TYPE_PIECE_META: Record<string, { label: string; color: string; bg: string }> = {
+  facture: { label: 'Facture', color: AMBER, bg: AMBER_BG },
+  facture_client: { label: 'Facture client', color: GREEN, bg: GREEN_BG },
+  facture_fournisseur: { label: 'Facture fournisseur', color: RED, bg: RED_BG },
+  devis: { label: 'Devis', color: BLUE, bg: BLUE_BG },
+  contrat: { label: 'Contrat', color: VIOLET, bg: VIOLET_BG },
+  autre: { label: 'Autre', color: '#64748b', bg: 'rgba(148,163,184,0.15)' },
+}
+
+/** Type de pièce automatique selon le type du compte : produit → facture client,
+ *  charge → facture fournisseur, actif / passif → autre. */
+function defaultTypePiece(t?: CompteType): string {
+  if (t === 'produit') return 'facture_client'
+  if (t === 'charge') return 'facture_fournisseur'
+  return 'autre'
+}
+
+/** Upload d'un fichier vers SharePoint : session d'upload côté serveur puis PUT
+ *  direct chez Microsoft depuis le navigateur (aucun transit par Vercel).
+ *  Retourne l'item ID SharePoint. */
+async function uploadPieceFile(file: File, exerciceId: string): Promise<string> {
+  if (file.size === 0) throw new Error('Fichier vide')
+  const sess = await fetch(`${API}/pieces/upload-session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: file.name, exercice_id: exerciceId }),
+  })
+  const sj = await sess.json().catch(() => ({})) as { uploadUrl?: string; error?: string }
+  if (!sess.ok || !sj.uploadUrl) throw new Error(sj.error ?? 'Session d’upload impossible')
+  const put = await fetch(sj.uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Range': `bytes 0-${file.size - 1}/${file.size}`,
+    },
+    body: file,
+  })
+  if (!put.ok) throw new Error(`Erreur upload SharePoint (${put.status})`)
+  const item = await put.json().catch(() => ({})) as { id?: string }
+  if (!item.id) throw new Error('Réponse SharePoint invalide')
+  return item.id
+}
+
+/** Ouvre une pièce via une URL signée éphémère. */
+async function openPiece(p: Piece) {
+  if (p.sharepoint_item_id) {
+    const r = await fetch(`${API}/pieces/signed-url?item_id=${encodeURIComponent(p.sharepoint_item_id)}`)
+    const d = await r.json().catch(() => ({})) as { url?: string }
+    if (r.ok && d.url) { window.open(d.url, '_blank', 'noopener'); return }
+  }
+  if (p.url) window.open(p.url, '_blank', 'noopener')
 }
 
 // ── Styles réutilisables (variables CSS du thème apps2) ──────────────────────
@@ -172,15 +268,19 @@ const modalCard: React.CSSProperties = {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Import Excel / CSV (format standard : Compte ; Commentaire ; Prévisionnel ; Réalisé)
+// Import Excel / CSV
+// Format : Compte ; Date ; Commentaire ; Prévisionnel ; Réalisé ; Pièce jointe
+// (rétrocompatible avec l'ancien masque 4 colonnes Compte ; Commentaire ; Prév ; Réal)
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface ImportRow {
   rowNum: number
   compteNumero: string
+  dateValeur: string | null
   commentaire: string
   previsionnel: number
   realise: number
+  pieceNom: string
   compte: Compte | null
 }
 
@@ -193,16 +293,23 @@ function parseImportRows(raw: unknown[][], compteByNumero: Map<string, Compte>):
   const first = raw[0]
   const isHeader = typeof first[0] === 'string' && isNaN(Number(String(first[0]).trim()))
 
-  let colCompte = 0, colComment = 1, colPrev = 2, colReal = 3
+  // Positions par défaut = ancien masque 4 colonnes (rétrocompatibilité)
+  let colCompte = 0, colDate = -1, colComment = 1, colPrev = 2, colReal = 3, colPiece = -1
   if (isHeader) {
+    // Détection par en-têtes : nouveau masque 6 colonnes ou ancien 4 colonnes
     first.forEach((h, i) => {
       if (typeof h !== 'string') return
       const n = normalizeHeader(h)
       if (n.startsWith('compte') || n === 'no' || n === 'num' || n.startsWith('numero')) colCompte = i
+      else if (n.startsWith('date') || n.startsWith('valeur')) colDate = i
       else if (n.startsWith('comment') || n.startsWith('libelle') || n.startsWith('design') || n.startsWith('label')) colComment = i
       else if (n.startsWith('prev') || n.startsWith('mont') || n === 'budget' || n === 'ht') colPrev = i
       else if (n.startsWith('real') || n.startsWith('exec') || n.startsWith('engag')) colReal = i
+      else if (n.startsWith('piece') || n.startsWith('facture') || n.startsWith('fichier') || n.startsWith('justif') || n.startsWith('joint')) colPiece = i
     })
+  } else if (first.length >= 5 && typeof first[1] !== 'number' && parseDateValeur(first[1]) !== null) {
+    // Sans en-tête : la 2ᵉ cellule ressemble à une date → nouveau masque positionnel
+    colDate = 1; colComment = 2; colPrev = 3; colReal = 4; colPiece = 5
   }
 
   const dataRows = isHeader ? raw.slice(1) : raw
@@ -213,15 +320,19 @@ function parseImportRows(raw: unknown[][], compteByNumero: Map<string, Compte>):
     })
     .map((r, i) => {
       const compteNumero = String(r[colCompte] ?? '').trim()
+      const dateValeur = colDate >= 0 ? parseDateValeur(r[colDate]) : null
       const commentaire = String(r[colComment] ?? '').trim()
       const previsionnel = parseFloat(String(r[colPrev] ?? '0').replace(/\s/g, '').replace(',', '.')) || 0
       const realise = parseFloat(String(r[colReal] ?? '0').replace(/\s/g, '').replace(',', '.')) || 0
+      const pieceNom = colPiece >= 0 ? String(r[colPiece] ?? '').trim() : ''
       return {
         rowNum: isHeader ? i + 2 : i + 1,
         compteNumero,
+        dateValeur,
         commentaire,
         previsionnel,
         realise,
+        pieceNom,
         compte: compteByNumero.get(compteNumero) ?? null,
       }
     })
@@ -258,8 +369,21 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
   const [rows, setRows] = useState<ImportRow[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  const [importPhase, setImportPhase] = useState<'lignes' | 'pieces' | null>(null)
   const [result, setResult] = useState<{ imported: number; errors: { row: number; message: string }[] } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Factures déposées pour appariement (nom de fichier ↔ colonne « Pièce jointe »)
+  const [pjFiles, setPjFiles] = useState<File[]>([])
+  const pjRef = useRef<HTMLInputElement>(null)
+  const [piecesReport, setPiecesReport] = useState<{ ok: number; errors: string[] } | null>(null)
+
+  /** Clé d'appariement : minuscules, sans extension, sans espaces superflus. */
+  const pieceKey = (name: string) => name.toLowerCase().replace(/\.[^.]+$/, '').trim()
+  const fileByKey = new Map<string, File>()
+  for (const f of pjFiles) fileByKey.set(pieceKey(f.name), f)
+  const matchedFile = (row: ImportRow): File | undefined =>
+    row.pieceNom ? fileByKey.get(pieceKey(row.pieceNom)) : undefined
 
   const compteByNumero = new Map<string, Compte>()
   for (const c of comptes) compteByNumero.set(c.numero, c)
@@ -284,7 +408,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
         const collected: unknown[][] = []
         ws.eachRow({ includeEmpty: false }, (row) => {
           const vals = (row.values as unknown[]).slice(1) // ExcelJS : index 1-based
-          collected.push(vals.map(v => (typeof v === 'number' ? v : cellToString(v))))
+          collected.push(vals.map(v => (typeof v === 'number' || v instanceof Date ? v : cellToString(v))))
         })
         raw = collected
       }
@@ -299,10 +423,10 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
 
   function downloadTemplate() {
     const csv = '﻿' +
-      'Compte;Commentaire;Prévisionnel;Réalisé\n' +
-      '601;Exemple achats matières premières;1000;0\n' +
-      '6061;Fournitures non stockables;500;200\n' +
-      '706;Prestations de services;12000;3500\n'
+      'Compte;Date;Commentaire;Prévisionnel;Réalisé;Pièce jointe\n' +
+      '601;15/01/2026;Exemple achats matières premières;1000;0;\n' +
+      '6061;03/02/2026;Fournitures non stockables;500;200;facture_edf_fev2026.pdf\n' +
+      '706;28/02/2026;Prestations de services;12000;3500;facture_client_dupont.pdf\n'
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url
@@ -317,6 +441,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
 
   async function doImport() {
     setImporting(true)
+    setImportPhase('lignes')
     const validRows = rows.filter(r => r.compte !== null && !isGroupCompte(r))
     const r = await fetch(`${API}/import-excel`, {
       method: 'POST',
@@ -330,19 +455,82 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
           commentaire: v.commentaire,
           montant_previsionnel: v.previsionnel,
           montant_realise: v.realise,
+          ...(v.dateValeur ? { date_valeur: v.dateValeur } : {}),
         })),
       }),
     })
-    const d = await r.json()
+    const d = await r.json() as {
+      imported: number
+      errors: { row: number; message: string }[]
+      details?: { detail_id: string; compte_id: string; commentaire: string }[]
+    }
+
+    // ── Upload SharePoint des factures appariées + référencement /pieces ──────
+    let piecesOk = 0
+    const pieceErrors: string[] = []
+    if (d.imported > 0 && Array.isArray(d.details) && pjFiles.length > 0) {
+      setImportPhase('pieces')
+      // Appariement par (compte_id, commentaire) avec consommation : robuste même si
+      // des rows sont tombées en erreur côté serveur (details[] les exclut, un mappage
+      // positionnel se décalerait et rattacherait la facture à la mauvaise écriture).
+      const pool = [...d.details]
+      const takeDetail = (compteId: string, commentaire: string) => {
+        let idx = pool.findIndex(p => p.compte_id === compteId && p.commentaire === commentaire)
+        if (idx < 0) idx = pool.findIndex(p => p.compte_id === compteId)
+        return idx >= 0 ? pool.splice(idx, 1)[0] : undefined
+      }
+      for (let i = 0; i < validRows.length; i++) {
+        const row = validRows[i]
+        const file = matchedFile(row)
+        if (!file) continue
+        const det = takeDetail(row.compte!.id, row.commentaire ?? '')
+        if (!det?.detail_id) {
+          pieceErrors.push(`${file.name} : détail introuvable après import (ligne ${row.rowNum})`)
+          continue
+        }
+        try {
+          const spItemId = await uploadPieceFile(file, exerciceId)
+          const pr = await fetch(`${API}/pieces`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              detail_id: det.detail_id,
+              nom: file.name,
+              sharepoint_item_id: spItemId,
+              // Type automatique : produit → facture client, charge → facture fournisseur, bilan → autre
+              type_piece: defaultTypePiece(row.compte!.type),
+              ...(row.realise !== 0 ? { montant: row.realise } : {}),
+              ...(row.dateValeur ? { date_piece: row.dateValeur } : {}),
+            }),
+          })
+          if (!pr.ok) {
+            const pj = await pr.json().catch(() => ({})) as { error?: string }
+            throw new Error(pj.error ?? `Erreur ${pr.status}`)
+          }
+          piecesOk++
+        } catch (e) {
+          pieceErrors.push(`${file.name} : ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+    }
+
     setResult(d)
+    setPiecesReport(pjFiles.length > 0 ? { ok: piecesOk, errors: pieceErrors } : null)
     setStep('result')
     setImporting(false)
+    setImportPhase(null)
     if (d.imported > 0) onImported()
   }
 
+  // ── Synthèse d'appariement (aperçu) ────────────────────────────────────────
+  const rowsWithPiece = rows.filter(r => r.compte !== null && !isGroupCompte(r) && r.pieceNom !== '')
+  const matchedCount = rowsWithPiece.filter(r => matchedFile(r) !== undefined).length
+  const referencedKeys = new Set(rowsWithPiece.map(r => pieceKey(r.pieceNom)))
+  const orphanFiles = pjFiles.filter(f => !referencedKeys.has(pieceKey(f.name)))
+
   return (
     <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={modalCard}>
+      <div style={{ ...modalCard, maxWidth: 780 }}>
         {/* Header */}
         <div style={{ padding: '1rem 1.25rem 0.75rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
@@ -374,9 +562,11 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                   <tbody>
                     {[
                       ['A', 'Compte / Numéro', '✅', '601'],
-                      ['B', 'Commentaire / Libellé', '—', 'Achats matières premières'],
-                      ['C', 'Prévisionnel / Montant', '✅', '1500'],
-                      ['D', 'Réalisé / Exécuté', '—', '0'],
+                      ['B', 'Date (de valeur)', '—', '15/01/2026'],
+                      ['C', 'Commentaire / Libellé', '—', 'Achats matières premières'],
+                      ['D', 'Prévisionnel / Montant', '✅', '1500'],
+                      ['E', 'Réalisé / Exécuté', '—', '0'],
+                      ['F', 'Pièce jointe (nom du fichier)', '—', 'facture_edf.pdf'],
                     ].map(([col, name, req, ex]) => (
                       <tr key={col} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '0.3rem 0.5rem', fontWeight: 700, color: 'var(--accent)' }}>{col}</td>
@@ -389,6 +579,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                 </table>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                   La 1ère ligne peut être un en-tête — il sera détecté automatiquement. Les séparateurs virgule et point-virgule sont acceptés.
+                  Dates au format jj/mm/aaaa ou aaaa-mm-jj. L’ancien masque 4 colonnes (Compte ; Commentaire ; Prévisionnel ; Réalisé) reste accepté.
                 </div>
               </div>
 
@@ -448,8 +639,8 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-                      {['#', 'Compte', 'Commentaire', 'Prévisionnel', 'Réalisé', ''].map((h, i) => (
-                        <th key={i} style={{ padding: '0.35rem 0.6rem', textAlign: i >= 3 && i <= 4 ? 'right' : 'left', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
+                      {['#', 'Compte', 'Date', 'Commentaire', 'Prévisionnel', 'Réalisé', 'Pièce jointe', ''].map((h, i) => (
+                        <th key={i} style={{ padding: '0.35rem 0.6rem', textAlign: i >= 4 && i <= 5 ? 'right' : 'left', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -458,6 +649,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                       const isGrp = isGroupCompte(row)
                       const isInvalid = !row.compte || isGrp
                       const rowBg = !row.compte ? RED_BG : isGrp ? AMBER_BG : 'transparent'
+                      const match = !isInvalid ? matchedFile(row) : undefined
                       return (
                         <tr key={row.rowNum} style={{ borderBottom: '1px solid var(--border)', background: rowBg }}>
                           <td style={{ padding: '0.3rem 0.6rem', color: 'var(--text-muted)' }}>{row.rowNum}</td>
@@ -467,11 +659,23 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                             {!row.compte && <span style={{ color: RED, marginLeft: '0.4rem', fontSize: '0.72rem' }}>introuvable</span>}
                             {isGrp && <span style={{ color: AMBER, marginLeft: '0.4rem', fontSize: '0.72rem' }}>compte groupe</span>}
                           </td>
-                          <td style={{ padding: '0.3rem 0.6rem', color: isInvalid ? 'var(--text-muted)' : 'var(--text)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '0.3rem 0.6rem', whiteSpace: 'nowrap', color: isInvalid ? 'var(--text-muted)' : 'var(--text)' }}>
+                            {row.dateValeur ? fmtDateFr(row.dateValeur) : <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                          </td>
+                          <td style={{ padding: '0.3rem 0.6rem', color: isInvalid ? 'var(--text-muted)' : 'var(--text)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {row.commentaire || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
                           </td>
                           <td style={{ padding: '0.3rem 0.6rem', textAlign: 'right', fontWeight: 600, color: isInvalid ? 'var(--text-muted)' : 'var(--text)' }}>{fmt(row.previsionnel)}</td>
                           <td style={{ padding: '0.3rem 0.6rem', textAlign: 'right', color: isInvalid ? 'var(--text-muted)' : 'var(--text)' }}>{fmt(row.realise)}</td>
+                          <td style={{ padding: '0.3rem 0.6rem', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {row.pieceNom === '' ? (
+                              <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>
+                            ) : match ? (
+                              <span title={`Fichier apparié : ${match.name}`} style={{ color: GREEN, fontWeight: 600 }}>📎 {row.pieceNom}</span>
+                            ) : (
+                              <span title="Aucun fichier déposé ne correspond à ce nom" style={{ color: AMBER }}>📎 {row.pieceNom} <span style={{ fontSize: '0.7rem' }}>(non déposé)</span></span>
+                            )}
+                          </td>
                           <td style={{ padding: '0.3rem 0.4rem', textAlign: 'center' }}>
                             {!row.compte ? '⚠️' : isGrp ? '🚫' : '✅'}
                           </td>
@@ -481,7 +685,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg)' }}>
-                      <td colSpan={3} style={{ padding: '0.4rem 0.6rem', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <td colSpan={4} style={{ padding: '0.4rem 0.6rem', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                         TOTAL ({validCount} lignes valides)
                       </td>
                       <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right', fontWeight: 700, color: 'var(--text)' }}>
@@ -490,10 +694,80 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                       <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right', fontWeight: 700, color: 'var(--text)' }}>
                         {fmt(rows.filter(r => r.compte && !isGroupCompte(r)).reduce((s, r) => s + r.realise, 0))}
                       </td>
-                      <td />
+                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+
+              {/* ── Dépôt des factures (clients & fournisseurs) pour appariement ── */}
+              <div style={{ border: '1px solid var(--border)', borderRadius: '0.75rem', padding: '0.85rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--accent)' }}>
+                  📎 Factures clients &amp; fournisseurs (optionnel)
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Déposez ici les fichiers référencés dans la colonne « Pièce jointe ». L’appariement se fait par nom de fichier
+                  (insensible à la casse et à l’extension). Après l’import, chaque fichier apparié est envoyé dans SharePoint et
+                  rattaché à sa ligne — type déduit du compte : produit → facture client, charge → facture fournisseur.
+                </div>
+                <div
+                  onClick={() => pjRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.1)' }}
+                  onDragLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                    const dropped = Array.from(e.dataTransfer.files)
+                    if (dropped.length) setPjFiles(prevF => {
+                      const keys = new Set(prevF.map(f => pieceKey(f.name)))
+                      return [...prevF, ...dropped.filter(f => !keys.has(pieceKey(f.name)))]
+                    })
+                  }}
+                  style={{
+                    border: '2px dashed var(--border)', borderRadius: '0.6rem',
+                    padding: '1rem', textAlign: 'center', cursor: 'pointer', transition: 'background 0.15s',
+                  }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.8rem' }}>📂 Cliquer ou glisser les factures ici</div>
+                </div>
+                <input ref={pjRef} type="file" multiple style={{ display: 'none' }}
+                  onChange={e => {
+                    const picked = Array.from(e.target.files ?? [])
+                    if (picked.length) setPjFiles(prevF => {
+                      const keys = new Set(prevF.map(f => pieceKey(f.name)))
+                      return [...prevF, ...picked.filter(f => !keys.has(pieceKey(f.name)))]
+                    })
+                    e.target.value = ''
+                  }} />
+
+                {pjFiles.length > 0 && (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                      {pjFiles.map(f => {
+                        const used = referencedKeys.has(pieceKey(f.name))
+                        return (
+                          <span key={f.name} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                            fontSize: '0.72rem', fontWeight: 600, borderRadius: '0.4rem', padding: '0.15rem 0.5rem',
+                            background: used ? GREEN_BG : AMBER_BG,
+                            color: used ? GREEN : AMBER,
+                            border: `1px solid ${used ? GREEN : AMBER}40`,
+                          }}>
+                            {used ? '✓' : '⚠'} {f.name}
+                            <button onClick={() => setPjFiles(prevF => prevF.filter(x => x !== f))}
+                              title="Retirer ce fichier"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, fontSize: '0.8rem', lineHeight: 1 }}>×</button>
+                          </span>
+                        )
+                      })}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {matchedCount} fichier(s) apparié(s) sur {rowsWithPiece.length} ligne(s) avec pièce jointe.
+                      {orphanFiles.length > 0 && (
+                        <span style={{ color: AMBER }}> {orphanFiles.length} fichier(s) déposé(s) sans correspondance — ils seront ignorés.</span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
 
               {notFoundCount > 0 && (
@@ -531,6 +805,24 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                   {result.errors.map((e, i) => <div key={i}>Ligne {e.row} : {e.message}</div>)}
                 </div>
               )}
+
+              {/* Compte-rendu des pièces justificatives */}
+              {piecesReport && (
+                <div style={{
+                  background: piecesReport.errors.length === 0 ? GREEN_BG : AMBER_BG,
+                  border: `1px solid ${piecesReport.errors.length === 0 ? GREEN : AMBER}40`,
+                  borderRadius: '0.75rem', padding: '0.75rem 1rem', fontSize: '0.82rem',
+                }}>
+                  <div style={{ fontWeight: 700, color: piecesReport.errors.length === 0 ? GREEN : AMBER }}>
+                    📎 {piecesReport.ok} pièce(s) justificative(s) envoyée(s) dans SharePoint et rattachée(s)
+                  </div>
+                  {piecesReport.errors.length > 0 && (
+                    <div style={{ color: RED, marginTop: '0.4rem', fontSize: '0.78rem' }}>
+                      {piecesReport.errors.map((e, i) => <div key={i}>⚠️ {e}</div>)}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -543,7 +835,9 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
               <button onClick={() => setStep('select')} style={btnGhost}>← Retour</button>
               <button onClick={doImport} disabled={validCount === 0 || importing}
                 style={{ ...btnPrimary, opacity: validCount === 0 || importing ? 0.5 : 1, cursor: validCount === 0 || importing ? 'not-allowed' : 'pointer' }}>
-                {importing ? 'Import en cours…' : `📥 Importer ${validCount} ligne(s)`}
+                {importing
+                  ? importPhase === 'pieces' ? 'Envoi des pièces…' : 'Import en cours…'
+                  : `📥 Importer ${validCount} ligne(s)${matchedCount > 0 ? ` + ${matchedCount} pièce(s)` : ''}`}
               </button>
             </>
           )}
@@ -765,14 +1059,166 @@ function AuditModal({ ligne, onClose }: { ligne: Ligne; onClose: () => void }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// DetailPiecesPanel — pièces justificatives d'une ligne de détail
+// (liste + téléchargement via URL signée + suppression + ajout avec upload SharePoint)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function DetailPiecesPanel({ detailId, compteType, editable, exerciceId, pieces, loading, onPiecesChange }: {
+  detailId: string
+  compteType?: CompteType
+  editable: boolean
+  exerciceId: string
+  pieces: Piece[]
+  loading: boolean
+  onPiecesChange: (updater: (prev: Piece[]) => Piece[]) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [typePiece, setTypePiece] = useState<string>(defaultTypePiece(compteType))
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function handleUpload(file: File) {
+    setUploading(true)
+    setError(null)
+    try {
+      const spItemId = await uploadPieceFile(file, exerciceId)
+      const r = await fetch(`${API}/pieces`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          detail_id: detailId,
+          nom: file.name,
+          sharepoint_item_id: spItemId,
+          type_piece: typePiece,
+        }),
+      })
+      const d = await r.json().catch(() => ({})) as Piece & { error?: string }
+      if (!r.ok) throw new Error(d.error ?? `Erreur ${r.status}`)
+      onPiecesChange(prevP => [d as Piece, ...prevP])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleDelete(pieceId: string) {
+    setDeleting(true)
+    setError(null)
+    const r = await fetch(`${API}/pieces/${pieceId}`, { method: 'DELETE' })
+    setDeleting(false)
+    setPendingDelete(null)
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({})) as { error?: string }
+      setError(d.error ?? 'Erreur lors de la suppression')
+      return
+    }
+    onPiecesChange(prevP => prevP.filter(p => p.id !== pieceId))
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        📎 Pièces justificatives
+      </div>
+
+      {loading && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Chargement…</div>}
+      {!loading && pieces.length === 0 && (
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>
+          Aucune pièce rattachée à cette ligne.
+        </div>
+      )}
+
+      {pieces.map(p => {
+        const meta = TYPE_PIECE_META[p.type_piece ?? ''] ?? TYPE_PIECE_META.autre
+        const isConfirming = pendingDelete === p.id
+        return (
+          <div key={p.id} style={{
+            display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+            padding: '0.35rem 0.5rem', borderRadius: '0.45rem',
+            background: isConfirming ? RED_BG : 'var(--bg)',
+            border: `1px solid ${isConfirming ? `${RED}40` : 'var(--border)'}`,
+          }}>
+            <button onClick={() => openPiece(p)} title="Ouvrir / télécharger la pièce"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0, flex: 1, textAlign: 'left' }}>
+              <span style={{ flexShrink: 0 }}>📄</span>
+              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {p.nom}
+              </span>
+            </button>
+            <span style={{
+              fontSize: '0.65rem', fontWeight: 700, borderRadius: '0.35rem', padding: '0.1rem 0.4rem',
+              background: meta.bg, color: meta.color, border: `1px solid ${meta.color}40`, flexShrink: 0,
+            }}>{meta.label}</span>
+            {p.montant !== null && (
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text)', flexShrink: 0 }}>{fmt(p.montant)}</span>
+            )}
+            {p.date_piece && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>{fmtDateFr(p.date_piece.slice(0, 10))}</span>
+            )}
+            <button onClick={() => openPiece(p)} title="Télécharger"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.1rem 0.2rem', flexShrink: 0 }}>⬇</button>
+            {editable && !isConfirming && (
+              <button onClick={() => setPendingDelete(p.id)} title="Supprimer la pièce"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '0.85rem', padding: '0.1rem 0.2rem', flexShrink: 0 }}>×</button>
+            )}
+            {editable && isConfirming && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: RED }}>Supprimer ?</span>
+                <button onClick={() => handleDelete(p.id)} disabled={deleting}
+                  style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: '0.3rem', padding: '0.1rem 0.45rem', fontSize: '0.7rem', fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer' }}>
+                  {deleting ? '…' : 'Oui'}
+                </button>
+                <button onClick={() => setPendingDelete(null)}
+                  style={{ background: 'var(--bg-card)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '0.3rem', padding: '0.1rem 0.45rem', fontSize: '0.7rem', cursor: 'pointer' }}>
+                  Non
+                </button>
+              </span>
+            )}
+          </div>
+        )
+      })}
+
+      {error && (
+        <div style={{ fontSize: '0.72rem', color: RED, background: RED_BG, borderRadius: '0.4rem', padding: '0.3rem 0.5rem' }}>⚠️ {error}</div>
+      )}
+
+      {editable && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <select value={typePiece} onChange={e => setTypePiece(e.target.value)}
+            style={{ ...inp, width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
+            {Object.entries(TYPE_PIECE_META).map(([k, m]) => (
+              <option key={k} value={k}>{m.label}</option>
+            ))}
+          </select>
+          <button onClick={() => fileRef.current?.click()} disabled={uploading}
+            style={{
+              background: 'none', border: '1px dashed var(--accent)', borderRadius: '0.45rem',
+              padding: '0.25rem 0.7rem', cursor: uploading ? 'not-allowed' : 'pointer',
+              fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)', opacity: uploading ? 0.6 : 1,
+            }}>
+            {uploading ? '⏳ Envoi en cours…' : '+ Ajouter une pièce'}
+          </button>
+          <input ref={fileRef} type="file" style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = '' }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // DetailRow — sous-ligne commentée (édition inline, drag & drop, transfert)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfer, onReorder }: {
+function DetailRow({ detail, editable, compteType, exerciceId, onUpdate, onDelete, onTransfer, onReorder }: {
   detail: Detail
   editable: boolean
   compteType?: CompteType
-  onUpdate: (id: string, field: 'commentaire' | 'montant_previsionnel' | 'montant_realise', value: string | number) => void
+  exerciceId: string
+  onUpdate: (id: string, field: DetailField, value: string | number | null) => void
   onDelete: (id: string) => void
   onTransfer?: (detailId: string) => void
   onReorder?: (draggedId: string, targetId: string, position: 'before' | 'after') => void
@@ -781,18 +1227,45 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
   const [comEditing, setComEditing] = useState(isDraft)
   const [editPrev, setEditPrev] = useState(false)
   const [editReal, setEditReal] = useState(false)
+  const [editDate, setEditDate] = useState(false)
   const [com, setCom] = useState(detail.commentaire)
   const [prev, setPrev] = useState(detail.montant_previsionnel === 0 ? '' : String(detail.montant_previsionnel))
   const [real, setReal] = useState(detail.montant_realise === 0 ? '' : String(detail.montant_realise))
+  const [dateVal, setDateVal] = useState((detail.date_valeur ?? '').slice(0, 10))
+
+  // Pièces justificatives du détail
+  const [pieces, setPieces] = useState<Piece[]>([])
+  const [piecesLoading, setPiecesLoading] = useState(false)
+  const [showPieces, setShowPieces] = useState(false)
+
+  useEffect(() => {
+    if (isDraft) return
+    let cancelled = false
+    setPiecesLoading(true)
+    fetch(`${API}/pieces?detail_id=${detail.id}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => { if (!cancelled) { setPieces(Array.isArray(d) ? d : []); setPiecesLoading(false) } })
+      .catch(() => { if (!cancelled) setPiecesLoading(false) })
+    return () => { cancelled = true }
+  }, [detail.id, isDraft])
 
   const prevRef = useRef<HTMLInputElement>(null)
   const realRef = useRef<HTMLInputElement>(null)
+  const dateRef = useRef<HTMLInputElement>(null)
   const comRef = useRef<HTMLTextAreaElement>(null)
   const discardTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { if (editPrev) prevRef.current?.focus() }, [editPrev])
   useEffect(() => { if (editReal) realRef.current?.focus() }, [editReal])
+  useEffect(() => { if (editDate) dateRef.current?.focus() }, [editDate])
   useEffect(() => { if (comEditing) comRef.current?.focus() }, [comEditing])
+
+  function saveDate(v: string) {
+    setEditDate(false)
+    const iso = v.trim() === '' ? null : v
+    if ((detail.date_valeur ?? null) === iso) return
+    onUpdate(detail.id, 'date_valeur', iso)
+  }
 
   // Supprime le brouillon si tout est resté vide après le blur
   function scheduleDiscard() {
@@ -816,7 +1289,42 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
   const isEmptyCom = com.trim() === ''
   const [insertPos, setInsertPos] = useState<'before' | 'after' | null>(null)
 
+  // Chip date de valeur (affichage « jj/mm », édition via input date)
+  const dateChip = editDate && editable ? (
+    <input
+      ref={dateRef}
+      type="date"
+      value={dateVal}
+      onChange={e => setDateVal(e.target.value)}
+      onFocus={cancelDiscard}
+      onBlur={e => { saveDate(e.target.value); scheduleDiscard() }}
+      onKeyDown={e => {
+        if (e.key === 'Enter') saveDate((e.currentTarget as HTMLInputElement).value)
+        if (e.key === 'Escape') { setDateVal((detail.date_valeur ?? '').slice(0, 10)); setEditDate(false) }
+      }}
+      style={{
+        padding: '0.15rem 0.3rem', border: '1px solid var(--accent)', borderRadius: '0.3rem',
+        background: 'var(--bg-card)', color: 'var(--text)', fontSize: '0.72rem', flexShrink: 0,
+      }}
+    />
+  ) : (detail.date_valeur || editable) ? (
+    <span
+      title={detail.date_valeur ? `Date de valeur : ${fmtDateFr(detail.date_valeur.slice(0, 10))}` : 'Ajouter une date de valeur'}
+      onClick={e => { if (editable) { e.stopPropagation(); setEditDate(true) } }}
+      style={{
+        fontSize: '0.7rem', fontWeight: 600, fontFamily: 'monospace', flexShrink: 0,
+        color: detail.date_valeur ? 'var(--accent)' : 'var(--text-subtle)',
+        background: detail.date_valeur ? 'rgba(99,102,241,0.08)' : 'transparent',
+        border: detail.date_valeur ? '1px solid rgba(99,102,241,0.25)' : '1px dashed var(--border)',
+        borderRadius: '0.3rem', padding: '0.05rem 0.32rem',
+        cursor: editable ? 'pointer' : 'default', marginTop: '0.1rem',
+      }}>
+      {detail.date_valeur ? fmtDayMonth(detail.date_valeur.slice(0, 10)) : 'jj/mm'}
+    </span>
+  ) : null
+
   return (
+    <>
     <tr
       draggable={!!editable && !isDraft && !comEditing}
       onDragStart={e => {
@@ -879,12 +1387,10 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
                 fontSize: '0.82rem', resize: 'vertical',
               }}
             />
-            {/* Pièces justificatives : non portées en v1 */}
-            {!isDraft && (
-              <div style={{ marginTop: '0.25rem', fontSize: '0.7rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>
-                📎 Pièces justificatives : bientôt disponible
-              </div>
-            )}
+            <div style={{ marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-subtle)' }}>📅 Date de valeur :</span>
+              {dateChip}
+            </div>
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem' }}>
@@ -895,6 +1401,7 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
                 ⠿
               </span>
             )}
+            {dateChip}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 onClick={() => editable && setComEditing(true)}
@@ -954,6 +1461,21 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
       {/* Col 5 : boutons */}
       <td style={{ padding: '0.35rem 0.4rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.1rem' }}>
+          {!isDraft && (
+            <button onClick={e => { e.stopPropagation(); setShowPieces(v => !v) }}
+              title={showPieces ? 'Masquer les pièces justificatives' : 'Pièces justificatives'}
+              style={{
+                background: showPieces ? 'rgba(99,102,241,0.12)' : 'none', border: 'none',
+                borderRadius: '0.3rem', cursor: 'pointer', fontSize: '0.78rem',
+                padding: '0.1rem 0.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.15rem',
+                color: pieces.length > 0 ? 'var(--accent)' : 'var(--text-muted)',
+                opacity: pieces.length > 0 || showPieces ? 1 : 0.55,
+              }}>
+              📎{pieces.length > 0 && (
+                <span style={{ fontSize: '0.65rem', fontWeight: 700 }}>{pieces.length}</span>
+              )}
+            </button>
+          )}
           {editable && (
             <>
               {!isDraft && onTransfer && (
@@ -968,6 +1490,24 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
         </div>
       </td>
     </tr>
+
+    {/* Panneau des pièces justificatives du détail */}
+    {showPieces && !isDraft && (
+      <tr style={{ background: 'rgba(99,102,241,0.03)', borderBottom: '1px solid var(--border)' }}>
+        <td colSpan={5} style={{ padding: '0.5rem 0.75rem 0.65rem 2.2rem' }}>
+          <DetailPiecesPanel
+            detailId={detail.id}
+            compteType={compteType}
+            editable={editable}
+            exerciceId={exerciceId}
+            pieces={pieces}
+            loading={piecesLoading}
+            onPiecesChange={setPieces}
+          />
+        </td>
+      </tr>
+    )}
+    </>
   )
 }
 
@@ -976,15 +1516,15 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
 // ══════════════════════════════════════════════════════════════════════════════
 
 function CompteRow({ compte, ligne, isGroup, childTotal, childRealTotal, expanded, editable,
-  flipEcart, nextChildNumero,
+  flipEcart, nextChildNumero, exerciceId,
   onToggle, onAddDetail, onUpdateDetail, onDeleteDetail, onTransfer, onAddSubCompte, onMoveDetail, onReorderDetail,
   onToggleBudgetGeneral, onShowAudit }: {
   compte: Compte; ligne: Ligne | undefined; isGroup: boolean
   childTotal: number; childRealTotal: number; expanded: boolean; editable: boolean
-  flipEcart?: boolean; nextChildNumero: string
+  flipEcart?: boolean; nextChildNumero: string; exerciceId: string
   onToggle: () => void
   onAddDetail: (compteId: string) => void
-  onUpdateDetail: (detailId: string, ligneId: string, field: 'commentaire' | 'montant_previsionnel' | 'montant_realise', value: string | number) => void
+  onUpdateDetail: (detailId: string, ligneId: string, field: DetailField, value: string | number | null) => void
   onDeleteDetail: (detailId: string, ligneId: string) => void
   onTransfer?: (detailId: string, fromLigneId: string, compteId: string) => void
   onAddSubCompte: (parentId: string, numero: string, libelle: string) => Promise<void>
@@ -1172,7 +1712,7 @@ function CompteRow({ compte, ligne, isGroup, childTotal, childRealTotal, expande
 
       {expanded && ligne && (ligne.details?.length ?? 0) > 0 && (
         ligne.details.map(d => (
-          <DetailRow key={d.id} detail={d} editable={editable} compteType={compte.type}
+          <DetailRow key={d.id} detail={d} editable={editable} compteType={compte.type} exerciceId={exerciceId}
             onUpdate={(detailId, field, value) => onUpdateDetail(detailId, ligne.id, field, value)}
             onDelete={detailId => onDeleteDetail(detailId, ligne.id)}
             onTransfer={onTransfer ? (detailId) => onTransfer(detailId, ligne.id, compte.id) : undefined}
@@ -1188,13 +1728,13 @@ function CompteRow({ compte, ligne, isGroup, childTotal, childRealTotal, expande
 // charge / produit / actif / passif
 // ══════════════════════════════════════════════════════════════════════════════
 
-function BudgetSection({ title, type, comptes, lignes, editable,
+function BudgetSection({ title, type, comptes, lignes, editable, exerciceId,
   onAddDetail, onUpdateDetail, onDeleteDetail, onTransfer, onAddSubCompte, onMoveDetail, onReorderDetail,
   onToggleBudgetGeneral, onShowAudit }: {
   title: string; type: CompteType
-  comptes: Compte[]; lignes: Ligne[]; editable: boolean
+  comptes: Compte[]; lignes: Ligne[]; editable: boolean; exerciceId: string
   onAddDetail: (compteId: string) => Promise<void>
-  onUpdateDetail: (detailId: string, ligneId: string, field: 'commentaire' | 'montant_previsionnel' | 'montant_realise', value: string | number) => Promise<void>
+  onUpdateDetail: (detailId: string, ligneId: string, field: DetailField, value: string | number | null) => Promise<void>
   onDeleteDetail: (detailId: string, ligneId: string) => Promise<void>
   onTransfer?: (detailId: string, fromLigneId: string, compteId: string) => void
   onAddSubCompte: (parentId: string, numero: string, libelle: string) => Promise<void>
@@ -1251,7 +1791,7 @@ function BudgetSection({ title, type, comptes, lignes, editable,
       <CompteRow key={c.id} compte={c} ligne={ligne} isGroup={isGroup}
         childTotal={isGroup ? getTotal(c) : 0} childRealTotal={isGroup ? getRealTotal(c) : 0}
         expanded={exp} editable={editable} flipEcart={type === 'charge'}
-        nextChildNumero={nextChildNumero(c)}
+        nextChildNumero={nextChildNumero(c)} exerciceId={exerciceId}
         onToggle={() => toggle(c.id)}
         onAddDetail={async (compteId) => { await onAddDetail(compteId); if (!exp) toggle(c.id) }}
         onUpdateDetail={onUpdateDetail} onDeleteDetail={onDeleteDetail}
@@ -2076,7 +2616,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
     ))
   }, [exerciceId, lignes, activeSB])
 
-  const updateDetail = useCallback(async (detailId: string, ligneId: string, field: 'commentaire' | 'montant_previsionnel' | 'montant_realise', value: string | number) => {
+  const updateDetail = useCallback(async (detailId: string, ligneId: string, field: DetailField, value: string | number | null) => {
     // ── Brouillon : mise à jour locale ou première sauvegarde ─────────────────
     if (detailId.startsWith('draft-')) {
       const ligne = lignes.find(l => l.id === ligneId)
@@ -2097,6 +2637,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
         body: JSON.stringify({
           ligne_id: ligneId,
           commentaire: updated.commentaire,
+          date_valeur: updated.date_valeur ?? null,
           montant_previsionnel: updated.montant_previsionnel,
           montant_realise: updated.montant_realise,
           sort_order: updated.sort_order,
@@ -2517,13 +3058,13 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
               {/* Tableaux complets consolidés */}
               <BudgetSection
                 title="Charges" type="charge"
-                comptes={comptes} lignes={mergedLignes} editable={false}
+                comptes={comptes} lignes={mergedLignes} editable={false} exerciceId={exerciceId}
                 onAddDetail={async () => {}} onUpdateDetail={async () => {}} onDeleteDetail={async () => {}}
                 onAddSubCompte={async () => {}}
               />
               <BudgetSection
                 title="Produits" type="produit"
-                comptes={comptes} lignes={mergedLignes} editable={false}
+                comptes={comptes} lignes={mergedLignes} editable={false} exerciceId={exerciceId}
                 onAddDetail={async () => {}} onUpdateDetail={async () => {}} onDeleteDetail={async () => {}}
                 onAddSubCompte={async () => {}}
               />
@@ -2531,13 +3072,13 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
                 <>
                   <BudgetSection
                     title="Comptes d’actif" type="actif"
-                    comptes={comptes} lignes={mergedLignes} editable={false}
+                    comptes={comptes} lignes={mergedLignes} editable={false} exerciceId={exerciceId}
                     onAddDetail={async () => {}} onUpdateDetail={async () => {}} onDeleteDetail={async () => {}}
                     onAddSubCompte={async () => {}}
                   />
                   <BudgetSection
                     title="Comptes de passif" type="passif"
-                    comptes={comptes} lignes={mergedLignes} editable={false}
+                    comptes={comptes} lignes={mergedLignes} editable={false} exerciceId={exerciceId}
                     onAddDetail={async () => {}} onUpdateDetail={async () => {}} onDeleteDetail={async () => {}}
                     onAddSubCompte={async () => {}}
                   />
@@ -2739,6 +3280,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
                 comptes={comptes}
                 lignes={lignes}
                 editable={editable}
+                exerciceId={exerciceId}
                 onAddDetail={addDetail}
                 onUpdateDetail={updateDetail}
                 onDeleteDetail={deleteDetail}
@@ -2753,6 +3295,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
                 comptes={comptes}
                 lignes={lignes}
                 editable={editable}
+                exerciceId={exerciceId}
                 onAddDetail={addDetail}
                 onUpdateDetail={updateDetail}
                 onDeleteDetail={deleteDetail}
@@ -2769,6 +3312,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
               comptes={comptes}
               lignes={lignes}
               editable={editable}
+              exerciceId={exerciceId}
               onAddDetail={addDetail}
               onUpdateDetail={updateDetail}
               onDeleteDetail={deleteDetail}

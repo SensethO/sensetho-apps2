@@ -31,7 +31,7 @@ type Ctx = { params: { id: string } };
 const AFFECTATIONS = ["general", "centre_cout"];
 const COMPTE_TYPES = ["charge", "produit", "actif", "passif"];
 const NIVEAUX = ["lecture", "ecriture"];
-const TYPES_PIECE = ["facture", "devis", "contrat", "autre"];
+const TYPES_PIECE = ["facture", "facture_client", "facture_fournisseur", "devis", "contrat", "autre"];
 
 /** Jointure « structure » = organisation (alias PostgREST raison_sociale:denomination). */
 const EXERCICE_SELECT = "*, structure:organisations(id, raison_sociale:denomination)";
@@ -491,13 +491,14 @@ export async function lignesDetailsPOST(req: NextRequest) {
     montant_previsionnel = 0,
     montant_realise = 0,
     sort_order = 0,
+    date_valeur = null,
     qonto_transaction_id = null,
   } = body;
   if (!ligne_id) return NextResponse.json({ error: "ligne_id requis" }, { status: 400 });
 
   const { data, error } = await db
     .from("budget_ent_lignes_details")
-    .insert({ ligne_id, commentaire, montant_previsionnel, montant_realise, sort_order, qonto_transaction_id })
+    .insert({ ligne_id, commentaire, montant_previsionnel, montant_realise, sort_order, date_valeur, qonto_transaction_id })
     .select()
     .single();
   if (error) {
@@ -517,6 +518,7 @@ export async function lignesDetailsPOST(req: NextRequest) {
  * - `{ reorder: [{ id, sort_order }] }` : réordonnancement batch ;
  * - `{ id, ligne_id, move_to_ligne_id }` : déplacement vers une autre ligne (recalc des deux) ;
  * - `{ id, ligne_id?, ...champs }` : mise à jour normale (+ recalc si `ligne_id` fourni).
+ *   `champs` inclut notamment `date_valeur` (date de valeur, nullable).
  */
 export async function lignesDetailsPATCH(req: NextRequest) {
   const { db, user } = await auth();
@@ -642,7 +644,9 @@ export async function transfertDetailPOST(req: NextRequest) {
 /**
  * POST — import Excel en masse : `{ exercice_id, affectation_type, centre_cout_id, rows }`.
  * Regroupe les lignes par compte, crée les lignes manquantes, insère les détails
- * en bloc puis recalcule chaque ligne. Renvoie `{ imported, errors }`.
+ * en bloc puis recalcule chaque ligne. Renvoie `{ imported, errors, details }`
+ * (`details` = détails créés, dans l’ordre des rows importées, pour permettre
+ * à l’UI de rattacher des pièces après import).
  */
 export async function importExcelPOST(req: NextRequest) {
   const { db, user } = await auth();
@@ -657,22 +661,30 @@ export async function importExcelPOST(req: NextRequest) {
       commentaire?: string;
       montant_previsionnel: number;
       montant_realise?: number;
+      date_valeur?: string;
     }[];
   };
   if (!exercice_id || !AFFECTATIONS.includes(affectation_type) || !Array.isArray(rows) || rows.length === 0)
     return NextResponse.json({ error: "Paramètres manquants" }, { status: 400 });
 
   const errors: { row: number; message: string }[] = [];
+  const createdDetails: {
+    index: number;
+    detail_id: string;
+    compte_id: string;
+    commentaire: string;
+  }[] = [];
   let imported = 0;
 
-  const byCompte = new Map<string, typeof rows>();
+  // Conserve l'index d'origine de chaque row pour renvoyer `details` dans l'ordre d'import.
+  const byCompte = new Map<string, { row: (typeof rows)[number]; index: number }[]>();
   rows.forEach((r, i) => {
     if (!r.compte_id) {
       errors.push({ row: i + 1, message: "compte_id manquant" });
       return;
     }
     if (!byCompte.has(r.compte_id)) byCompte.set(r.compte_id, []);
-    byCompte.get(r.compte_id)!.push(r);
+    byCompte.get(r.compte_id)!.push({ row: r, index: i });
   });
 
   // Array.from : le target TS de la plateforme ne permet pas d'itérer un MapIterator.
@@ -707,33 +719,55 @@ export async function importExcelPOST(req: NextRequest) {
         .select("id")
         .single();
       if (createErr || !created?.id) {
-        compteRows.forEach((_, i) =>
-          errors.push({ row: i, message: `Erreur création ligne : ${createErr?.message}` })
+        compteRows.forEach(({ index }) =>
+          errors.push({ row: index + 1, message: `Erreur création ligne : ${createErr?.message}` })
         );
         continue;
       }
       ligneId = created.id;
     }
 
-    // 2. Insérer les détails en bloc
-    const details = compteRows.map((r, i) => ({
+    // 2. Insérer les détails en bloc (PostgREST renvoie les lignes dans l'ordre d'insertion)
+    const details = compteRows.map(({ row: r }, i) => ({
       ligne_id: ligneId,
       commentaire: r.commentaire ?? "",
       montant_previsionnel: r.montant_previsionnel ?? 0,
       montant_realise: r.montant_realise ?? 0,
+      date_valeur: r.date_valeur ?? null,
       sort_order: Date.now() + i,
     }));
-    const { error: detailErr } = await db.from("budget_ent_lignes_details").insert(details);
+    const { data: inserted, error: detailErr } = await db
+      .from("budget_ent_lignes_details")
+      .insert(details)
+      .select("id, commentaire");
     if (detailErr) {
-      compteRows.forEach((_, i) => errors.push({ row: i, message: detailErr.message }));
+      compteRows.forEach(({ index }) => errors.push({ row: index + 1, message: detailErr.message }));
       continue;
     }
+    (inserted ?? []).forEach((d: { id: string; commentaire: string }, i: number) => {
+      createdDetails.push({
+        index: compteRows[i].index,
+        detail_id: d.id,
+        compte_id: compteId,
+        commentaire: d.commentaire,
+      });
+    });
 
     // 3. Recalculer le total de la ligne
     await recalcLigne(db, ligneId);
     imported += compteRows.length;
   }
-  return NextResponse.json({ imported, errors });
+
+  createdDetails.sort((a, b) => a.index - b.index);
+  return NextResponse.json({
+    imported,
+    errors,
+    details: createdDetails.map(({ detail_id, compte_id, commentaire }) => ({
+      detail_id,
+      compte_id,
+      commentaire,
+    })),
+  });
 }
 
 // ── Pièces justificatives (fichiers dans SharePoint) ───────

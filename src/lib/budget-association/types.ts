@@ -15,7 +15,13 @@ export type CompteType = "charge" | "produit";
 export type ExerciceStatut = "ouvert" | "cloture" | "archive";
 export type AffectationType = "fonctionnement" | "action";
 export type PermissionNiveau = "lecture" | "ecriture";
-export type TypePiece = "facture" | "devis" | "contrat" | "autre";
+export type TypePiece =
+  | "facture"
+  | "facture_client"
+  | "facture_fournisseur"
+  | "devis"
+  | "contrat"
+  | "autre";
 
 /** Compte du plan comptable (hiérarchique : les comptes « groupes » ont des enfants). */
 export type BudgetCompte = {
@@ -94,6 +100,8 @@ export type BudgetLigneDetail = {
   montant_previsionnel: number;
   montant_realise: number;
   sort_order: number;
+  /** Date de valeur (date comptable de l’écriture), nullable. */
+  date_valeur: string | null;
   /** Traçabilité : action_poste ayant généré ce détail (UUID libre sur la plateforme). */
   action_poste_id: string | null;
   /** Anti-doublon d'import bancaire (Qonto). */
@@ -175,10 +183,14 @@ export type BudgetImportRow = {
   commentaire?: string;
   montant_previsionnel: number;
   montant_realise?: number;
+  /** Date de valeur (ISO yyyy-mm-dd), propagée au détail créé. */
+  date_valeur?: string;
 };
 
 /** Résultat d'un import en masse. */
 export type BudgetImportResult = {
   imported: number;
   errors: { row: number; message: string }[];
+  /** Détails créés, dans l’ordre des rows importées (pour rattacher des pièces après import). */
+  details: { detail_id: string; compte_id: string; commentaire: string }[];
 };

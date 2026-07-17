@@ -26,11 +26,24 @@ interface Detail {
   id: string
   ligne_id: string
   commentaire: string
+  date_valeur?: string | null
   montant_previsionnel: number
   montant_realise: number
   sort_order: number
   draft?: boolean // brouillon local uniquement — non persisté en base
 }
+type TypePiece = 'facture' | 'facture_client' | 'facture_fournisseur' | 'devis' | 'contrat' | 'autre'
+interface Piece {
+  id: string
+  detail_id: string | null
+  ligne_id: string | null
+  nom: string
+  sharepoint_item_id: string
+  type_piece: TypePiece
+  montant: number | null
+  date_piece: string | null
+}
+type DetailField = 'commentaire' | 'montant_previsionnel' | 'montant_realise' | 'date_valeur'
 interface Ligne {
   id: string
   exercice_id: string
@@ -113,6 +126,65 @@ function months(d1: string, d2: string): number {
 function parseAmt(s: string): number {
   return parseFloat(s.replace(',', '.').replace(/\s/g, '')) || 0
 }
+/** Date de valeur au format court « jj/mm » (affichage compact des lignes). */
+function fmtDayMonth(iso: string): string {
+  const [, m, d] = iso.slice(0, 10).split('-')
+  return d && m ? `${d}/${m}` : iso
+}
+/** Parse une date « jj/mm/aaaa », « aaaa-mm-jj » ou objet Date (exceljs) → ISO ou null. */
+function parseDateValeur(v: unknown): string | null {
+  if (v instanceof Date) {
+    return isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10)
+  }
+  const s = String(v ?? '').trim()
+  if (!s) return null
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  m = s.match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})$/)
+  if (m) {
+    const y = m[3].length === 2 ? `20${m[3]}` : m[3]
+    return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+  }
+  return null
+}
+/** Référence de fichier normalisée : minuscules, sans accents ni extension. */
+function normalizeFileRef(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\.[a-z0-9]{2,5}$/, '').trim()
+}
+
+// ── Pièces justificatives — métadonnées et upload SharePoint ─────────────────
+
+const TYPE_PIECE_META: Record<TypePiece, { label: string; icon: string }> = {
+  facture: { label: 'Facture', icon: '🧾' },
+  facture_client: { label: 'Facture client', icon: '🧾' },
+  facture_fournisseur: { label: 'Facture fournisseur', icon: '📥' },
+  devis: { label: 'Devis', icon: '📝' },
+  contrat: { label: 'Contrat', icon: '📜' },
+  autre: { label: 'Autre', icon: '📎' },
+}
+
+/** Session d’upload Graph → PUT direct chez Microsoft → id de l’item SharePoint. */
+async function uploadPieceToSharePoint(file: File, exerciceId: string): Promise<string> {
+  const sRes = await fetch(`${API}/pieces/upload-session`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: file.name, exercice_id: exerciceId }),
+  })
+  const sJson = await sRes.json().catch(() => ({})) as { uploadUrl?: string; error?: string }
+  if (!sRes.ok || !sJson.uploadUrl) throw new Error(sJson.error ?? `Erreur session d’upload (${sRes.status})`)
+  const putRes = await fetch(sJson.uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Range': `bytes 0-${file.size - 1}/${file.size}`,
+    },
+    body: file,
+  })
+  if (!putRes.ok) throw new Error(`Erreur upload SharePoint (${putRes.status})`)
+  const putJson = await putRes.json().catch(() => ({})) as { id?: string }
+  if (!putJson.id) throw new Error('Réponse SharePoint invalide (id manquant)')
+  return putJson.id
+}
 
 // ── Couleurs sémantiques (compatibles clair / sombre via rgba) ────────────────
 
@@ -155,15 +227,20 @@ const modalCard: React.CSSProperties = {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Import Excel / CSV (format standard : Compte ; Commentaire ; Prévisionnel ; Réalisé)
+// Import Excel / CSV
+// Format enrichi : Compte ; Date ; Commentaire ; Prévisionnel ; Réalisé ; Pièce jointe
+// Rétrocompatible avec l’ancien masque : Compte ; Commentaire ; Prévisionnel ; Réalisé
+// (détection par en-têtes, ou par la 2ᵉ colonne si le fichier n’a pas d’en-tête)
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface ImportRow {
   rowNum: number
   compteNumero: string
+  dateValeur: string | null
   commentaire: string
   previsionnel: number
   realise: number
+  pieceRef: string
   compte: Compte | null
 }
 
@@ -176,16 +253,24 @@ function parseImportRows(raw: unknown[][], compteByNumero: Map<string, Compte>):
   const first = raw[0]
   const isHeader = typeof first[0] === 'string' && isNaN(Number(String(first[0]).trim()))
 
-  let colCompte = 0, colComment = 1, colPrev = 2, colReal = 3
+  // Ancien masque à 4 colonnes par défaut ; date et pièce absentes
+  let colCompte = 0, colComment = 1, colPrev = 2, colReal = 3, colDate = -1, colPiece = -1
   if (isHeader) {
     first.forEach((h, i) => {
       if (typeof h !== 'string') return
       const n = normalizeHeader(h)
       if (n.startsWith('compte') || n === 'no' || n === 'num' || n.startsWith('numero')) colCompte = i
+      else if (n === 'date' || n.startsWith('datedevaleur') || n.startsWith('datevaleur') || n.startsWith('dateoperation')) colDate = i
       else if (n.startsWith('comment') || n.startsWith('libelle') || n.startsWith('design') || n.startsWith('label')) colComment = i
       else if (n.startsWith('prev') || n.startsWith('mont') || n === 'budget' || n === 'ht') colPrev = i
       else if (n.startsWith('real') || n.startsWith('exec') || n.startsWith('engag')) colReal = i
+      else if (n.startsWith('piece') || n.startsWith('fichier') || n.startsWith('facture') || n.startsWith('justificatif')) colPiece = i
     })
+  } else {
+    // Sans en-tête : si la 2ᵉ colonne de la 1ʳᵉ ligne ressemble à une date → nouveau masque à 6 colonnes
+    if (first.length >= 2 && parseDateValeur(first[1]) !== null && isNaN(Number(String(first[1]).trim()))) {
+      colDate = 1; colComment = 2; colPrev = 3; colReal = 4; colPiece = 5
+    }
   }
 
   const dataRows = isHeader ? raw.slice(1) : raw
@@ -196,15 +281,19 @@ function parseImportRows(raw: unknown[][], compteByNumero: Map<string, Compte>):
     })
     .map((r, i) => {
       const compteNumero = String(r[colCompte] ?? '').trim()
-      const commentaire = String(r[colComment] ?? '').trim()
+      const dateValeur = colDate >= 0 ? parseDateValeur(r[colDate]) : null
+      const commentaire = cellToString(r[colComment]).trim()
       const previsionnel = parseFloat(String(r[colPrev] ?? '0').replace(/\s/g, '').replace(',', '.')) || 0
       const realise = parseFloat(String(r[colReal] ?? '0').replace(/\s/g, '').replace(',', '.')) || 0
+      const pieceRef = colPiece >= 0 ? cellToString(r[colPiece]).trim() : ''
       return {
         rowNum: isHeader ? i + 2 : i + 1,
         compteNumero,
+        dateValeur,
         commentaire,
         previsionnel,
         realise,
+        pieceRef,
         compte: compteByNumero.get(compteNumero) ?? null,
       }
     })
@@ -244,6 +333,20 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
   const [result, setResult] = useState<{ imported: number; errors: { row: number; message: string }[] } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Factures / pièces jointes déposées pour appariement avec la colonne « Pièce jointe »
+  const [pieceFiles, setPieceFiles] = useState<File[]>([])
+  const pieceFilesRef = useRef<HTMLInputElement>(null)
+  const [pieceProgress, setPieceProgress] = useState<string | null>(null)
+  const [piecesResult, setPiecesResult] = useState<{ ok: string[]; ko: string[] } | null>(null)
+
+  function addPieceFiles(list: FileList | File[]) {
+    const incoming = Array.from(list)
+    setPieceFiles(prevF => {
+      const known = new Set(prevF.map(f => f.name.toLowerCase()))
+      return [...prevF, ...incoming.filter(f => !known.has(f.name.toLowerCase()))]
+    })
+  }
+
   const compteByNumero = new Map<string, Compte>()
   for (const c of comptes) compteByNumero.set(c.numero, c)
 
@@ -267,7 +370,8 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
         const collected: unknown[][] = []
         ws.eachRow({ includeEmpty: false }, (row) => {
           const vals = (row.values as unknown[]).slice(1) // ExcelJS : index 1-based
-          collected.push(vals.map(v => (typeof v === 'number' ? v : cellToString(v))))
+          // Conserver nombres et dates natifs (exceljs renvoie des Date pour les cellules date)
+          collected.push(vals.map(v => (typeof v === 'number' || v instanceof Date ? v : cellToString(v))))
         })
         raw = collected
       }
@@ -282,10 +386,10 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
 
   function downloadTemplate() {
     const csv = '﻿' +
-      'Compte;Commentaire;Prévisionnel;Réalisé\n' +
-      '601;Exemple prestation;1000;0\n' +
-      '602;Exemple achat fournitures;500;200\n' +
-      '6063;Entretien;150;0\n'
+      'Compte;Date;Commentaire;Prévisionnel;Réalisé;Pièce jointe\n' +
+      '601;15/01/2026;Exemple prestation;1000;0;facture_prestation.pdf\n' +
+      '602;2026-02-03;Exemple achat fournitures;500;200;\n' +
+      '6063;;Entretien;150;0;\n'
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url
@@ -297,6 +401,18 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
   const validCount = rows.filter(r => r.compte !== null && !isGroupCompte(r)).length
   const notFoundCount = rows.filter(r => r.compte === null).length
   const groupCount = rows.filter(r => isGroupCompte(r)).length
+
+  // ── Appariement fichiers déposés ↔ colonne « Pièce jointe » ────────────────
+  const fileByRef = useMemo(() => {
+    const m = new Map<string, File>()
+    for (const f of pieceFiles) m.set(normalizeFileRef(f.name), f)
+    return m
+  }, [pieceFiles])
+  const validRowsWithRef = rows.filter(r => r.compte !== null && !isGroupCompte(r) && r.pieceRef !== '')
+  const matchedRows = validRowsWithRef.filter(r => fileByRef.has(normalizeFileRef(r.pieceRef)))
+  const refsWithoutFile = validRowsWithRef.filter(r => !fileByRef.has(normalizeFileRef(r.pieceRef)))
+  const matchedFileNames = new Set(matchedRows.map(r => fileByRef.get(normalizeFileRef(r.pieceRef))!.name))
+  const unmatchedFiles = pieceFiles.filter(f => !matchedFileNames.has(f.name))
 
   async function doImport() {
     setImporting(true)
@@ -311,6 +427,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
         rows: validRows.map(v => ({
           compte_id: v.compte!.id,
           commentaire: v.commentaire,
+          date_valeur: v.dateValeur ?? undefined,
           montant_previsionnel: v.previsionnel,
           montant_realise: v.realise,
         })),
@@ -318,6 +435,51 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
     })
     const d = await r.json()
     setResult(d)
+
+    // ── Dépôt des factures appariées (après création des détails) ─────────────
+    const createdDetails: { detail_id: string; compte_id: string; commentaire: string }[] =
+      Array.isArray(d.details) ? [...d.details] : []
+    if (d.imported > 0 && createdDetails.length > 0 && matchedRows.length > 0) {
+      const ok: string[] = []
+      const ko: string[] = []
+      const consumed = new Set<number>()
+      for (const row of matchedRows) {
+        const file = fileByRef.get(normalizeFileRef(row.pieceRef))!
+        // Détail créé correspondant : appariement compte_id + commentaire (créés dans l’ordre)
+        let idx = createdDetails.findIndex((det, i) =>
+          !consumed.has(i) && det.compte_id === row.compte!.id && det.commentaire === row.commentaire)
+        if (idx === -1) idx = createdDetails.findIndex((det, i) => !consumed.has(i) && det.compte_id === row.compte!.id)
+        if (idx === -1) { ko.push(`${file.name} : détail importé introuvable`); continue }
+        consumed.add(idx)
+        const detailId = createdDetails[idx].detail_id
+        try {
+          setPieceProgress(`Dépôt de « ${file.name} »…`)
+          const itemId = await uploadPieceToSharePoint(file, exerciceId)
+          const pRes = await fetch(`${API}/pieces`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              detail_id: detailId,
+              nom: file.name,
+              sharepoint_item_id: itemId,
+              // Compte de produits → facture client ; compte de charges → facture fournisseur
+              type_piece: row.compte!.type === 'produit' ? 'facture_client' : 'facture_fournisseur',
+              montant: row.realise !== 0 ? row.realise : undefined,
+              date_piece: row.dateValeur ?? undefined,
+            }),
+          })
+          if (!pRes.ok) {
+            const pj = await pRes.json().catch(() => ({})) as { error?: string }
+            throw new Error(pj.error ?? `Erreur ${pRes.status}`)
+          }
+          ok.push(file.name)
+        } catch (e) {
+          ko.push(`${file.name} : ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+      setPieceProgress(null)
+      setPiecesResult({ ok, ko })
+    }
+
     setStep('result')
     setImporting(false)
     if (d.imported > 0) onImported()
@@ -357,9 +519,11 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                   <tbody>
                     {[
                       ['A', 'Compte / Numéro', '✅', '601'],
-                      ['B', 'Commentaire / Libellé', '—', 'Prestations externe'],
-                      ['C', 'Prévisionnel / Montant', '✅', '1500'],
-                      ['D', 'Réalisé / Exécuté', '—', '0'],
+                      ['B', 'Date (de valeur)', '—', '15/01/2026'],
+                      ['C', 'Commentaire / Libellé', '—', 'Prestations externe'],
+                      ['D', 'Prévisionnel / Montant', '✅', '1500'],
+                      ['E', 'Réalisé / Exécuté', '—', '0'],
+                      ['F', 'Pièce jointe (nom de fichier)', '—', 'facture_01.pdf'],
                     ].map(([col, name, req, ex]) => (
                       <tr key={col} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '0.3rem 0.5rem', fontWeight: 700, color: 'var(--accent)' }}>{col}</td>
@@ -372,6 +536,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                 </table>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                   La 1ère ligne peut être un en-tête — il sera détecté automatiquement. Les séparateurs virgule et point-virgule sont acceptés.
+                  Les dates acceptent « jj/mm/aaaa » et « AAAA-MM-JJ ». L’ancien masque à 4 colonnes (Compte ; Commentaire ; Prévisionnel ; Réalisé) reste importable.
                 </div>
               </div>
 
@@ -431,8 +596,8 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-                      {['#', 'Compte', 'Commentaire', 'Prévisionnel', 'Réalisé', ''].map((h, i) => (
-                        <th key={i} style={{ padding: '0.35rem 0.6rem', textAlign: i >= 3 && i <= 4 ? 'right' : 'left', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
+                      {['#', 'Compte', 'Date', 'Commentaire', 'Prévisionnel', 'Réalisé', 'Pièce', ''].map((h, i) => (
+                        <th key={i} style={{ padding: '0.35rem 0.6rem', textAlign: i >= 4 && i <= 5 ? 'right' : 'left', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -450,11 +615,24 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                             {!row.compte && <span style={{ color: RED, marginLeft: '0.4rem', fontSize: '0.72rem' }}>introuvable</span>}
                             {isGrp && <span style={{ color: AMBER, marginLeft: '0.4rem', fontSize: '0.72rem' }}>compte groupe</span>}
                           </td>
-                          <td style={{ padding: '0.3rem 0.6rem', color: isInvalid ? 'var(--text-muted)' : 'var(--text)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '0.3rem 0.6rem', color: isInvalid ? 'var(--text-muted)' : 'var(--text)', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: '0.74rem' }}>
+                            {row.dateValeur ? fmtDayMonth(row.dateValeur) : <span style={{ color: 'var(--text-subtle)' }}>—</span>}
+                          </td>
+                          <td style={{ padding: '0.3rem 0.6rem', color: isInvalid ? 'var(--text-muted)' : 'var(--text)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {row.commentaire || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
                           </td>
                           <td style={{ padding: '0.3rem 0.6rem', textAlign: 'right', fontWeight: 600, color: isInvalid ? 'var(--text-muted)' : 'var(--text)' }}>{fmt(row.previsionnel)}</td>
                           <td style={{ padding: '0.3rem 0.6rem', textAlign: 'right', color: isInvalid ? 'var(--text-muted)' : 'var(--text)' }}>{fmt(row.realise)}</td>
+                          <td style={{ padding: '0.3rem 0.6rem', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {row.pieceRef
+                              ? <span title={row.pieceRef} style={{
+                                  fontSize: '0.72rem',
+                                  color: fileByRef.has(normalizeFileRef(row.pieceRef)) ? GREEN : AMBER,
+                                }}>
+                                  📎 {row.pieceRef}
+                                </span>
+                              : <span style={{ color: 'var(--text-subtle)' }}>—</span>}
+                          </td>
                           <td style={{ padding: '0.3rem 0.4rem', textAlign: 'center' }}>
                             {!row.compte ? '⚠️' : isGrp ? '🚫' : '✅'}
                           </td>
@@ -464,7 +642,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg)' }}>
-                      <td colSpan={3} style={{ padding: '0.4rem 0.6rem', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <td colSpan={4} style={{ padding: '0.4rem 0.6rem', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                         TOTAL ({validCount} lignes valides)
                       </td>
                       <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right', fontWeight: 700, color: 'var(--text)' }}>
@@ -473,7 +651,7 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                       <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right', fontWeight: 700, color: 'var(--text)' }}>
                         {fmt(rows.filter(r => r.compte && !isGroupCompte(r)).reduce((s, r) => s + r.realise, 0))}
                       </td>
-                      <td />
+                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>
@@ -489,6 +667,77 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                   🚫 Les {groupCount} ligne(s) avec un compte groupe seront ignorées. Saisissez le numéro d’un sous-compte (feuille) et non d’un compte parent.
                 </div>
               )}
+
+              {/* ── Dépôt de factures (appariement par nom de fichier) ── */}
+              <div style={{ border: '1px solid var(--border)', borderRadius: '0.75rem', padding: '0.85rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  📎 Factures clients &amp; fournisseurs (facultatif)
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Déposez ici les fichiers (PDF ou images) référencés dans la colonne « Pièce jointe ».
+                  L’appariement se fait par nom de fichier, sans tenir compte de la casse ni de l’extension.
+                  Chaque facture appariée sera déposée sur SharePoint et rattachée à sa ligne après l’import.
+                </div>
+                <div
+                  onClick={() => pieceFilesRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.1)' }}
+                  onDragLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                    if (e.dataTransfer.files.length > 0) addPieceFiles(e.dataTransfer.files)
+                  }}
+                  style={{
+                    border: '2px dashed var(--border)', borderRadius: '0.6rem',
+                    padding: '0.85rem', textAlign: 'center', cursor: 'pointer', transition: 'background 0.15s',
+                    fontSize: '0.78rem', color: 'var(--text-muted)',
+                  }}>
+                  📂 Cliquer ou glisser des fichiers ici (PDF, JPG, PNG…) — dépôt multiple accepté
+                </div>
+                <input ref={pieceFilesRef} type="file" multiple accept=".pdf,image/*" style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files?.length) addPieceFiles(e.target.files); e.target.value = '' }} />
+
+                {(pieceFiles.length > 0 || validRowsWithRef.length > 0) && (
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <div style={{ background: GREEN_BG, border: `1px solid ${GREEN}40`, borderRadius: '0.5rem', padding: '0.35rem 0.7rem', fontSize: '0.75rem', color: GREEN }}>
+                      <strong>{matchedRows.length}</strong> fichier(s) apparié(s)
+                    </div>
+                    {unmatchedFiles.length > 0 && (
+                      <div style={{ background: AMBER_BG, border: `1px solid ${AMBER}40`, borderRadius: '0.5rem', padding: '0.35rem 0.7rem', fontSize: '0.75rem', color: AMBER }}>
+                        <strong>{unmatchedFiles.length}</strong> fichier(s) sans référence — ignoré(s)
+                      </div>
+                    )}
+                    {refsWithoutFile.length > 0 && (
+                      <div style={{ background: AMBER_BG, border: `1px solid ${AMBER}40`, borderRadius: '0.5rem', padding: '0.35rem 0.7rem', fontSize: '0.75rem', color: AMBER }}>
+                        <strong>{refsWithoutFile.length}</strong> référence(s) sans fichier
+                      </div>
+                    )}
+                  </div>
+                )}
+                {pieceFiles.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    {pieceFiles.map(f => {
+                      const matched = validRowsWithRef.some(rw => normalizeFileRef(rw.pieceRef) === normalizeFileRef(f.name))
+                      return (
+                        <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+                          <span style={{ flexShrink: 0 }}>{matched ? '✅' : '⚠️'}</span>
+                          <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{f.name}</span>
+                          <span style={{ color: 'var(--text-subtle)', flexShrink: 0 }}>{Math.max(1, Math.round(f.size / 1024))} Ko</span>
+                          <button
+                            onClick={() => setPieceFiles(prevF => prevF.filter(x => x.name !== f.name))}
+                            title="Retirer ce fichier"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '0 0.2rem', flexShrink: 0 }}>×</button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {refsWithoutFile.length > 0 && (
+                  <div style={{ fontSize: '0.72rem', color: AMBER }}>
+                    Références sans fichier : {refsWithoutFile.map(rw => rw.pieceRef).join(', ')} — les lignes seront importées sans pièce.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -514,6 +763,27 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
                   {result.errors.map((e, i) => <div key={i}>Ligne {e.row} : {e.message}</div>)}
                 </div>
               )}
+
+              {/* Compte-rendu du dépôt des pièces */}
+              {piecesResult && (
+                <div style={{ border: '1px solid var(--border)', borderRadius: '0.75rem', padding: '0.85rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text)' }}>📎 Pièces justificatives</div>
+                  {piecesResult.ok.length > 0 && (
+                    <div style={{ fontSize: '0.78rem', color: GREEN }}>
+                      ✅ {piecesResult.ok.length} pièce(s) déposée(s) : {piecesResult.ok.join(', ')}
+                    </div>
+                  )}
+                  {piecesResult.ko.length > 0 && (
+                    <div style={{ fontSize: '0.78rem', color: RED }}>
+                      ⚠️ {piecesResult.ko.length} échec(s) :
+                      {piecesResult.ko.map((k, i) => <div key={i} style={{ marginLeft: '1rem' }}>{k}</div>)}
+                    </div>
+                  )}
+                  {piecesResult.ok.length === 0 && piecesResult.ko.length === 0 && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Aucune pièce à déposer.</div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -526,7 +796,9 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
               <button onClick={() => setStep('select')} style={btnGhost}>← Retour</button>
               <button onClick={doImport} disabled={validCount === 0 || importing}
                 style={{ ...btnPrimary, opacity: validCount === 0 || importing ? 0.5 : 1, cursor: validCount === 0 || importing ? 'not-allowed' : 'pointer' }}>
-                {importing ? 'Import en cours…' : `📥 Importer ${validCount} ligne(s)`}
+                {importing
+                  ? (pieceProgress ?? 'Import en cours…')
+                  : `📥 Importer ${validCount} ligne(s)${matchedRows.length > 0 ? ` + ${matchedRows.length} pièce(s)` : ''}`}
               </button>
             </>
           )}
@@ -742,14 +1014,161 @@ function AuditModal({ ligne, onClose }: { ligne: Ligne; onClose: () => void }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// PiecesPanel — pièces justificatives d'une ligne de détail (SharePoint)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function PiecesPanel({ detailId, exerciceId, editable, defaultType, pieces, onPiecesChange }: {
+  detailId: string
+  exerciceId?: string
+  editable: boolean
+  defaultType: TypePiece
+  pieces: Piece[]
+  onPiecesChange: (p: Piece[]) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [newType, setNewType] = useState<TypePiece>(defaultType)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const canEdit = editable && !!exerciceId
+
+  async function handleAdd(file: File) {
+    if (!exerciceId) return
+    setUploading(true); setError(null)
+    try {
+      const itemId = await uploadPieceToSharePoint(file, exerciceId)
+      const r = await fetch(`${API}/pieces`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ detail_id: detailId, nom: file.name, sharepoint_item_id: itemId, type_piece: newType }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error((d as { error?: string }).error ?? `Erreur ${r.status}`)
+      onPiecesChange([...pieces, d as Piece])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur lors du dépôt')
+    }
+    setUploading(false)
+  }
+
+  async function handleDownload(p: Piece) {
+    setError(null)
+    try {
+      const r = await fetch(`${API}/pieces/signed-url?item_id=${encodeURIComponent(p.sharepoint_item_id)}`)
+      const d = await r.json().catch(() => ({})) as { url?: string; error?: string }
+      if (!r.ok || !d.url) throw new Error(d.error ?? 'Lien de téléchargement indisponible')
+      window.open(d.url, '_blank', 'noopener')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur de téléchargement')
+    }
+  }
+
+  async function handleDelete(p: Piece) {
+    setError(null)
+    const r = await fetch(`${API}/pieces/${p.id}`, { method: 'DELETE' })
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({})) as { error?: string }
+      setError(d.error ?? 'Erreur lors de la suppression')
+      return
+    }
+    setPendingDelete(null)
+    onPiecesChange(pieces.filter(x => x.id !== p.id))
+  }
+
+  return (
+    <div
+      onClick={e => e.stopPropagation()}
+      style={{
+        marginTop: '0.35rem', border: '1px solid var(--border)', borderRadius: '0.5rem',
+        background: 'var(--bg)', padding: '0.45rem 0.6rem',
+        display: 'flex', flexDirection: 'column', gap: '0.3rem',
+      }}>
+      <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        📎 Pièces justificatives {pieces.length > 0 ? `(${pieces.length})` : ''}
+      </div>
+
+      {pieces.length === 0 && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>Aucune pièce pour cette ligne.</div>
+      )}
+
+      {pieces.map(p => {
+        const meta = TYPE_PIECE_META[p.type_piece] ?? TYPE_PIECE_META.autre
+        const isConfirming = pendingDelete === p.id
+        return (
+          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.75rem', flexWrap: 'wrap' }}>
+            <span title={meta.label} style={{
+              flexShrink: 0, fontSize: '0.66rem', fontWeight: 600, borderRadius: '0.3rem',
+              padding: '0.05rem 0.35rem', background: 'rgba(99,102,241,0.1)', color: 'var(--accent)',
+              whiteSpace: 'nowrap',
+            }}>{meta.icon} {meta.label}</span>
+            <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 80 }} title={p.nom}>
+              {p.nom}
+            </span>
+            {p.montant !== null && p.montant !== undefined && p.montant !== 0 && (
+              <span style={{ color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>{fmt(p.montant)}</span>
+            )}
+            {p.date_piece && (
+              <span style={{ color: 'var(--text-subtle)', flexShrink: 0 }}>{fmtDayMonth(p.date_piece)}</span>
+            )}
+            <button onClick={() => handleDownload(p)} title="Télécharger"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '0.8rem', padding: '0 0.15rem', flexShrink: 0 }}>⬇</button>
+            {canEdit && (isConfirming ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                <span style={{ color: RED, fontSize: '0.68rem' }}>Supprimer ?</span>
+                <button onClick={() => handleDelete(p)}
+                  style={{ background: RED, color: '#fff', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.66rem', padding: '0.05rem 0.35rem' }}>Oui</button>
+                <button onClick={() => setPendingDelete(null)}
+                  style={{ background: 'var(--bg-card)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.66rem', padding: '0.05rem 0.35rem' }}>Non</button>
+              </span>
+            ) : (
+              <button onClick={() => setPendingDelete(p.id)} title="Supprimer la pièce"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: RED, fontSize: '0.8rem', padding: '0 0.15rem', flexShrink: 0 }}>×</button>
+            ))}
+          </div>
+        )
+      })}
+
+      {error && (
+        <div style={{ fontSize: '0.7rem', color: RED, background: RED_BG, borderRadius: '0.3rem', padding: '0.25rem 0.5rem' }}>⚠️ {error}</div>
+      )}
+
+      {canEdit && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <button onClick={() => fileRef.current?.click()} disabled={uploading}
+            style={{
+              background: 'none', border: '1px dashed var(--accent)', borderRadius: '0.35rem',
+              cursor: uploading ? 'wait' : 'pointer', color: 'var(--accent)', fontSize: '0.7rem',
+              fontWeight: 600, padding: '0.15rem 0.5rem', opacity: uploading ? 0.6 : 1,
+            }}>
+            {uploading ? 'Dépôt en cours…' : '+ Ajouter une pièce'}
+          </button>
+          <select value={newType} onChange={e => setNewType(e.target.value as TypePiece)}
+            style={{
+              padding: '0.12rem 0.3rem', borderRadius: '0.3rem', border: '1px solid var(--border)',
+              background: 'var(--bg-card)', color: 'var(--text)', fontSize: '0.68rem',
+            }}>
+            {(Object.keys(TYPE_PIECE_META) as TypePiece[]).map(t => (
+              <option key={t} value={t}>{TYPE_PIECE_META[t].icon} {TYPE_PIECE_META[t].label}</option>
+            ))}
+          </select>
+          <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleAdd(f); e.target.value = '' }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // DetailRow — sous-ligne commentée (édition inline, drag & drop, transfert)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfer, onReorder }: {
+function DetailRow({ detail, editable, compteType, exerciceId, onUpdate, onDelete, onTransfer, onReorder }: {
   detail: Detail
   editable: boolean
   compteType?: 'charge' | 'produit'
-  onUpdate: (id: string, field: 'commentaire' | 'montant_previsionnel' | 'montant_realise', value: string | number) => void
+  exerciceId?: string
+  onUpdate: (id: string, field: DetailField, value: string | number | null) => void
   onDelete: (id: string) => void
   onTransfer?: (detailId: string) => void
   onReorder?: (draggedId: string, targetId: string, position: 'before' | 'after') => void
@@ -761,6 +1180,20 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
   const [com, setCom] = useState(detail.commentaire)
   const [prev, setPrev] = useState(detail.montant_previsionnel === 0 ? '' : String(detail.montant_previsionnel))
   const [real, setReal] = useState(detail.montant_realise === 0 ? '' : String(detail.montant_realise))
+  const [dateVal, setDateVal] = useState(detail.date_valeur ? detail.date_valeur.slice(0, 10) : '')
+
+  // Pièces justificatives (compteur + panneau)
+  const [pieces, setPieces] = useState<Piece[]>([])
+  const [showPieces, setShowPieces] = useState(false)
+  useEffect(() => {
+    if (isDraft) return
+    let cancelled = false
+    fetch(`${API}/pieces?detail_id=${detail.id}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => { if (!cancelled && Array.isArray(d)) setPieces(d) })
+      .catch(() => { /* silencieux */ })
+    return () => { cancelled = true }
+  }, [detail.id, isDraft])
 
   const prevRef = useRef<HTMLInputElement>(null)
   const realRef = useRef<HTMLInputElement>(null)
@@ -856,11 +1289,34 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
                 fontSize: '0.82rem', resize: 'vertical',
               }}
             />
-            {/* Pièces justificatives : non portées en v1 */}
+            {/* Date de valeur — éditable dans l’éditeur inline */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.3rem' }}>
+              <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Date de valeur</label>
+              <input
+                type="date"
+                value={dateVal}
+                onFocus={cancelDiscard}
+                onChange={e => {
+                  setDateVal(e.target.value)
+                  onUpdate(detail.id, 'date_valeur', e.target.value || null)
+                }}
+                onClick={e => e.stopPropagation()}
+                style={{
+                  padding: '0.15rem 0.4rem', border: '1px solid var(--border)', borderRadius: '0.3rem',
+                  background: 'var(--bg-card)', color: 'var(--text)', fontSize: '0.74rem',
+                }}
+              />
+            </div>
+            {/* Pièces justificatives — panneau fonctionnel */}
             {!isDraft && (
-              <div style={{ marginTop: '0.25rem', fontSize: '0.7rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>
-                📎 Pièces justificatives : bientôt disponible
-              </div>
+              <PiecesPanel
+                detailId={detail.id}
+                exerciceId={exerciceId}
+                editable={editable}
+                defaultType={compteType === 'produit' ? 'facture_client' : 'facture_fournisseur'}
+                pieces={pieces}
+                onPiecesChange={setPieces}
+              />
             )}
           </div>
         ) : (
@@ -873,18 +1329,52 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
               </span>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                onClick={() => editable && setComEditing(true)}
-                style={{
-                  fontSize: '0.82rem',
-                  cursor: editable ? 'text' : 'default',
-                  minHeight: '1.2rem',
-                  whiteSpace: 'pre-wrap',
-                  color: isEmptyCom ? 'var(--text-muted)' : 'var(--text)',
-                  fontStyle: isEmptyCom ? 'italic' : 'normal',
-                }}>
-                {isEmptyCom ? 'Libellé…' : com}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {dateVal && (
+                  <span title={`Date de valeur : ${dateVal}`}
+                    style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>
+                    {fmtDayMonth(dateVal)}
+                  </span>
+                )}
+                <div
+                  onClick={() => editable && setComEditing(true)}
+                  style={{
+                    fontSize: '0.82rem',
+                    cursor: editable ? 'text' : 'default',
+                    minHeight: '1.2rem',
+                    whiteSpace: 'pre-wrap',
+                    color: isEmptyCom ? 'var(--text-muted)' : 'var(--text)',
+                    fontStyle: isEmptyCom ? 'italic' : 'normal',
+                    flex: 1, minWidth: 0,
+                  }}>
+                  {isEmptyCom ? 'Libellé…' : com}
+                </div>
+                {/* Compteur de pièces — cliquer pour ouvrir le panneau */}
+                {!isDraft && (pieces.length > 0 || editable) && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setShowPieces(v => !v) }}
+                    title={pieces.length > 0 ? `${pieces.length} pièce(s) justificative(s)` : 'Ajouter une pièce justificative'}
+                    style={{
+                      background: showPieces ? 'rgba(99,102,241,0.12)' : 'none',
+                      border: 'none', cursor: 'pointer', borderRadius: '0.3rem',
+                      fontSize: '0.7rem', fontWeight: 600, padding: '0.05rem 0.3rem', flexShrink: 0,
+                      color: pieces.length > 0 ? 'var(--accent)' : 'var(--text-subtle)',
+                      opacity: pieces.length > 0 ? 1 : 0.6,
+                    }}>
+                    📎{pieces.length > 0 ? ` ${pieces.length}` : ''}
+                  </button>
+                )}
               </div>
+              {!isDraft && showPieces && (
+                <PiecesPanel
+                  detailId={detail.id}
+                  exerciceId={exerciceId}
+                  editable={editable}
+                  defaultType={compteType === 'produit' ? 'facture_client' : 'facture_fournisseur'}
+                  pieces={pieces}
+                  onPiecesChange={setPieces}
+                />
+              )}
             </div>
           </div>
         )}
@@ -953,15 +1443,15 @@ function DetailRow({ detail, editable, compteType, onUpdate, onDelete, onTransfe
 // ══════════════════════════════════════════════════════════════════════════════
 
 function CompteRow({ compte, ligne, isGroup, childTotal, childRealTotal, expanded, editable,
-  flipEcart, nextChildNumero,
+  flipEcart, nextChildNumero, exerciceId,
   onToggle, onAddDetail, onUpdateDetail, onDeleteDetail, onTransfer, onAddSubCompte, onMoveDetail, onReorderDetail,
   onToggleBudgetGeneral, onShowAudit }: {
   compte: Compte; ligne: Ligne | undefined; isGroup: boolean
   childTotal: number; childRealTotal: number; expanded: boolean; editable: boolean
-  flipEcart?: boolean; nextChildNumero: string
+  flipEcart?: boolean; nextChildNumero: string; exerciceId?: string
   onToggle: () => void
   onAddDetail: (compteId: string) => void
-  onUpdateDetail: (detailId: string, ligneId: string, field: 'commentaire' | 'montant_previsionnel' | 'montant_realise', value: string | number) => void
+  onUpdateDetail: (detailId: string, ligneId: string, field: DetailField, value: string | number | null) => void
   onDeleteDetail: (detailId: string, ligneId: string) => void
   onTransfer?: (detailId: string, fromLigneId: string, compteId: string) => void
   onAddSubCompte: (parentId: string, numero: string, libelle: string) => Promise<void>
@@ -1149,7 +1639,7 @@ function CompteRow({ compte, ligne, isGroup, childTotal, childRealTotal, expande
 
       {expanded && ligne && (ligne.details?.length ?? 0) > 0 && (
         ligne.details.map(d => (
-          <DetailRow key={d.id} detail={d} editable={editable} compteType={compte.type}
+          <DetailRow key={d.id} detail={d} editable={editable} compteType={compte.type} exerciceId={exerciceId}
             onUpdate={(detailId, field, value) => onUpdateDetail(detailId, ligne.id, field, value)}
             onDelete={detailId => onDeleteDetail(detailId, ligne.id)}
             onTransfer={onTransfer ? (detailId) => onTransfer(detailId, ligne.id, compte.id) : undefined}
@@ -1164,13 +1654,13 @@ function CompteRow({ compte, ligne, isGroup, childTotal, childRealTotal, expande
 // BudgetSection — tableau Charges ou Produits (arbre par classe de compte)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function BudgetSection({ title, type, comptes, lignes, editable,
+function BudgetSection({ title, type, comptes, lignes, editable, exerciceId,
   onAddDetail, onUpdateDetail, onDeleteDetail, onTransfer, onAddSubCompte, onMoveDetail, onReorderDetail,
   onToggleBudgetGeneral, onShowAudit }: {
   title: string; type: 'charge' | 'produit'
-  comptes: Compte[]; lignes: Ligne[]; editable: boolean
+  comptes: Compte[]; lignes: Ligne[]; editable: boolean; exerciceId?: string
   onAddDetail: (compteId: string) => Promise<void>
-  onUpdateDetail: (detailId: string, ligneId: string, field: 'commentaire' | 'montant_previsionnel' | 'montant_realise', value: string | number) => Promise<void>
+  onUpdateDetail: (detailId: string, ligneId: string, field: DetailField, value: string | number | null) => Promise<void>
   onDeleteDetail: (detailId: string, ligneId: string) => Promise<void>
   onTransfer?: (detailId: string, fromLigneId: string, compteId: string) => void
   onAddSubCompte: (parentId: string, numero: string, libelle: string) => Promise<void>
@@ -1227,7 +1717,7 @@ function BudgetSection({ title, type, comptes, lignes, editable,
       <CompteRow key={c.id} compte={c} ligne={ligne} isGroup={isGroup}
         childTotal={isGroup ? getTotal(c) : 0} childRealTotal={isGroup ? getRealTotal(c) : 0}
         expanded={exp} editable={editable} flipEcart={type === 'charge'}
-        nextChildNumero={nextChildNumero(c)}
+        nextChildNumero={nextChildNumero(c)} exerciceId={exerciceId}
         onToggle={() => toggle(c.id)}
         onAddDetail={async (compteId) => { await onAddDetail(compteId); if (!exp) toggle(c.id) }}
         onUpdateDetail={onUpdateDetail} onDeleteDetail={onDeleteDetail}
@@ -1617,6 +2107,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
       id: `draft-${Date.now()}`,
       ligne_id: ligneId,
       commentaire: '',
+      date_valeur: null,
       montant_previsionnel: 0,
       montant_realise: 0,
       sort_order: Date.now(),
@@ -1627,7 +2118,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
     ))
   }, [exerciceId, lignes, activeSB])
 
-  const updateDetail = useCallback(async (detailId: string, ligneId: string, field: 'commentaire' | 'montant_previsionnel' | 'montant_realise', value: string | number) => {
+  const updateDetail = useCallback(async (detailId: string, ligneId: string, field: DetailField, value: string | number | null) => {
     // ── Brouillon : mise à jour locale ou première sauvegarde ─────────────────
     if (detailId.startsWith('draft-')) {
       const ligne = lignes.find(l => l.id === ligneId)
@@ -1648,6 +2139,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
         body: JSON.stringify({
           ligne_id: ligneId,
           commentaire: updated.commentaire,
+          date_valeur: updated.date_valeur ?? null,
           montant_previsionnel: updated.montant_previsionnel,
           montant_realise: updated.montant_realise,
           sort_order: updated.sort_order,
@@ -2053,13 +2545,13 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
               {/* Tableaux complets consolidés */}
               <BudgetSection
                 title="Charges" type="charge"
-                comptes={comptes} lignes={mergedLignes} editable={false}
+                comptes={comptes} lignes={mergedLignes} editable={false} exerciceId={exerciceId}
                 onAddDetail={async () => {}} onUpdateDetail={async () => {}} onDeleteDetail={async () => {}}
                 onAddSubCompte={async () => {}}
               />
               <BudgetSection
                 title="Produits" type="produit"
-                comptes={comptes} lignes={mergedLignes} editable={false}
+                comptes={comptes} lignes={mergedLignes} editable={false} exerciceId={exerciceId}
                 onAddDetail={async () => {}} onUpdateDetail={async () => {}} onDeleteDetail={async () => {}}
                 onAddSubCompte={async () => {}}
               />
@@ -2246,6 +2738,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
               comptes={comptes}
               lignes={lignes}
               editable={editable}
+              exerciceId={exerciceId}
               onAddDetail={addDetail}
               onUpdateDetail={updateDetail}
               onDeleteDetail={deleteDetail}
