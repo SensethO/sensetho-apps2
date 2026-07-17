@@ -143,6 +143,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
   const [geoSupplierId, setGeoSupplierId] = useState('')
   const [geoDocs, setGeoDocs] = useState<{ id: string; name: string }[]>([])
   const [geojsonAttachmentId, setGeojsonAttachmentId] = useState('')
+  const [geoPreview, setGeoPreview] = useState<{ features?: number; types?: string[]; error?: string; loading?: boolean } | null>(null)
   useEffect(() => {
     setGeoDocs([]); setGeojsonAttachmentId('')
     if (!geoSupplierId) return
@@ -150,6 +151,15 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
       .then(r => r.json()).then(j => setGeoDocs((j.data ?? []).filter((d: { doc_type: string }) => d.doc_type === 'geojson')))
       .catch(() => {})
   }, [geoSupplierId, orgId])
+  // Aperçu du GeoJSON du document sélectionné (confirmation visuelle).
+  useEffect(() => {
+    if (!geojsonAttachmentId) { setGeoPreview(null); return }
+    setGeoPreview({ loading: true })
+    fetch(`/api/eudr-fournisseurs/traces/geojson-preview?org_id=${orgId}&id=${geojsonAttachmentId}`)
+      .then(r => r.json())
+      .then(j => setGeoPreview(j.ok ? { features: j.features, types: j.types } : { error: j.error ?? 'Aperçu indisponible' }))
+      .catch(() => setGeoPreview({ error: 'Aperçu indisponible' }))
+  }, [geojsonAttachmentId, orgId])
 
   // Suivi post-dépôt : récupère n° de référence + n° de vérification (getDds par UUID).
   const [lastUuid, setLastUuid] = useState<string | null>(null)
@@ -397,9 +407,18 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
         </div>
         <div>
           <label className={labelCls}>Géolocalisation (GeoJSON FeatureCollection)</label>
-          <textarea className={`${inputCls} font-mono h-28`} value={dds.geojson} onChange={e => setF('geojson', e.target.value)}
-            disabled={!!geojsonAttachmentId}
-            placeholder='{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-60.0,-3.0]},"properties":{}}]}' />
+          {geojsonAttachmentId ? (
+            <div className="rounded-lg border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-3 text-sm">
+              <p className="text-green-700 dark:text-green-400 font-medium">📄 GeoJSON fourni par le document sélectionné</p>
+              {geoPreview?.loading && <p className="text-xs text-gray-500 mt-1">Lecture du document…</p>}
+              {geoPreview?.features != null && <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">{geoPreview.features} parcelle(s){geoPreview.types?.length ? ` · ${geoPreview.types.join(', ')}` : ''} — injecté au dépôt.</p>}
+              {geoPreview?.error && <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">⚠️ {geoPreview.error}</p>}
+              <button type="button" onClick={() => { setGeojsonAttachmentId(''); setGeoSupplierId('') }} className="text-xs text-gray-500 hover:underline mt-1">Utiliser plutôt le champ texte</button>
+            </div>
+          ) : (
+            <textarea className={`${inputCls} font-mono h-28`} value={dds.geojson} onChange={e => setF('geojson', e.target.value)}
+              placeholder='{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-60.0,-3.0]},"properties":{}}]}' />
+          )}
         </div>
         {suppliers.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
