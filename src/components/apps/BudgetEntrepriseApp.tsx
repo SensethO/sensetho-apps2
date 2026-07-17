@@ -2822,12 +2822,17 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
 
       {showQontoImport && activeSB && (
         <QontoImportModal
+          apiBase={API}
+          plan="entreprise"
           organisationId={organisationId}
-          organisationNom={exercice.structure?.raison_sociale ?? 'l’organisation'}
-          exerciceId={exerciceId}
-          dateDebut={exercice.date_debut}
-          dateFin={exercice.date_fin}
-          sousBudgets={sousBudgets}
+          orgName={exercice.structure?.raison_sociale ?? 'l’organisation'}
+          exercice={{ id: exerciceId, date_debut: exercice.date_debut, date_fin: exercice.date_fin }}
+          sousBudgets={sousBudgets.map(sb => ({
+            key: sb.key, label: sb.label, icon: sb.icon,
+            affectation_type: sb.affectation_type,
+            refId: sb.centre_cout_id ?? null, refField: 'centre_cout_id' as const,
+          }))}
+          generalKey={SOUS_BUDGET_GENERAL.key}
           defaultSBKey={activeSB.key}
           comptes={comptes}
           onClose={() => setShowQontoImport(false)}
