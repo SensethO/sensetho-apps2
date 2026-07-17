@@ -56,3 +56,7 @@ UPDATE app_categories SET description = 'Applications pour les entreprises'  -- 
 -- ROLLBACK (valeurs antérieures) :
 -- UPDATE apps SET icon = 'shieldCheck' WHERE slug IN ('diagnostic-initial','secure-score-m365');
 -- UPDATE apps SET icon = 'shield' WHERE slug = 'vigilance'; ... (voir git blame de ce fichier)
+
+-- Correction mojibake description Board (repérée le 2026-07-13, appliquée en prod)
+UPDATE apps SET description = 'Tableau whiteboard collaboratif infini — sticky notes, formes, dessins, mindmap, kanban'
+  WHERE slug = 'board' AND description LIKE '%â€%';
