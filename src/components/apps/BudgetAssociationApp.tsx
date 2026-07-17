@@ -639,6 +639,13 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
   const [compteDebitId, setCompteDebitId] = useState('')
   const [compteCreditId, setCompteCreditId] = useState('')
 
+  // ── Ventilation par transaction (IA) ───────────────────────────────────────
+  const [assignMode, setAssignMode] = useState<'common' | 'perTx'>('common')
+  const [txComptes, setTxComptes] = useState<Record<string, string>>({}) // transaction_id → compte_id
+  const [txConfiance, setTxConfiance] = useState<Record<string, 'haute' | 'moyenne' | 'faible'>>({})
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+
   // ── Import ─────────────────────────────────────────────────────────────────
   const [step, setStep] = useState<'main' | 'result'>('main')
   const [importing, setImporting] = useState(false)
@@ -755,6 +762,7 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
     if (!selectedAccountId) return
     setFetchingTx(true); setTxs([]); setMeta(null); setSelected(new Set())
     setTxError(null)
+    setAssignMode('common'); setTxComptes({}); setTxConfiance({}); setAiError(null)
     try {
       const all: QontoTx[] = []
       let page = 1
@@ -811,12 +819,84 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
     })
   }
 
+  // ── Ventilation automatique par IA ─────────────────────────────────────────
+  const numeroToCompteId = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of leafComptes) m.set(c.numero, c.id)
+    return m
+  }, [leafComptes])
+
+  async function runVentilation() {
+    if (selectedTxs.length === 0 || aiLoading) return
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const r = await fetch(`${QONTO_API}/suggest-comptes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organisation_id: organisationId,
+          plan: 'association',
+          transactions: selectedTxs.map(t => ({
+            transaction_id: t.transaction_id,
+            label: t.label,
+            category: t.category,
+            side: t.side,
+            amount: Math.abs(t.amount),
+          })),
+          comptes: leafComptes.map(c => ({
+            numero: c.numero,
+            nom: c.libelle,
+            type: c.type === 'charge' ? 'charges' : 'produits',
+          })),
+        }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setAiError(d.error ?? (r.status === 503
+          ? 'La ventilation automatique n’est pas disponible (clé IA absente).'
+          : `Erreur ${r.status} lors de la ventilation automatique.`))
+        setAiLoading(false)
+        return
+      }
+      const suggestions: Record<string, { numero: string; confiance: 'haute' | 'moyenne' | 'faible' }> =
+        d.suggestions && typeof d.suggestions === 'object' ? d.suggestions : {}
+      const nextComptes: Record<string, string> = {}
+      const nextConf: Record<string, 'haute' | 'moyenne' | 'faible'> = {}
+      for (const tx of selectedTxs) {
+        const s = suggestions[tx.transaction_id]
+        const compteId = s ? numeroToCompteId.get(s.numero) : undefined
+        if (s && compteId) {
+          nextComptes[tx.transaction_id] = compteId
+          nextConf[tx.transaction_id] = s.confiance
+        }
+      }
+      setTxComptes(nextComptes)
+      setTxConfiance(nextConf)
+      setAssignMode('perTx')
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e))
+    }
+    setAiLoading(false)
+  }
+
+  function setTxCompte(txId: string, compteId: string) {
+    setTxComptes(prev => ({ ...prev, [txId]: compteId }))
+    setTxConfiance(prev => {
+      if (!(txId in prev)) return prev
+      const n = { ...prev }
+      delete n[txId] // correction manuelle : le badge de confiance ne s'applique plus
+      return n
+    })
+  }
+
   // ── Validation ─────────────────────────────────────────────────────────────
   const targetSB = sousBudgets.find(sb => sb.key === targetSBKey)
-  const canImport = selectedTxs.length > 0 && !!targetSB
-    && (!hasDebit || !!compteDebitId)
-    && (!hasCredit || !!compteCreditId)
-    && !importing
+  const perTxComplete = selectedTxs.every(t => !!txComptes[t.transaction_id])
+  const canImport = selectedTxs.length > 0 && !!targetSB && !importing
+    && (assignMode === 'perTx'
+      ? perTxComplete
+      : (!hasDebit || !!compteDebitId) && (!hasCredit || !!compteCreditId))
 
   // ── Import ─────────────────────────────────────────────────────────────────
   async function doImport() {
@@ -828,7 +908,13 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
     const ligneCache = new Map<string, string>() // compte_id → ligne_id
 
     for (const tx of selectedTxs) {
-      const compteId = tx.side === 'debit' ? compteDebitId : compteCreditId
+      const compteId = assignMode === 'perTx'
+        ? txComptes[tx.transaction_id]
+        : (tx.side === 'debit' ? compteDebitId : compteCreditId)
+      if (!compteId) {
+        errors.push({ label: tx.label, message: 'Aucun compte affecté à cette transaction.' })
+        continue
+      }
       const txLabel = `${qontoTxDateFR(tx)} — ${tx.label}`
       try {
         // 1. S'assurer que la ligne (exercice × compte × sous-budget) existe (upsert)
@@ -886,6 +972,21 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
   const labelStyle: React.CSSProperties = {
     fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)',
     textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.3rem',
+  }
+  // En-tête sticky : le trait de séparation passe en boxShadow (les borders ne « collent » pas)
+  const thSticky: React.CSSProperties = {
+    position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg)',
+    padding: '0.4rem 0.6rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600,
+    boxShadow: 'inset 0 -1px 0 var(--border)',
+  }
+  const confBadge = (c: 'haute' | 'moyenne' | 'faible') => {
+    const color = c === 'haute' ? GREEN : c === 'moyenne' ? AMBER : RED
+    const bg = c === 'haute' ? GREEN_BG : c === 'moyenne' ? AMBER_BG : RED_BG
+    return (
+      <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: '0.4rem', background: bg, color, whiteSpace: 'nowrap' }}>
+        {c === 'haute' ? '● haute' : c === 'moyenne' ? '● moyenne' : '● faible'}
+      </span>
+    )
   }
 
   return (
@@ -1042,15 +1143,15 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
                     </button>
                   </div>
 
-                  <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '0.6rem' }}>
+                  <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'min(45vh, 480px)', border: '1px solid var(--border)', borderRadius: '0.6rem' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                       <thead>
-                        <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-                          <th style={{ padding: '0.4rem 0.6rem', width: 30 }} />
-                          <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
-                          <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Libellé</th>
-                          <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Catégorie</th>
-                          <th style={{ padding: '0.4rem 0.6rem', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600 }}>Montant</th>
+                        <tr>
+                          <th style={{ ...thSticky, width: 30 }} />
+                          <th style={thSticky}>Date</th>
+                          <th style={thSticky}>Libellé</th>
+                          <th style={thSticky}>Catégorie</th>
+                          <th style={{ ...thSticky, textAlign: 'right' }}>Montant</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1098,12 +1199,33 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
                 </div>
               )}
 
-              {/* Cible d'import (commune à la sélection) */}
+              {/* Cible d'import (commune à la sélection, ou ventilée par transaction) */}
               {selectedTxs.length > 0 && (
                 <div style={{ border: '1px solid var(--border)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    🎯 Cible d’import — {selectedTxs.length} transaction(s)
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      🎯 Cible d’import — {selectedTxs.length} transaction(s)
+                    </div>
+                    {assignMode === 'common' ? (
+                      <button onClick={runVentilation} disabled={aiLoading}
+                        style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: '0.45rem', padding: '0.3rem 0.75rem', fontSize: '0.78rem', color: 'var(--accent)', fontWeight: 600, cursor: aiLoading ? 'not-allowed' : 'pointer', opacity: aiLoading ? 0.6 : 1 }}>
+                        {aiLoading ? '🪄 Analyse…' : '🪄 Ventilation automatique'}
+                      </button>
+                    ) : (
+                      <button onClick={() => setAssignMode('common')}
+                        style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.78rem', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}>
+                        ← Revenir à la cible commune
+                      </button>
+                    )}
                   </div>
+
+                  {aiError && (
+                    <div style={{ background: RED_BG, color: RED, borderRadius: '0.5rem', padding: '0.5rem 0.85rem', fontSize: '0.8rem', border: `1px solid ${RED}40` }}>
+                      ⚠️ {aiError}
+                    </div>
+                  )}
+
+                  {/* Sous-budget : commun aux deux modes */}
                   <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <div style={{ flex: '1 1 180px', minWidth: 0 }}>
                       <label style={labelStyle}>Sous-budget</label>
@@ -1111,7 +1233,7 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
                         {sousBudgets.map(sb => <option key={sb.key} value={sb.key}>{sb.icon} {sb.label}</option>)}
                       </select>
                     </div>
-                    {hasDebit && (
+                    {assignMode === 'common' && hasDebit && (
                       <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                         <label style={labelStyle}>Compte pour les débits</label>
                         <select style={{ ...inp, borderColor: compteDebitId ? 'var(--border)' : `${RED}80` }} value={compteDebitId} onChange={e => setCompteDebitId(e.target.value)}>
@@ -1125,7 +1247,7 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
                         </select>
                       </div>
                     )}
-                    {hasCredit && (
+                    {assignMode === 'common' && hasCredit && (
                       <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                         <label style={labelStyle}>Compte pour les crédits</label>
                         <select style={{ ...inp, borderColor: compteCreditId ? 'var(--border)' : `${RED}80` }} value={compteCreditId} onChange={e => setCompteCreditId(e.target.value)}>
@@ -1140,9 +1262,76 @@ function QontoImportModal({ organisationId, organisationNom, exerciceId, exercic
                       </div>
                     )}
                   </div>
+
+                  {/* Mode par transaction : un compte par ligne, prérempli par l'IA */}
+                  {assignMode === 'perTx' && (
+                    <>
+                      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'min(40vh, 420px)', border: '1px solid var(--border)', borderRadius: '0.6rem' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                          <thead>
+                            <tr>
+                              <th style={thSticky}>Date</th>
+                              <th style={thSticky}>Libellé</th>
+                              <th style={{ ...thSticky, textAlign: 'right' }}>Montant</th>
+                              <th style={thSticky}>Compte</th>
+                              <th style={thSticky}>Confiance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedTxs.map(tx => {
+                              const compteId = txComptes[tx.transaction_id] ?? ''
+                              const conf = txConfiance[tx.transaction_id]
+                              const missing = !compteId
+                              return (
+                                <tr key={tx.transaction_id}
+                                  style={{ borderBottom: '1px solid var(--border)', background: missing ? RED_BG : 'transparent' }}>
+                                  <td style={{ padding: '0.4rem 0.6rem', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{qontoTxDateFR(tx)}</td>
+                                  <td style={{ padding: '0.4rem 0.6rem', color: 'var(--text)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tx.label}>
+                                    {tx.label}
+                                  </td>
+                                  <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap', color: tx.side === 'debit' ? RED : GREEN }}>
+                                    {fmtSigned(tx)}
+                                  </td>
+                                  <td style={{ padding: '0.4rem 0.6rem', minWidth: 220 }}>
+                                    <select
+                                      style={{ ...inp, padding: '0.3rem 0.5rem', fontSize: '0.78rem', borderColor: missing ? `${RED}80` : 'var(--border)' }}
+                                      value={compteId}
+                                      onChange={e => setTxCompte(tx.transaction_id, e.target.value)}>
+                                      <option value="">— Choisir un compte —</option>
+                                      <optgroup label={tx.side === 'debit' ? 'Charges (par défaut pour un débit)' : 'Charges'}>
+                                        {chargeLeaves.map(c => <option key={c.id} value={c.id}>{c.numero} — {c.libelle}</option>)}
+                                      </optgroup>
+                                      <optgroup label={tx.side === 'credit' ? 'Produits (par défaut pour un crédit)' : 'Produits'}>
+                                        {produitLeaves.map(c => <option key={c.id} value={c.id}>{c.numero} — {c.libelle}</option>)}
+                                      </optgroup>
+                                    </select>
+                                  </td>
+                                  <td style={{ padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }}>
+                                    {conf ? confBadge(conf) : missing ? (
+                                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: RED }}>à compléter</span>
+                                    ) : (
+                                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>manuel</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {!perTxComplete && (
+                        <div style={{ fontSize: '0.75rem', color: RED }}>
+                          ⚠️ Certaines transactions n’ont pas de compte : complétez-les pour pouvoir importer.
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Chaque transaction sera importée en <strong>Réalisé</strong> sur la cible choisie (libellé « date — libellé Qonto »).
-                    Vous pourrez ensuite ajuster chaque écriture directement dans le tableau du sous-budget.
+                    {assignMode === 'perTx'
+                      ? <>Chaque transaction sera importée en <strong>Réalisé</strong> sur <strong>son</strong> compte (sous-budget commun ci-dessus). Corrigez les suggestions si besoin avant d’importer.</>
+                      : <>Chaque transaction sera importée en <strong>Réalisé</strong> sur la cible choisie (libellé « date — libellé Qonto »).
+                        Vous pourrez ensuite ajuster chaque écriture directement dans le tableau du sous-budget.</>}
                   </div>
                 </div>
               )}
