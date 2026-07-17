@@ -10,7 +10,8 @@ const TABLE = 'eudr_buyers'
 /** Champs modifiables côté client (les autres — id, org_id, user_id, timestamps — sont gérés serveur) */
 const FIELDS = [
   'name', 'eudr_contact', 'email', 'commodity', 'country_import',
-  'geojson_status', 'questionnaire_status', 'dds_number', 'notes',
+  'geojson_status', 'questionnaire_status', 'dds_number',
+  'relationship_status', 'follow_ups', 'notes',
 ]
 
 async function getRole(userId: string): Promise<string | null> {

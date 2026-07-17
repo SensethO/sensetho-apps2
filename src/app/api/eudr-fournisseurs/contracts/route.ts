@@ -9,7 +9,8 @@ const TABLE = 'eudr_contracts'
 
 /** Champs modifiables côté client */
 const FIELDS = [
-  'contract_number', 'product', 'product_under_eudr', 'supplier',
+  'contract_number', 'commodity', 'product', 'product_under_eudr', 'supplier',
+  'country_origin', 'country_risk_level', 'buyer',
   'delivery_country', 'eudr_applied', 'production_date', 'expected_delivery_date',
   'plot_geolocation', 'due_diligence', 'risk_level', 'notes',
 ]

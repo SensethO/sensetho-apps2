@@ -10,6 +10,8 @@ import EudrCoaPanel from '@/components/apps/EudrCoaPanel'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+interface FollowUp { date: string; type: string; text: string }
+
 interface Buyer {
   id: string
   name: string | null
@@ -20,6 +22,8 @@ interface Buyer {
   geojson_status: string | null
   questionnaire_status: string | null
   dds_number: string | null
+  relationship_status: string | null
+  follow_ups: FollowUp[] | null
   notes: string | null
 }
 
@@ -35,21 +39,28 @@ interface Supplier {
   priority: string | null
   contact_person: string | null
   email: string | null
+  commodity: string | null
   country_origin: string | null
   eudr_risk_level: string | null
   geojson_status: string | null
   farmer_questionnaire_status: string | null
   ddr_status: string | null
   certifications: Certification[] | null
+  relationship_status: string | null
+  follow_ups: FollowUp[] | null
   notes: string | null
 }
 
 interface Contract {
   id: string
   contract_number: string | null
+  commodity: string | null
   product: string | null
   product_under_eudr: string | null
   supplier: string | null
+  country_origin: string | null
+  country_risk_level: string | null
+  buyer: string | null
   delivery_country: string | null
   eudr_applied: string | null
   production_date: string | null
@@ -84,6 +95,62 @@ const PRIORITY_OPTS = [
 ]
 const CERT_TYPES = ['Halal', 'Kosher', 'Fairtrade', 'Rainforest Alliance', 'GFSI', 'ISO', 'Non-GMO', 'Gluten Free', 'Autre']
 const CERT_STATUS = ['valide', 'expiré', 'en cours']
+
+// Suivi de la relation
+const RELATION_OPTS = [
+  { value: 'nouveau', label: 'Nouveau', cls: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300' },
+  { value: 'demande_envoyee', label: 'Demande envoyée', cls: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400' },
+  { value: 'relance', label: 'Relancé', cls: 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400' },
+  { value: 'en_attente', label: 'En attente', cls: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' },
+  { value: 'repondu', label: 'A répondu', cls: 'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-400' },
+  { value: 'documents_recus', label: 'Documents reçus', cls: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' },
+  { value: 'complet', label: 'Complet', cls: 'bg-green-600 text-white' },
+  { value: 'sans_reponse', label: 'Sans réponse', cls: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400' },
+]
+const RELATION_MAP = Object.fromEntries(RELATION_OPTS.map(o => [o.value, o]))
+const FOLLOWUP_TYPES = [
+  { value: 'demande', label: 'Demande' },
+  { value: 'relance', label: 'Relance' },
+  { value: 'reponse', label: 'Réponse' },
+  { value: 'document', label: 'Document reçu' },
+  { value: 'appel', label: 'Appel / WhatsApp' },
+  { value: 'autre', label: 'Autre' },
+]
+const FOLLOWUP_MAP = Object.fromEntries(FOLLOWUP_TYPES.map(o => [o.value, o.label]))
+
+// ── Certifications : statut de validité dérivé de valid_until ──
+function certValidity(c: Certification): 'valide' | 'expire_bientot' | 'expire' | 'inconnu' {
+  const raw = (c.valid_until ?? '').trim()
+  if (!raw) return c.status === 'expiré' ? 'expire' : 'inconnu'
+  // formats : 10.06.2026 | 2026-06-10 | 06/2026 | 05.2026
+  let d: Date | null = null
+  let m = raw.match(/(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})/)
+  if (m) d = new Date(+m[3], +m[2] - 1, +m[1])
+  else if ((m = raw.match(/(\d{4})-(\d{1,2})-(\d{1,2})/))) d = new Date(+m[1], +m[2] - 1, +m[3])
+  else if ((m = raw.match(/(\d{1,2})[.\/](\d{4})/))) d = new Date(+m[2], +m[1] - 1, 1)
+  else if ((m = raw.match(/^(\d{4})$/))) d = new Date(+m[1], 11, 31)
+  if (!d || isNaN(+d)) return 'inconnu'
+  const now = new Date()
+  const days = (d.getTime() - now.getTime()) / 86400000
+  if (days < 0) return 'expire'
+  if (days < 60) return 'expire_bientot'
+  return 'valide'
+}
+
+// ── Points de validation d'un fournisseur (checklist EUDR) ──
+function supplierValidation(s: Supplier) {
+  const ok = (v: string | null) => v === 'oui'
+  const points = [
+    { label: 'GeoJSON', ok: ok(s.geojson_status), status: s.geojson_status },
+    { label: 'Questionnaire', ok: ok(s.farmer_questionnaire_status), status: s.farmer_questionnaire_status },
+    { label: 'DDR', ok: ok(s.ddr_status), status: s.ddr_status },
+  ]
+  const certs = s.certifications ?? []
+  const expiring = certs.filter(c => certValidity(c) === 'expire_bientot').length
+  const expired = certs.filter(c => certValidity(c) === 'expire').length
+  const done = points.filter(p => p.ok).length
+  return { points, done, total: points.length, certs: certs.length, expiring, expired, complete: done === points.length }
+}
 
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(STATUS_OPTS.map(o => [o.value, o.label]))
 const RISK_LABEL: Record<string, string> = Object.fromEntries(RISK_OPTS.map(o => [o.value, o.label]))
@@ -398,16 +465,16 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
           {tab === 'buyers' && (
             <BuyersTab
               buyers={buyers}
-              onAdd={() => setEditing({ entity: 'buyers', data: { geojson_status: 'unknown', questionnaire_status: 'unknown' } })}
-              onEdit={b => setEditing({ entity: 'buyers', data: { ...b } })}
+              onAdd={() => setEditing({ entity: 'buyers', data: { geojson_status: 'unknown', questionnaire_status: 'unknown', relationship_status: 'nouveau', follow_ups: [] } })}
+              onEdit={b => setEditing({ entity: 'buyers', data: { ...b, follow_ups: b.follow_ups ?? [] } })}
               onDelete={b => setToDelete({ entity: 'buyers', id: b.id, label: b.name ?? 'cet acheteur' })}
             />
           )}
           {tab === 'suppliers' && (
             <SuppliersTab
               suppliers={suppliers}
-              onAdd={() => setEditing({ entity: 'suppliers', data: { priority: 'moyenne', eudr_risk_level: 'standard', geojson_status: 'unknown', farmer_questionnaire_status: 'unknown', ddr_status: 'unknown', certifications: [] } })}
-              onEdit={s => setEditing({ entity: 'suppliers', data: { ...s, certifications: s.certifications ?? [] } })}
+              onAdd={() => setEditing({ entity: 'suppliers', data: { priority: 'moyenne', eudr_risk_level: 'standard', geojson_status: 'unknown', farmer_questionnaire_status: 'unknown', ddr_status: 'unknown', certifications: [], relationship_status: 'nouveau', follow_ups: [] } })}
+              onEdit={s => setEditing({ entity: 'suppliers', data: { ...s, certifications: s.certifications ?? [], follow_ups: s.follow_ups ?? [] } })}
               onDelete={s => setToDelete({ entity: 'suppliers', id: s.id, label: s.company ?? 'ce fournisseur' })}
               onDocuments={s => setDocsFor({ entityType: 'supplier', id: s.id, label: s.company ?? 'Fournisseur' })}
             />
@@ -600,6 +667,40 @@ function Dashboard({ buyers, suppliers, contracts }: { buyers: Buyer[]; supplier
         </div>
       </div>
 
+      {/* Suivi de la relation & points de validation */}
+      {suppliers.length > 0 && (() => {
+        const vAll = suppliers.map(s => ({ s, v: supplierValidation(s) }))
+        const complete = vAll.filter(x => x.v.complete).length
+        const awaiting = suppliers.filter(s => ['demande_envoyee', 'relance', 'en_attente', 'sans_reponse'].includes(s.relationship_status ?? '')).length
+        const noContact = suppliers.filter(s => !(s.follow_ups?.length)).length
+        const certExpiring = vAll.reduce((n, x) => n + x.v.expiring, 0)
+        const certExpired = vAll.reduce((n, x) => n + x.v.expired, 0)
+        const certAlerts = vAll.filter(x => x.v.expiring > 0 || x.v.expired > 0)
+        return (
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Suivi de la relation & points de validation</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div><div className="text-xl font-bold text-green-600 dark:text-green-400">{complete}</div><div className="text-[11px] text-gray-500 dark:text-gray-400">Dossiers complets (GeoJSON+Quest.+DDR)</div></div>
+              <div><div className="text-xl font-bold text-amber-600 dark:text-amber-400">{awaiting}</div><div className="text-[11px] text-gray-500 dark:text-gray-400">En attente / à relancer</div></div>
+              <div><div className="text-xl font-bold text-gray-700 dark:text-gray-300">{noContact}</div><div className="text-[11px] text-gray-500 dark:text-gray-400">Sans échange enregistré</div></div>
+              <div><div className="text-xl font-bold text-red-600 dark:text-red-400">{certExpired}<span className="text-amber-500"> / {certExpiring}</span></div><div className="text-[11px] text-gray-500 dark:text-gray-400">Certif. expirées / bientôt</div></div>
+            </div>
+            {certAlerts.length > 0 && (
+              <div className="pt-1 border-t border-gray-100 dark:border-gray-700">
+                <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">Certifications à renouveler</p>
+                <ul className="space-y-0.5">
+                  {certAlerts.slice(0, 8).map(({ s, v }) => (
+                    <li key={s.id} className="text-xs text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">{s.company}</span> — {v.expired > 0 ? `${v.expired} expirée(s)` : ''}{v.expired > 0 && v.expiring > 0 ? ', ' : ''}{v.expiring > 0 ? `${v.expiring} bientôt` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* Fournisseurs à surveiller */}
       {atRisk.length > 0 && (
         <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4">
@@ -654,6 +755,7 @@ function BuyersTab({ buyers, onAdd, onEdit, onDelete }: {
                 <th className="px-3 py-2 font-medium">GeoJSON</th>
                 <th className="px-3 py-2 font-medium">Questionnaire</th>
                 <th className="px-3 py-2 font-medium">N° DDS</th>
+                <th className="px-3 py-2 font-medium">Suivi</th>
                 <th className="px-3 py-2 font-medium" />
               </tr>
             </thead>
@@ -666,6 +768,7 @@ function BuyersTab({ buyers, onAdd, onEdit, onDelete }: {
                   <Td><StatusPill value={b.geojson_status} /></Td>
                   <Td><StatusPill value={b.questionnaire_status} /></Td>
                   <Td>{b.dds_number ?? '—'}</Td>
+                  <Td>{RELATION_MAP[b.relationship_status ?? ''] ? <span className={`text-[11px] px-2 py-0.5 rounded-full ${RELATION_MAP[b.relationship_status!].cls}`}>{RELATION_MAP[b.relationship_status!].label}</span> : '—'}</Td>
                   <Td className="text-right whitespace-nowrap">
                     <button onClick={() => onEdit(b)} className="text-green-600 dark:text-green-400 hover:underline mr-3">Modifier</button>
                     <button onClick={() => onDelete(b)} className="text-red-600 dark:text-red-400 hover:underline">Supprimer</button>
@@ -716,7 +819,11 @@ function SuppliersTab({ suppliers, onAdd, onEdit, onDelete, onDocuments }: {
         <p className="text-center py-10 text-sm text-gray-400 dark:text-gray-500">Aucun fournisseur</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map(s => (
+          {filtered.map(s => {
+            const v = supplierValidation(s)
+            const rel = RELATION_MAP[s.relationship_status ?? '']
+            const last = (s.follow_ups ?? []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
+            return (
             <div key={s.id} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -728,27 +835,49 @@ function SuppliersTab({ suppliers, onAdd, onEdit, onDelete, onDocuments }: {
                   <PriorityPill value={s.priority} />
                 </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
+
+              {/* Suivi de la relation */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {rel && <span className={`text-[11px] px-2 py-0.5 rounded-full ${rel.cls}`}>{rel.label}</span>}
+                {last && <span className="text-[11px] text-gray-400 dark:text-gray-500">Dernier échange : {last.date} · {FOLLOWUP_MAP[last.type] ?? last.type}</span>}
+              </div>
+
+              {/* Points de validation */}
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] text-gray-400 dark:text-gray-500">GeoJSON</span><StatusPill value={s.geojson_status} />
                 <span className="text-[11px] text-gray-400 dark:text-gray-500">Quest.</span><StatusPill value={s.farmer_questionnaire_status} />
                 <span className="text-[11px] text-gray-400 dark:text-gray-500">DDR</span><StatusPill value={s.ddr_status} />
+                <span className={`text-[11px] px-2 py-0.5 rounded-full ${v.complete ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{v.done}/{v.total} validés</span>
               </div>
+
               {(s.certifications?.length ?? 0) > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {s.certifications!.map((c, i) => (
-                    <span key={i} className="text-[11px] bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded">
-                      {c.type} · {c.status}
-                    </span>
-                  ))}
+                  {s.certifications!.map((c, i) => {
+                    const val = certValidity(c)
+                    const cls = val === 'expire' ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
+                      : val === 'expire_bientot' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'
+                      : val === 'valide' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                    return (
+                      <span key={i} className={`text-[11px] px-2 py-0.5 rounded ${cls}`} title={c.valid_until ? `Valide jusqu'au ${c.valid_until}` : ''}>
+                        {c.type}{val === 'expire' ? ' · expiré' : val === 'expire_bientot' ? ' · expire bientôt' : c.valid_until ? ` · ${c.valid_until}` : ''}
+                      </span>
+                    )
+                  })}
                 </div>
               )}
+              {(v.expired > 0 || v.expiring > 0) && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">⚠️ {v.expired > 0 ? `${v.expired} certif. expirée(s)` : ''}{v.expired > 0 && v.expiring > 0 ? ' · ' : ''}{v.expiring > 0 ? `${v.expiring} expire(nt) bientôt` : ''}</p>
+              )}
+
               <div className="flex justify-end gap-3 pt-1">
                 <button onClick={() => onDocuments(s)} className="text-xs text-gray-500 dark:text-gray-400 hover:underline">📎 Documents</button>
                 <button onClick={() => onEdit(s)} className="text-xs text-green-600 dark:text-green-400 hover:underline">Modifier</button>
                 <button onClick={() => onDelete(s)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Supprimer</button>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -860,6 +989,7 @@ function EditModal({ editing, setEditing, onSave, saving }: {
                 <StatusSelect label="Statut GeoJSON" value={str('geojson_status') || 'unknown'} onChange={v => set('geojson_status', v)} />
                 <StatusSelect label="Statut questionnaire" value={str('questionnaire_status') || 'unknown'} onChange={v => set('questionnaire_status', v)} />
               </div>
+              <RelationSection data={data} set={set} />
             </>
           )}
 
@@ -875,6 +1005,7 @@ function EditModal({ editing, setEditing, onSave, saving }: {
                 </div>
                 <div><label className={labelCls()}>Personne de contact</label><input className={inputCls()} value={str('contact_person')} onChange={e => set('contact_person', e.target.value)} /></div>
                 <div><label className={labelCls()}>Email</label><input className={inputCls()} value={str('email')} onChange={e => set('email', e.target.value)} /></div>
+                <div><label className={labelCls()}>Commodité</label><input className={inputCls()} value={str('commodity')} onChange={e => set('commodity', e.target.value)} /></div>
                 <div><label className={labelCls()}>Pays d&apos;origine</label><input className={inputCls()} value={str('country_origin')} onChange={e => set('country_origin', e.target.value)} /></div>
                 <div>
                   <label className={labelCls()}>Niveau de risque EUDR</label>
@@ -890,14 +1021,24 @@ function EditModal({ editing, setEditing, onSave, saving }: {
                 certs={(data.certifications as Certification[]) ?? []}
                 onChange={c => set('certifications', c)}
               />
+              <RelationSection data={data} set={set} />
             </>
           )}
 
           {entity === 'contracts' && (
             <div className="grid grid-cols-2 gap-3">
               <div><label className={labelCls()}>N° contrat</label><input className={inputCls()} value={str('contract_number')} onChange={e => set('contract_number', e.target.value)} /></div>
+              <div><label className={labelCls()}>Commodité</label><input className={inputCls()} value={str('commodity')} onChange={e => set('commodity', e.target.value)} /></div>
               <div><label className={labelCls()}>Produit</label><input className={inputCls()} value={str('product')} onChange={e => set('product', e.target.value)} /></div>
               <div><label className={labelCls()}>Fournisseur</label><input className={inputCls()} value={str('supplier')} onChange={e => set('supplier', e.target.value)} /></div>
+              <div><label className={labelCls()}>Acheteur</label><input className={inputCls()} value={str('buyer')} onChange={e => set('buyer', e.target.value)} /></div>
+              <div><label className={labelCls()}>Pays d&apos;origine</label><input className={inputCls()} value={str('country_origin')} onChange={e => set('country_origin', e.target.value)} /></div>
+              <div>
+                <label className={labelCls()}>Risque pays (origine)</label>
+                <select className={inputCls()} value={str('country_risk_level') || 'standard'} onChange={e => set('country_risk_level', e.target.value)}>
+                  {RISK_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
               <div><label className={labelCls()}>Pays de livraison</label><input className={inputCls()} value={str('delivery_country')} onChange={e => set('delivery_country', e.target.value)} /></div>
               <div><label className={labelCls()}>Date de production</label><input className={inputCls()} value={str('production_date')} onChange={e => set('production_date', e.target.value)} placeholder="ex. 2025-03" /></div>
               <div><label className={labelCls()}>Livraison prévue</label><input className={inputCls()} value={str('expected_delivery_date')} onChange={e => set('expected_delivery_date', e.target.value)} placeholder="ex. 2025-06" /></div>
@@ -927,6 +1068,53 @@ function EditModal({ editing, setEditing, onSave, saving }: {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Suivi de la relation : statut + journal daté ────────────────────────────────
+
+function RelationSection({ data, set }: { data: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
+  const followUps = (data.follow_ups as FollowUp[]) ?? []
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Suivi de la relation</label>
+        <select className={`${inputCls()} max-w-[200px]`} value={(data.relationship_status as string) || 'nouveau'} onChange={e => set('relationship_status', e.target.value)}>
+          {RELATION_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
+      <FollowUpEditor items={followUps} onChange={v => set('follow_ups', v)} />
+    </div>
+  )
+}
+
+function FollowUpEditor({ items, onChange }: { items: FollowUp[]; onChange: (v: FollowUp[]) => void }) {
+  const today = () => { try { return new Date().toISOString().slice(0, 10) } catch { return '' } }
+  const add = () => onChange([{ date: today(), type: 'relance', text: '' }, ...items])
+  const update = (i: number, patch: Partial<FollowUp>) => onChange(items.map((it, idx) => idx === i ? { ...it, ...patch } : it))
+  const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i))
+  const sorted = items.map((it, i) => ({ it, i })).sort((a, b) => (b.it.date || '').localeCompare(a.it.date || ''))
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-500 dark:text-gray-400">Journal des échanges (demandes, relances, réponses…)</span>
+        <button type="button" onClick={add} className="text-xs text-green-600 dark:text-green-400 hover:underline">+ Ajouter une entrée</button>
+      </div>
+      {items.length === 0 ? <p className="text-xs text-gray-400">Aucun échange enregistré.</p> : (
+        <div className="space-y-2">
+          {sorted.map(({ it, i }) => (
+            <div key={i} className="flex flex-wrap items-start gap-2">
+              <input type="date" className={`${inputCls()} w-36`} value={it.date || ''} onChange={e => update(i, { date: e.target.value })} />
+              <select className={`${inputCls()} w-40`} value={it.type || 'relance'} onChange={e => update(i, { type: e.target.value })}>
+                {FOLLOWUP_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <input className={`${inputCls()} flex-1 min-w-[160px]`} value={it.text || ''} placeholder="Détail de l’échange…" onChange={e => update(i, { text: e.target.value })} />
+              <button type="button" onClick={() => remove(i)} className="text-gray-400 hover:text-red-500 mt-2" title="Supprimer">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -23,7 +23,9 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 const MODEL = 'claude-haiku-4-5-20251001'
-const CHUNK = 150
+// Lots courts traités EN PARALLÈLE : 180 transactions séquentielles dépassaient
+// les 60 s de la fonction Vercel (erreur 504 constatée en production).
+const CHUNK = 50
 
 interface TxIn { transaction_id: string; label: string; category: string | null; side: 'debit' | 'credit'; amount: number }
 interface CompteIn { numero: string; nom: string; type: string }
@@ -88,14 +90,16 @@ export async function POST(req: NextRequest) {
     const planText = comptes.map(c => `${c.numero} — ${c.nom} [${c.type}]`).join('\n')
     const suggestions: Record<string, { numero: string; confiance: string }> = {}
 
-    for (let i = 0; i < transactions.length; i += CHUNK) {
-      const chunk = transactions.slice(i, i + CHUNK)
+    const chunks: TxIn[][] = []
+    for (let i = 0; i < transactions.length; i += CHUNK) chunks.push(transactions.slice(i, i + CHUNK))
+
+    const runChunk = async (chunk: TxIn[]) => {
       const txText = chunk.map(t =>
         `${t.transaction_id} | ${t.side === 'debit' ? 'DÉBIT' : 'CRÉDIT'} ${Math.abs(t.amount).toFixed(2)} € | catégorie: ${t.category ?? '—'} | ${t.label}`
       ).join('\n')
       const params = {
         model: MODEL,
-        max_tokens: 8000,
+        max_tokens: 4000,
         system: systemPrompt(plan),
         output_config: { format: { type: 'json_schema', schema: SCHEMA } },
         messages: [{
@@ -105,14 +109,22 @@ export async function POST(req: NextRequest) {
       } as unknown as Anthropic.MessageCreateParamsNonStreaming
       const msg = await client.messages.create(params)
       const textBlock = msg.content.find(b => b.type === 'text') as Anthropic.TextBlock | undefined
-      if (!textBlock) continue
+      if (!textBlock) return
       const parsed = JSON.parse(textBlock.text) as { suggestions?: { transaction_id: string; numero: string; confiance: string }[] }
       for (const s of parsed.suggestions ?? []) {
         if (numeros.has(s.numero)) suggestions[s.transaction_id] = { numero: s.numero, confiance: s.confiance }
       }
     }
 
-    return NextResponse.json({ suggestions })
+    // Tous les lots en parallèle (un lot de 50 ≈ 10-15 s ; l'ensemble tient
+    // largement sous le plafond de 60 s quelle que soit la sélection).
+    const results = await Promise.allSettled(chunks.map(runChunk))
+    const failed = results.filter(r => r.status === 'rejected').length
+    if (failed === results.length) {
+      return NextResponse.json({ error: 'La ventilation IA a échoué — réessayez.' }, { status: 502 })
+    }
+
+    return NextResponse.json({ suggestions, partial: failed > 0 })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

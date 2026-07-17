@@ -9,9 +9,9 @@ const TABLE = 'eudr_suppliers'
 
 /** Champs modifiables côté client */
 const FIELDS = [
-  'company', 'priority', 'contact_person', 'email', 'country_origin',
+  'company', 'priority', 'contact_person', 'email', 'commodity', 'country_origin',
   'eudr_risk_level', 'geojson_status', 'farmer_questionnaire_status',
-  'ddr_status', 'certifications', 'notes',
+  'ddr_status', 'certifications', 'relationship_status', 'follow_ups', 'notes',
 ]
 
 async function getRole(userId: string): Promise<string | null> {
