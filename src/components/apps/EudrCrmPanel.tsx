@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import FollowUpJournal from '@/components/apps/FollowUpJournal'
 
 // CRM de collecte documentaire EUDR. Objectif : savoir QUI relancer, QUAND et POUR QUOI,
 // et amener chaque fournisseur/acheteur de « à contacter » à « dossier complet ».
@@ -275,9 +276,6 @@ function FicheDrawer({ record, kind, docs, nameOf, situ, canWrite, busy, onClose
 
   const addContact = () => setContacts([...contacts, { name: '', role: '', email: '', phone: '' }])
   const updContact = (i: number, p: Partial<Contact>) => setContacts(contacts.map((c, idx) => idx === i ? { ...c, ...p } : c))
-  const addFu = () => setFups([{ date: todayStr(), type: 'relance', text: '' }, ...fups])
-  const updFu = (i: number, p: Partial<FollowUp>) => setFups(fups.map((f, idx) => idx === i ? { ...f, ...p } : f))
-  const sortedFu = fups.map((f, i) => ({ f, i })).sort((a, b) => (b.f.date || '').localeCompare(a.f.date || ''))
   const certs = kind === 'suppliers' ? (record.certifications ?? []) : []
 
   function save() {
@@ -359,16 +357,8 @@ function FicheDrawer({ record, kind, docs, nameOf, situ, canWrite, busy, onClose
           </div>
 
           {/* Timeline */}
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2">
-            <div className="flex items-center justify-between"><span className="text-xs font-semibold text-gray-700 dark:text-gray-300">🕑 Journal des échanges</span>{!ro && <button className="text-xs text-green-600 dark:text-green-400 hover:underline" onClick={addFu}>+ Ajouter</button>}</div>
-            {fups.length === 0 ? <p className={hint}>Aucun échange.</p> : sortedFu.map(({ f, i }) => (
-              <div key={i} className="flex flex-wrap items-start gap-2">
-                <input type="date" className={`${input} w-36`} value={f.date || ''} onChange={e => updFu(i, { date: e.target.value })} disabled={ro} />
-                <select className={`${input} w-40`} value={f.type || 'relance'} onChange={e => updFu(i, { type: e.target.value })} disabled={ro}>{FU_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-                <input className={`${input} flex-1 min-w-[150px]`} value={f.text || ''} onChange={e => updFu(i, { text: e.target.value })} placeholder="Détail…" disabled={ro} />
-                {!ro && <button className="text-gray-400 hover:text-red-500 mt-2" onClick={() => setFups(fups.filter((_, idx) => idx !== i))}>✕</button>}
-              </div>
-            ))}
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+            <FollowUpJournal items={fups} onChange={setFups} readOnly={ro} />
           </div>
         </div>
 

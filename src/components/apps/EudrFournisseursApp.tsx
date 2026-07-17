@@ -8,6 +8,7 @@ import EudrTracesPanel from '@/components/apps/EudrTracesPanel'
 import EudrDocumentsModal from '@/components/apps/EudrDocumentsModal'
 import EudrCoaPanel from '@/components/apps/EudrCoaPanel'
 import EudrCrmPanel from '@/components/apps/EudrCrmPanel'
+import FollowUpJournal, { type JFollowUp } from '@/components/apps/FollowUpJournal'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -1102,33 +1103,7 @@ function RelationSection({ data, set }: { data: Record<string, unknown>; set: (k
 }
 
 function FollowUpEditor({ items, onChange }: { items: FollowUp[]; onChange: (v: FollowUp[]) => void }) {
-  const today = () => { try { return new Date().toISOString().slice(0, 10) } catch { return '' } }
-  const add = () => onChange([{ date: today(), type: 'relance', text: '' }, ...items])
-  const update = (i: number, patch: Partial<FollowUp>) => onChange(items.map((it, idx) => idx === i ? { ...it, ...patch } : it))
-  const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i))
-  const sorted = items.map((it, i) => ({ it, i })).sort((a, b) => (b.it.date || '').localeCompare(a.it.date || ''))
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-500 dark:text-gray-400">Journal des échanges (demandes, relances, réponses…)</span>
-        <button type="button" onClick={add} className="text-xs text-green-600 dark:text-green-400 hover:underline">+ Ajouter une entrée</button>
-      </div>
-      {items.length === 0 ? <p className="text-xs text-gray-400">Aucun échange enregistré.</p> : (
-        <div className="space-y-2">
-          {sorted.map(({ it, i }) => (
-            <div key={i} className="flex flex-wrap items-start gap-2">
-              <input type="date" className={`${inputCls()} w-36`} value={it.date || ''} onChange={e => update(i, { date: e.target.value })} />
-              <select className={`${inputCls()} w-40`} value={it.type || 'relance'} onChange={e => update(i, { type: e.target.value })}>
-                {FOLLOWUP_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <input className={`${inputCls()} flex-1 min-w-[160px]`} value={it.text || ''} placeholder="Détail de l’échange…" onChange={e => update(i, { text: e.target.value })} />
-              <button type="button" onClick={() => remove(i)} className="text-gray-400 hover:text-red-500 mt-2" title="Supprimer">✕</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+  return <FollowUpJournal items={items as JFollowUp[]} onChange={v => onChange(v as FollowUp[])} />
 }
 
 // ─── Éditeur de certifications ──────────────────────────────────────────────────
