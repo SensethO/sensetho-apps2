@@ -189,6 +189,32 @@ export async function getDdsV3(
   }
 }
 
+/**
+ * Test de connexion/authentification via le service V3 (l'ancien service Echo V1/V2
+ * a été retiré côté serveur EUDR — 404). On tente un getDdsByIdentifiers avec des
+ * identifiants factices : une réponse métier (« Data error » / DDS introuvable) prouve
+ * que l'authentification WS-Security est passée ; une faute de sécurité = mauvais identifiants.
+ */
+export async function pingV3(creds: TracesCredentials): Promise<{ ok: boolean; kind: 'ok' | 'auth' | 'error'; message: string; detail?: string }> {
+  try {
+    await getDdsByIdentifiersV3(creds, 'PINGTEST0000', 'PING0000')
+    return { ok: true, kind: 'ok', message: 'Connexion et authentification réussies.' }
+  } catch (err) {
+    const e = err as Record<string, unknown>
+    const status = e.httpStatus as number | undefined
+    const raw = String(((e.details as Record<string, unknown> | undefined)?.rawData as string) ?? '')
+    const msg = String((e.message as string) ?? '')
+    const blob = (msg + ' ' + raw).toLowerCase()
+    if (/authenticat|failedauthentication|wsse|username|password|credential|not authoriz|invalid.*(token|security)|access.*deni|\b401\b|\b403\b/.test(blob)) {
+      return { ok: false, kind: 'auth', message: 'Authentification refusée — vérifiez le nom d’utilisateur (identifiant EU Login) et la clé Web Service.', detail: msg }
+    }
+    if (/data error|no dds|not found|does not exist|reference|verification|eudr_/.test(blob) || status === 200) {
+      return { ok: true, kind: 'ok', message: 'Connexion et authentification réussies (réponse métier reçue).' }
+    }
+    return { ok: false, kind: 'error', message: msg || `Erreur ${status ?? ''}`.trim(), detail: raw ? raw.slice(0, 500) : undefined }
+  }
+}
+
 /** getDdsByIdentifiers V3 → vérifie une DDS (référence + vérification). */
 export async function getDdsByIdentifiersV3(
   creds: TracesCredentials,
