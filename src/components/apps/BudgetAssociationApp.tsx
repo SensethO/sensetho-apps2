@@ -537,6 +537,668 @@ function ImportModal({ activeSB, exerciceId, comptes, onClose, onImported }: {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Import bancaire Qonto (connexion par organisation, multi-comptes, anti-doublon)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const QONTO_API = '/api/qonto'
+
+interface QontoBankAccount {
+  id: string
+  slug: string
+  iban: string
+  name: string
+  balance: number
+  currency: string
+  status: string
+}
+interface QontoTx {
+  id: string
+  transaction_id: string
+  amount: number
+  side: 'debit' | 'credit'
+  label: string
+  note: string | null
+  settled_at: string | null
+  emitted_at: string | null
+  category: string | null
+  operation_type: string | null
+  status: string
+}
+interface QontoTxMeta {
+  current_page: number
+  next_page: number | null
+  total_pages: number
+  total_count: number
+  per_page: number
+}
+
+function maskIban(iban: string): string {
+  return iban && iban.length > 4 ? `•••• ${iban.slice(-4)}` : iban
+}
+function fmtCurrency(n: number, currency: string): string {
+  try {
+    return n.toLocaleString('fr-FR', { style: 'currency', currency: currency || 'EUR' })
+  } catch {
+    return fmt(n)
+  }
+}
+function qontoTxDateISO(tx: QontoTx): string {
+  return (tx.settled_at ?? tx.emitted_at ?? '').slice(0, 10)
+}
+function qontoTxDateFR(tx: QontoTx): string {
+  const d = qontoTxDateISO(tx)
+  return d ? new Date(d).toLocaleDateString('fr-FR') : '—'
+}
+function fmtSigned(tx: QontoTx): string {
+  const n = Math.abs(tx.amount).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return tx.side === 'debit' ? `−${n} €` : `+${n} €`
+}
+
+function QontoImportModal({ organisationId, organisationNom, exerciceId, exerciceDebut, exerciceFin, defaultSBKey, comptes, sousBudgets, onClose, onImported }: {
+  organisationId: string
+  organisationNom: string
+  exerciceId: string
+  exerciceDebut: string
+  exerciceFin: string
+  defaultSBKey: string
+  comptes: Compte[]
+  sousBudgets: SousBudget[]
+  onClose: () => void
+  onImported: () => void
+}) {
+  // ── Connexion (identifiants par organisation) ──────────────────────────────
+  const [credState, setCredState] = useState<'loading' | 'disconnected' | 'connected'>('loading')
+  const [loginMasked, setLoginMasked] = useState('')
+  const [login, setLogin] = useState('')
+  const [secretKey, setSecretKey] = useState('')
+  const [connecting, setConnecting] = useState(false)
+  const [credError, setCredError] = useState<string | null>(null)
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
+
+  // ── Comptes bancaires ──────────────────────────────────────────────────────
+  const [accounts, setAccounts] = useState<QontoBankAccount[]>([])
+  const [qontoOrgName, setQontoOrgName] = useState('')
+  const [accountsLoading, setAccountsLoading] = useState(false)
+  const [accountsError, setAccountsError] = useState<string | null>(null)
+  const [selectedAccountId, setSelectedAccountId] = useState('')
+
+  // ── Filtres + transactions ─────────────────────────────────────────────────
+  const [fromDate, setFromDate] = useState(exerciceDebut.slice(0, 10))
+  const [toDate, setToDate] = useState(exerciceFin.slice(0, 10))
+  const [sideFilter, setSideFilter] = useState<'all' | 'debit' | 'credit'>('all')
+  const [txs, setTxs] = useState<QontoTx[]>([])
+  const [meta, setMeta] = useState<QontoTxMeta | null>(null)
+  const [fetchingTx, setFetchingTx] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [txError, setTxError] = useState<string | null>(null)
+  const [hasFetched, setHasFetched] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  // ── Cible commune (sous-budget + comptes) ──────────────────────────────────
+  const [targetSBKey, setTargetSBKey] = useState(defaultSBKey)
+  const [compteDebitId, setCompteDebitId] = useState('')
+  const [compteCreditId, setCompteCreditId] = useState('')
+
+  // ── Import ─────────────────────────────────────────────────────────────────
+  const [step, setStep] = useState<'main' | 'result'>('main')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{
+    imported: number
+    duplicates: number
+    errors: { label: string; message: string }[]
+  } | null>(null)
+
+  // Comptes feuilles (sans enfants), groupés par type
+  const leafComptes = useMemo(() => {
+    const parentIds = new Set(comptes.filter(c => c.parent_id).map(c => c.parent_id as string))
+    return comptes.filter(c => !parentIds.has(c.id))
+  }, [comptes])
+  const chargeLeaves = useMemo(() => leafComptes.filter(c => c.type === 'charge'), [leafComptes])
+  const produitLeaves = useMemo(() => leafComptes.filter(c => c.type === 'produit'), [leafComptes])
+
+  const selectedTxs = useMemo(() => txs.filter(t => selected.has(t.transaction_id)), [txs, selected])
+  const hasDebit = selectedTxs.some(t => t.side === 'debit')
+  const hasCredit = selectedTxs.some(t => t.side === 'credit')
+
+  // ── Chargement de l'état de connexion ──────────────────────────────────────
+  const loadCredentials = useCallback(async () => {
+    try {
+      const r = await fetch(`${QONTO_API}/credentials?organisation_id=${organisationId}`)
+      const d = await r.json().catch(() => ({}))
+      if (r.ok && d.connected) {
+        setLoginMasked(d.login_masked ?? '')
+        setCredState('connected')
+      } else {
+        setCredState('disconnected')
+      }
+    } catch {
+      setCredState('disconnected')
+    }
+  }, [organisationId])
+
+  useEffect(() => { loadCredentials() }, [loadCredentials])
+
+  // ── Comptes bancaires, chargés dès que connecté ────────────────────────────
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true)
+    setAccountsError(null)
+    try {
+      const r = await fetch(`${QONTO_API}/accounts?organisation_id=${organisationId}`)
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setAccountsError(d.error ?? 'Impossible de récupérer les comptes bancaires.')
+        setAccountsLoading(false)
+        return
+      }
+      const list: QontoBankAccount[] = Array.isArray(d.bank_accounts) ? d.bank_accounts : []
+      setAccounts(list)
+      setQontoOrgName(d.organization?.name ?? '')
+      const firstActive = list.find(a => a.status === 'active') ?? list[0]
+      setSelectedAccountId(prevId => prevId || (firstActive?.id ?? ''))
+    } catch (e) {
+      setAccountsError(e instanceof Error ? e.message : String(e))
+    }
+    setAccountsLoading(false)
+  }, [organisationId])
+
+  useEffect(() => { if (credState === 'connected') loadAccounts() }, [credState, loadAccounts])
+
+  // ── Connexion / déconnexion ────────────────────────────────────────────────
+  async function connect() {
+    if (!login.trim() || !secretKey.trim()) {
+      setCredError('L’identifiant et la clé secrète sont requis.')
+      return
+    }
+    setConnecting(true)
+    setCredError(null)
+    try {
+      const r = await fetch(`${QONTO_API}/credentials`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organisation_id: organisationId, login: login.trim(), secret_key: secretKey.trim() }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setCredError(d.error ?? 'Identifiants Qonto invalides.')
+        setConnecting(false)
+        return
+      }
+      setLogin('')
+      setSecretKey('')
+      await loadCredentials()
+    } catch (e) {
+      setCredError(e instanceof Error ? e.message : String(e))
+    }
+    setConnecting(false)
+  }
+
+  async function disconnect() {
+    setDisconnecting(true)
+    try {
+      await fetch(`${QONTO_API}/credentials?organisation_id=${organisationId}`, { method: 'DELETE' })
+    } catch { /* silencieux */ }
+    setDisconnecting(false)
+    setConfirmDisconnect(false)
+    setCredState('disconnected')
+    setLoginMasked('')
+    setAccounts([])
+    setSelectedAccountId('')
+    setTxs([])
+    setMeta(null)
+    setSelected(new Set())
+    setHasFetched(false)
+  }
+
+  // ── Transactions ───────────────────────────────────────────────────────────
+  const fetchTransactions = useCallback(async (page: number, append: boolean) => {
+    if (!selectedAccountId) return
+    if (append) setLoadingMore(true)
+    else { setFetchingTx(true); setTxs([]); setMeta(null); setSelected(new Set()) }
+    setTxError(null)
+    try {
+      const params = new URLSearchParams({
+        organisation_id: organisationId,
+        bank_account_id: selectedAccountId,
+        page: String(page),
+      })
+      if (fromDate) params.set('settled_from', fromDate)
+      if (toDate) params.set('settled_to', toDate)
+      if (sideFilter !== 'all') params.set('side', sideFilter)
+      const r = await fetch(`${QONTO_API}/transactions?${params.toString()}`)
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setTxError(d.error ?? 'Impossible de récupérer les transactions.')
+      } else {
+        const list: QontoTx[] = Array.isArray(d.transactions) ? d.transactions : []
+        setTxs(prevTx => append ? [...prevTx, ...list] : list)
+        setMeta(d.meta ?? null)
+        setHasFetched(true)
+      }
+    } catch (e) {
+      setTxError(e instanceof Error ? e.message : String(e))
+    }
+    setFetchingTx(false)
+    setLoadingMore(false)
+  }, [organisationId, selectedAccountId, fromDate, toDate, sideFilter])
+
+  function toggleTx(txId: string) {
+    setSelected(prevSel => {
+      const n = new Set(prevSel)
+      if (n.has(txId)) n.delete(txId); else n.add(txId)
+      return n
+    })
+  }
+
+  const allPageSelected = txs.length > 0 && txs.every(t => selected.has(t.transaction_id))
+  function toggleSelectAllPage() {
+    setSelected(prevSel => {
+      if (allPageSelected) {
+        const n = new Set(prevSel)
+        for (const t of txs) n.delete(t.transaction_id)
+        return n
+      }
+      const n = new Set(prevSel)
+      for (const t of txs) n.add(t.transaction_id)
+      return n
+    })
+  }
+
+  // ── Validation ─────────────────────────────────────────────────────────────
+  const targetSB = sousBudgets.find(sb => sb.key === targetSBKey)
+  const canImport = selectedTxs.length > 0 && !!targetSB
+    && (!hasDebit || !!compteDebitId)
+    && (!hasCredit || !!compteCreditId)
+    && !importing
+
+  // ── Import ─────────────────────────────────────────────────────────────────
+  async function doImport() {
+    if (!targetSB || !canImport) return
+    setImporting(true)
+    let imported = 0
+    let duplicates = 0
+    const errors: { label: string; message: string }[] = []
+    const ligneCache = new Map<string, string>() // compte_id → ligne_id
+
+    for (const tx of selectedTxs) {
+      const compteId = tx.side === 'debit' ? compteDebitId : compteCreditId
+      const txLabel = `${qontoTxDateFR(tx)} — ${tx.label}`
+      try {
+        // 1. S'assurer que la ligne (exercice × compte × sous-budget) existe (upsert)
+        let ligneId = ligneCache.get(compteId)
+        if (!ligneId) {
+          const r = await fetch(`${API}/lignes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              exercice_id: exerciceId,
+              compte_id: compteId,
+              affectation_type: targetSB.affectation_type,
+              action_id: targetSB.action_id ?? null,
+              montant_previsionnel: 0,
+            }),
+          })
+          const d = await r.json().catch(() => ({}))
+          if (!r.ok || !d.id) {
+            errors.push({ label: tx.label, message: d.error ?? 'Impossible de créer la ligne budgétaire.' })
+            continue
+          }
+          ligneId = d.id as string
+          ligneCache.set(compteId, ligneId)
+        }
+        // 2. Créer l'écriture de détail (409 = transaction déjà importée)
+        const rd = await fetch(`${API}/lignes-details`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ligne_id: ligneId,
+            commentaire: txLabel,
+            montant_previsionnel: 0,
+            montant_realise: Math.abs(tx.amount),
+            qonto_transaction_id: tx.transaction_id,
+          }),
+        })
+        if (rd.status === 409) { duplicates++; continue }
+        if (!rd.ok) {
+          const dd = await rd.json().catch(() => ({}))
+          errors.push({ label: tx.label, message: dd.error ?? `Erreur ${rd.status}` })
+          continue
+        }
+        imported++
+      } catch (e) {
+        errors.push({ label: tx.label, message: e instanceof Error ? e.message : String(e) })
+      }
+    }
+
+    setImportResult({ imported, duplicates, errors })
+    setStep('result')
+    setImporting(false)
+    if (imported > 0) onImported()
+  }
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)',
+    textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.3rem',
+  }
+
+  return (
+    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ ...modalCard, maxWidth: 860 }}>
+        {/* Header */}
+        <div style={{ padding: '1rem 1.25rem 0.75rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text)' }}>🏦 Import Qonto</div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+              {step === 'result'
+                ? 'Résultat de l’import'
+                : `Import des transactions bancaires — ${organisationNom}`}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1.2rem', lineHeight: 1, padding: '0.2rem' }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.25rem' }}>
+
+          {/* ── Connexion en cours de vérification ── */}
+          {credState === 'loading' && (
+            <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Vérification de la connexion Qonto…</div>
+          )}
+
+          {/* ── Formulaire de connexion ── */}
+          {credState === 'disconnected' && step === 'main' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: 480, margin: '0 auto' }}>
+              <div style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '0.75rem', padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text)' }}>
+                <div style={{ fontWeight: 700, color: 'var(--accent)', marginBottom: '0.35rem' }}>🔑 Connexion à l’API Qonto</div>
+                Récupérez votre identifiant et votre clé secrète dans <strong>Réglages → API &amp; intégrations</strong> dans Qonto.
+                <div style={{ marginTop: '0.4rem', color: 'var(--text-muted)' }}>
+                  Ces identifiants sont propres à <strong>{organisationNom}</strong> et sont stockés chiffrés.
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Identifiant (login)</label>
+                <input style={inp} value={login} placeholder="ex : mon-organisation-1234"
+                  onChange={e => setLogin(e.target.value)} autoComplete="off" />
+              </div>
+              <div>
+                <label style={labelStyle}>Clé secrète API</label>
+                <input style={inp} type="password" value={secretKey} placeholder="Clé secrète Qonto"
+                  onChange={e => setSecretKey(e.target.value)} autoComplete="new-password"
+                  onKeyDown={e => { if (e.key === 'Enter') connect() }} />
+              </div>
+
+              {credError && (
+                <div style={{ background: RED_BG, color: RED, borderRadius: '0.5rem', padding: '0.6rem 0.85rem', fontSize: '0.82rem', border: `1px solid ${RED}40` }}>
+                  ⚠️ {credError}
+                </div>
+              )}
+
+              <button onClick={connect} disabled={connecting}
+                style={{ ...btnPrimary, alignSelf: 'flex-start', opacity: connecting ? 0.6 : 1, cursor: connecting ? 'not-allowed' : 'pointer' }}>
+                {connecting ? 'Vérification des identifiants…' : '🔗 Connecter'}
+              </button>
+            </div>
+          )}
+
+          {/* ── Connecté : comptes + transactions + cible ── */}
+          {credState === 'connected' && step === 'main' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+              {/* Bandeau connexion */}
+              <div style={{ background: GREEN_BG, border: `1px solid ${GREEN}40`, borderRadius: '0.6rem', padding: '0.55rem 0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                <div style={{ color: GREEN }}>
+                  ✅ Connecté à Qonto — <strong>{loginMasked || '…'}</strong>
+                  {qontoOrgName && <span style={{ color: 'var(--text-muted)' }}> · {qontoOrgName}</span>}
+                </div>
+                {confirmDisconnect ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ color: RED, fontWeight: 600, fontSize: '0.78rem' }}>Supprimer les identifiants ?</span>
+                    <button onClick={disconnect} disabled={disconnecting}
+                      style={{ background: RED, color: '#fff', border: 'none', borderRadius: '0.4rem', padding: '0.25rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, cursor: disconnecting ? 'not-allowed' : 'pointer' }}>
+                      {disconnecting ? '…' : 'Oui, déconnecter'}
+                    </button>
+                    <button onClick={() => setConfirmDisconnect(false)}
+                      style={{ background: 'none', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '0.4rem', padding: '0.25rem 0.6rem', fontSize: '0.75rem', cursor: 'pointer' }}>
+                      Annuler
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmDisconnect(true)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.75rem', textDecoration: 'underline', padding: 0 }}>
+                    Déconnecter
+                  </button>
+                )}
+              </div>
+
+              {/* Sélecteur de compte bancaire */}
+              <div>
+                <label style={labelStyle}>Compte bancaire</label>
+                {accountsLoading ? (
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '0.4rem 0' }}>Chargement des comptes…</div>
+                ) : accountsError ? (
+                  <div style={{ background: RED_BG, color: RED, borderRadius: '0.5rem', padding: '0.5rem 0.85rem', fontSize: '0.82rem' }}>⚠️ {accountsError}</div>
+                ) : (
+                  <select style={inp} value={selectedAccountId} onChange={e => { setSelectedAccountId(e.target.value); setTxs([]); setMeta(null); setSelected(new Set()); setHasFetched(false) }}>
+                    {accounts.length === 0 && <option value="">Aucun compte bancaire</option>}
+                    {accounts.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} — {maskIban(a.iban)} — {fmtCurrency(a.balance, a.currency)}{a.status !== 'active' ? ` (${a.status})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Filtres */}
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div>
+                  <label style={labelStyle}>Du</label>
+                  <input type="date" style={{ ...inp, width: 155 }} value={fromDate} onChange={e => setFromDate(e.target.value)} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Au</label>
+                  <input type="date" style={{ ...inp, width: 155 }} value={toDate} onChange={e => setToDate(e.target.value)} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Sens</label>
+                  <select style={{ ...inp, width: 130 }} value={sideFilter} onChange={e => setSideFilter(e.target.value as 'all' | 'debit' | 'credit')}>
+                    <option value="all">Tous</option>
+                    <option value="debit">Débits</option>
+                    <option value="credit">Crédits</option>
+                  </select>
+                </div>
+                <button onClick={() => fetchTransactions(1, false)} disabled={fetchingTx || !selectedAccountId}
+                  style={{ ...btnPrimary, opacity: fetchingTx || !selectedAccountId ? 0.6 : 1, cursor: fetchingTx || !selectedAccountId ? 'not-allowed' : 'pointer' }}>
+                  {fetchingTx ? 'Chargement…' : '🔄 Récupérer'}
+                </button>
+              </div>
+
+              {txError && (
+                <div style={{ background: RED_BG, color: RED, borderRadius: '0.5rem', padding: '0.6rem 0.85rem', fontSize: '0.82rem', border: `1px solid ${RED}40` }}>
+                  ⚠️ {txError}
+                </div>
+              )}
+
+              {/* Liste des transactions */}
+              {txs.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {meta?.total_count ?? txs.length} transaction(s)
+                      {meta && meta.total_pages > 1 && <span> — {txs.length} affichée(s) (page {meta.current_page}/{meta.total_pages})</span>}
+                      {selected.size > 0 && <span style={{ color: 'var(--accent)', fontWeight: 600 }}> · {selected.size} sélectionnée(s)</span>}
+                    </div>
+                    <button onClick={toggleSelectAllPage}
+                      style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '0.45rem', padding: '0.25rem 0.7rem', fontSize: '0.78rem', color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>
+                      {allPageSelected ? 'Tout désélectionner' : 'Tout sélectionner la page'}
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '0.6rem' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '0.4rem 0.6rem', width: 30 }} />
+                          <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
+                          <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Libellé</th>
+                          <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Catégorie</th>
+                          <th style={{ padding: '0.4rem 0.6rem', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600 }}>Montant</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {txs.map(tx => {
+                          const isSel = selected.has(tx.transaction_id)
+                          return (
+                            <tr key={tx.transaction_id} onClick={() => toggleTx(tx.transaction_id)}
+                              style={{ borderBottom: '1px solid var(--border)', background: isSel ? 'rgba(99,102,241,0.07)' : 'transparent', cursor: 'pointer' }}>
+                              <td style={{ padding: '0.4rem 0.6rem' }}>
+                                <input type="checkbox" checked={isSel} onChange={() => toggleTx(tx.transaction_id)}
+                                  onClick={e => e.stopPropagation()} style={{ cursor: 'pointer' }} />
+                              </td>
+                              <td style={{ padding: '0.4rem 0.6rem', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{qontoTxDateFR(tx)}</td>
+                              <td style={{ padding: '0.4rem 0.6rem', color: 'var(--text)', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tx.label}>
+                                {tx.label}
+                              </td>
+                              <td style={{ padding: '0.4rem 0.6rem' }}>
+                                {tx.category && (
+                                  <span style={{ fontSize: '0.7rem', padding: '0.12rem 0.45rem', borderRadius: '0.4rem', background: 'rgba(148,163,184,0.15)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                    {tx.category}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap', color: tx.side === 'debit' ? RED : GREEN }}>
+                                {fmtSigned(tx)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {meta?.next_page != null && (
+                    <button onClick={() => fetchTransactions(meta.next_page as number, true)} disabled={loadingMore}
+                      style={{ ...btnGhost, alignSelf: 'center', opacity: loadingMore ? 0.6 : 1 }}>
+                      {loadingMore ? 'Chargement…' : `⬇ Charger la page suivante (${meta.current_page + 1}/${meta.total_pages})`}
+                    </button>
+                  )}
+                </>
+              )}
+
+              {hasFetched && !fetchingTx && txs.length === 0 && !txError && (
+                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Aucune transaction sur la période sélectionnée.
+                </div>
+              )}
+
+              {/* Cible d'import (commune à la sélection) */}
+              {selectedTxs.length > 0 && (
+                <div style={{ border: '1px solid var(--border)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    🎯 Cible d’import — {selectedTxs.length} transaction(s)
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+                      <label style={labelStyle}>Sous-budget</label>
+                      <select style={inp} value={targetSBKey} onChange={e => setTargetSBKey(e.target.value)}>
+                        {sousBudgets.map(sb => <option key={sb.key} value={sb.key}>{sb.icon} {sb.label}</option>)}
+                      </select>
+                    </div>
+                    {hasDebit && (
+                      <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                        <label style={labelStyle}>Compte pour les débits</label>
+                        <select style={{ ...inp, borderColor: compteDebitId ? 'var(--border)' : `${RED}80` }} value={compteDebitId} onChange={e => setCompteDebitId(e.target.value)}>
+                          <option value="">— Choisir un compte —</option>
+                          <optgroup label="Charges (par défaut pour un débit)">
+                            {chargeLeaves.map(c => <option key={c.id} value={c.id}>{c.numero} — {c.libelle}</option>)}
+                          </optgroup>
+                          <optgroup label="Produits">
+                            {produitLeaves.map(c => <option key={c.id} value={c.id}>{c.numero} — {c.libelle}</option>)}
+                          </optgroup>
+                        </select>
+                      </div>
+                    )}
+                    {hasCredit && (
+                      <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                        <label style={labelStyle}>Compte pour les crédits</label>
+                        <select style={{ ...inp, borderColor: compteCreditId ? 'var(--border)' : `${RED}80` }} value={compteCreditId} onChange={e => setCompteCreditId(e.target.value)}>
+                          <option value="">— Choisir un compte —</option>
+                          <optgroup label="Produits (par défaut pour un crédit)">
+                            {produitLeaves.map(c => <option key={c.id} value={c.id}>{c.numero} — {c.libelle}</option>)}
+                          </optgroup>
+                          <optgroup label="Charges">
+                            {chargeLeaves.map(c => <option key={c.id} value={c.id}>{c.numero} — {c.libelle}</option>)}
+                          </optgroup>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Chaque transaction sera importée en <strong>Réalisé</strong> sur la cible choisie (libellé « date — libellé Qonto »).
+                    Vous pourrez ensuite ajuster chaque écriture directement dans le tableau du sous-budget.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Résultat ── */}
+          {step === 'result' && importResult && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', paddingTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 150px', padding: '1rem', borderRadius: '0.75rem', textAlign: 'center', background: importResult.imported > 0 ? GREEN_BG : 'var(--bg)', border: `1px solid ${importResult.imported > 0 ? `${GREEN}40` : 'var(--border)'}` }}>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: importResult.imported > 0 ? GREEN : 'var(--text-muted)' }}>{importResult.imported}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>importée(s)</div>
+                </div>
+                <div style={{ flex: '1 1 150px', padding: '1rem', borderRadius: '0.75rem', textAlign: 'center', background: importResult.duplicates > 0 ? AMBER_BG : 'var(--bg)', border: `1px solid ${importResult.duplicates > 0 ? `${AMBER}40` : 'var(--border)'}` }}>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: importResult.duplicates > 0 ? AMBER : 'var(--text-muted)' }}>{importResult.duplicates}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>déjà importée(s)</div>
+                </div>
+                <div style={{ flex: '1 1 150px', padding: '1rem', borderRadius: '0.75rem', textAlign: 'center', background: importResult.errors.length > 0 ? RED_BG : 'var(--bg)', border: `1px solid ${importResult.errors.length > 0 ? `${RED}40` : 'var(--border)'}` }}>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: importResult.errors.length > 0 ? RED : 'var(--text-muted)' }}>{importResult.errors.length}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>erreur(s)</div>
+                </div>
+              </div>
+
+              {importResult.errors.length > 0 && (
+                <div style={{ background: RED_BG, border: `1px solid ${RED}40`, borderRadius: '0.6rem', padding: '0.75rem 1rem', fontSize: '0.8rem', color: RED }}>
+                  {importResult.errors.map((e, i) => (
+                    <div key={i} style={{ marginTop: i > 0 ? 4 : 0 }}><strong>{e.label}</strong> — {e.message}</div>
+                  ))}
+                </div>
+              )}
+
+              {importResult.duplicates > 0 && (
+                <div style={{ fontSize: '0.78rem', color: AMBER, background: AMBER_BG, borderRadius: '0.5rem', padding: '0.5rem 0.75rem' }}>
+                  ℹ️ Les transactions déjà importées ont été ignorées (anti-doublon Qonto).
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '0.75rem 1.25rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+          {step === 'main' && (
+            <>
+              <button onClick={onClose} style={btnGhost}>Annuler</button>
+              {credState === 'connected' && (
+                <button onClick={doImport} disabled={!canImport}
+                  style={{ ...btnPrimary, opacity: canImport ? 1 : 0.5, cursor: canImport ? 'pointer' : 'not-allowed' }}>
+                  {importing ? 'Import en cours…' : `🏦 Importer (${selectedTxs.length})`}
+                </button>
+              )}
+            </>
+          )}
+          {step === 'result' && <button onClick={onClose} style={btnPrimary}>Fermer</button>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Modale de gestion des actions (table budget_actions — CRUD org-keyed)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1363,6 +2025,7 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
 
   const [saveError, setSaveError] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [showQontoImport, setShowQontoImport] = useState(false)
   const [auditLigne, setAuditLigne] = useState<Ligne | null>(null)
 
   // Transfert d'une ligne de détail vers un autre sous-budget
@@ -2200,6 +2863,12 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
                         📥 Importer Excel
                       </button>
                       <button
+                        onClick={() => setShowQontoImport(true)}
+                        className="text-xs px-2.5 py-1 rounded-lg font-semibold"
+                        style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--accent)', border: '1px solid rgba(99,102,241,0.3)', cursor: 'pointer' }}>
+                        🏦 Import Qonto
+                      </button>
+                      <button
                         onClick={() => setShowActionsModal(true)}
                         className="text-xs px-2.5 py-1 rounded-lg font-semibold"
                         style={{ background: 'none', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer' }}>
@@ -2282,6 +2951,24 @@ function ExerciceDetail({ exerciceId, organisationId, readOnly, onBack }: {
           exerciceId={exerciceId}
           comptes={comptes}
           onClose={() => setShowImport(false)}
+          onImported={async () => {
+            await loadSubLignes(activeView)
+            loadGlobal()
+          }}
+        />
+      )}
+
+      {showQontoImport && activeSB && exercice && (
+        <QontoImportModal
+          organisationId={organisationId}
+          organisationNom={exercice.structure?.raison_sociale ?? 'l’organisation'}
+          exerciceId={exerciceId}
+          exerciceDebut={exercice.date_debut}
+          exerciceFin={exercice.date_fin}
+          defaultSBKey={activeSB.key}
+          comptes={comptes}
+          sousBudgets={sousBudgets}
+          onClose={() => setShowQontoImport(false)}
           onImported={async () => {
             await loadSubLignes(activeView)
             loadGlobal()

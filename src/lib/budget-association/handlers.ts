@@ -487,15 +487,22 @@ export async function lignesDetailsPOST(req: NextRequest) {
     montant_previsionnel = 0,
     montant_realise = 0,
     sort_order = 0,
+    qonto_transaction_id = null,
   } = body;
   if (!ligne_id) return NextResponse.json({ error: "ligne_id requis" }, { status: 400 });
 
   const { data, error } = await db
     .from("budget_lignes_details")
-    .insert({ ligne_id, commentaire, montant_previsionnel, montant_realise, sort_order })
+    .insert({ ligne_id, commentaire, montant_previsionnel, montant_realise, sort_order, qonto_transaction_id })
     .select()
     .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    // Index unique partiel sur qonto_transaction_id : anti-doublon d'import bancaire.
+    if (error.code === "23505") {
+      return NextResponse.json({ error: "Transaction déjà importée" }, { status: 409 });
+    }
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
 
   await recalcLigne(db, ligne_id);
   return NextResponse.json(data);
