@@ -4,6 +4,7 @@ import { spGraphForApp } from '@/lib/sharepointMulti'
 import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClient'
 import { submitDdsV3, DdsStatement } from '@/lib/eudr/tracesV3'
 import { toIso2 } from '@/lib/eudr/countries'
+import { sanitizeGeojson, SanitizeReport } from '@/lib/eudr/geoSanitize'
 import { guard } from '../_auth'
 
 /** Normalise en ISO2 tous les pays de la déclaration (pays d'activité, transit, producteurs). */
@@ -20,7 +21,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 /** Lit un document GeoJSON stocké dans SharePoint et le renvoie encodé en base64. */
-async function geojsonFromAttachment(orgId: string, attachmentId: string): Promise<string> {
+async function geojsonFromAttachment(orgId: string, attachmentId: string): Promise<{ base64: string; report: SanitizeReport }> {
   const admin = createAdminClient()
   const { data: row } = await admin.from('eudr_attachments')
     .select('sharepoint_item_id').eq('id', attachmentId).eq('org_id', orgId).maybeSingle()
@@ -30,8 +31,10 @@ async function geojsonFromAttachment(orgId: string, attachmentId: string): Promi
   const item = await res.json() as Record<string, unknown>
   const url = item['@microsoft.graph.downloadUrl'] as string | undefined
   if (!url) throw new Error('URL de téléchargement GeoJSON indisponible.')
-  const buf = Buffer.from(await (await fetch(url)).arrayBuffer())
-  return buf.toString('base64')
+  const raw = Buffer.from(await (await fetch(url)).arrayBuffer()).toString('utf-8')
+  // Nettoyage TRACES : suppression des trous + réparation des auto-intersections.
+  const { geojson, report } = sanitizeGeojson(raw)
+  return { base64: Buffer.from(JSON.stringify(geojson)).toString('base64'), report }
 }
 
 /**
@@ -54,14 +57,16 @@ export async function POST(req: NextRequest) {
     if (!creds) return NextResponse.json({ error: 'Identifiants TRACES non configurés pour cette organisation.' }, { status: 400 })
 
     const statement = body.statement
-    // GeoJSON depuis un document SharePoint : on lit le fichier et on l'injecte dans le 1er producteur.
+    let geoReport: SanitizeReport | null = null
+    // GeoJSON depuis un document SharePoint : on lit le fichier, on le nettoie et on l'injecte dans le 1er producteur.
     if (body.geojsonAttachmentId) {
-      const geoB64 = await geojsonFromAttachment(body.org_id!, body.geojsonAttachmentId)
+      const { base64, report } = await geojsonFromAttachment(body.org_id!, body.geojsonAttachmentId)
+      geoReport = report
       const c0 = statement.commodities?.[0]
       if (c0) {
         const producers = Array.isArray(c0.producers) ? c0.producers : c0.producers ? [c0.producers] : []
         if (producers.length === 0) producers.push({})
-        producers[0].geometryGeojson = geoB64
+        producers[0].geometryGeojson = base64
         c0.producers = producers
       }
     }
@@ -70,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     // V3 : operatorType → operatorRole. La géométrie GeoJSON est encodée en base64 dans le client V3.
     const result = await submitDdsV3(creds, { operatorRole: body.operatorType, statement })
-    return NextResponse.json({ ok: true, environment: creds.environment, ddsIdentifier: result.uuid })
+    return NextResponse.json({ ok: true, environment: creds.environment, ddsIdentifier: result.uuid, geoSanitized: geoReport })
   } catch (err) {
     const info = describeTracesError(err)
     return NextResponse.json({ ok: false, error: info.message, status: info.status, detail: info.detail }, { status: 502 })
