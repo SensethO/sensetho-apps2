@@ -192,8 +192,9 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
       const isDomesticOrTrade = dds.activityType === 'DOMESTIC' || dds.activityType === 'TRADE'
       const goodsMeasure: Record<string, number> = {}
       if (dds.netWeight) goodsMeasure.netWeight = Number(dds.netWeight)
-      if (isDomesticOrTrade && dds.percentageEstimation !== '') {
-        goodsMeasure.percentageEstimationOrDeviation = Number(dds.percentageEstimation)
+      // Obligatoire en Domestique/Négoce : si laissé vide, on envoie 0 (aucune déviation).
+      if (isDomesticOrTrade) {
+        goodsMeasure.percentageEstimationOrDeviation = dds.percentageEstimation !== '' ? Number(dds.percentageEstimation) : 0
       }
       const producers = (dds.producerCountry || dds.producerName || geojsonObj) ? [{
         country: dds.producerCountry || undefined,
@@ -389,12 +390,29 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
             <input className={inputCls} type="number" value={dds.percentageEstimation} onChange={e => setF('percentageEstimation', e.target.value)} placeholder="0" min={0} max={25} />
           </div>
           <div>
-            <label className={labelCls}>Espèce — nom scientifique (bois)</label>
-            <input className={inputCls} value={dds.speciesScientific} onChange={e => setF('speciesScientific', e.target.value)} placeholder="Fagus sylvatica" />
+            <label className={labelCls}>Espèce — nom scientifique</label>
+            <input className={inputCls} list="eudr-species-sci" value={dds.speciesScientific} onChange={e => setF('speciesScientific', e.target.value)} placeholder="Theobroma cacao" />
+            <datalist id="eudr-species-sci">
+              <option value="Theobroma cacao" label="Cacao" />
+              <option value="Coffea arabica" label="Café (arabica)" />
+              <option value="Coffea canephora" label="Café (robusta)" />
+              <option value="Elaeis guineensis" label="Palmier à huile" />
+              <option value="Hevea brasiliensis" label="Hévéa / caoutchouc" />
+              <option value="Glycine max" label="Soja" />
+              <option value="Bos taurus" label="Bovin" />
+            </datalist>
           </div>
           <div>
-            <label className={labelCls}>Espèce — nom commun (bois)</label>
-            <input className={inputCls} value={dds.speciesCommon} onChange={e => setF('speciesCommon', e.target.value)} placeholder="Hêtre" />
+            <label className={labelCls}>Espèce — nom commun</label>
+            <input className={inputCls} list="eudr-species-common" value={dds.speciesCommon} onChange={e => setF('speciesCommon', e.target.value)} placeholder="Cacao" />
+            <datalist id="eudr-species-common">
+              <option value="Cacao" />
+              <option value="Café" />
+              <option value="Huile de palme" />
+              <option value="Caoutchouc naturel" />
+              <option value="Soja" />
+              <option value="Bovin" />
+            </datalist>
           </div>
           <div>
             <label className={labelCls}>Pays producteur (ISO)</label>

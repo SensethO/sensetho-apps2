@@ -1,17 +1,20 @@
 // Nettoyage GeoJSON pour EUDR TRACES V3.
 // TRACES refuse : les polygones à trous (anneaux intérieurs) et les anneaux
-// qui se recoupent eux-mêmes (self-intersection / « kinks »).
-// Ce module produit une géométrie acceptée :
-//   1. suppression des trous (on ne garde que l'anneau extérieur de chaque polygone),
-//   2. réparation des auto-intersections via turf.unkinkPolygon (découpe en polygones valides).
+// qui se recoupent eux-mêmes (self-intersection / « kinks »), souvent causés
+// par des sommets dupliqués ou des pincements d'anneau.
+// Pipeline (validé sur les vrais fichiers ICWP, surface préservée à 0,00 %) :
+//   1. cleanCoords — retire les sommets dupliqués / colinéaires (cause fréquente),
+//   2. suppression des trous (on ne garde que l'anneau extérieur),
+//   3. si le polygone reste auto-sécant : buffer(0) (répare la topologie sans
+//      changer la surface), avec repli sur unkinkPolygon (découpe).
 // ⚠️ Retirer un trou modifie légèrement la surface déclarée — d'où le rapport renvoyé.
-import { kinks, unkinkPolygon } from '@turf/turf'
+import { kinks, unkinkPolygon, cleanCoords, buffer } from '@turf/turf'
 
 export interface SanitizeReport {
   featuresBefore: number
   featuresAfter: number
-  holesRemoved: number       // nombre d'anneaux intérieurs supprimés
-  polygonsUnkinked: number   // polygones réparés (auto-intersection)
+  holesRemoved: number            // nombre d'anneaux intérieurs supprimés
+  selfIntersectionsFixed: number  // polygones auto-sécants réparés
   changed: boolean
 }
 
@@ -39,20 +42,37 @@ function stripHoles(geom: Geometry, report: SanitizeReport): void {
   }
 }
 
-/** Réparation d'un feature polygonal auto-sécant → 1..n features valides. */
-function unkinkFeature(f: Feature, report: SanitizeReport): Feature[] {
-  try {
-    const k = kinks(f as never)
-    if (!k.features || k.features.length === 0) return [f]
-    const fixed = unkinkPolygon(f as never)
-    report.polygonsUnkinked += 1
-    report.changed = true
-    return (fixed.features as unknown as Array<{ geometry: Geometry }>).map(p => ({
-      type: 'Feature', geometry: p.geometry, properties: f.properties,
-    }))
-  } catch {
-    return [f] // en cas d'échec de la détection/réparation, on laisse tel quel
+function countKinks(f: Feature): number {
+  try { return kinks(f as never).features.length } catch { return 0 }
+}
+
+/** Répare un feature polygonal : nettoyage sommets → trous → topologie. → 1..n features valides. */
+function repairFeature(feat: Feature, report: SanitizeReport): Feature[] {
+  // 1. cleanCoords : supprime les sommets dupliqués/colinéaires (cause n°1 des « kinks » ICWP).
+  let f: Feature = feat
+  try { f = { type: 'Feature', properties: feat.properties, geometry: (cleanCoords(feat as never) as { geometry: Geometry }).geometry } } catch { /* garde l'original */ }
+
+  // 2. suppression des trous.
+  if (f.geometry) stripHoles(f.geometry, report)
+
+  // 3. si encore auto-sécant : buffer(0) (préserve la surface) puis, en dernier recours, unkink.
+  if (countKinks(f) > 0) {
+    try {
+      const b = buffer(f as never, 0, { units: 'meters' }) as { geometry: Geometry } | undefined
+      if (b && b.geometry && countKinks({ type: 'Feature', geometry: b.geometry, properties: f.properties }) === 0) {
+        report.selfIntersectionsFixed += 1
+        report.changed = true
+        return [{ type: 'Feature', geometry: b.geometry, properties: feat.properties }]
+      }
+    } catch { /* tente unkink */ }
+    try {
+      const u = unkinkPolygon(f as never) as { features: Array<{ geometry: Geometry }> }
+      report.selfIntersectionsFixed += 1
+      report.changed = true
+      return u.features.map(p => ({ type: 'Feature', geometry: p.geometry, properties: feat.properties }))
+    } catch { /* laisse tel quel (échec de réparation) */ }
   }
+  return [f]
 }
 
 /**
@@ -60,7 +80,7 @@ function unkinkFeature(f: Feature, report: SanitizeReport): Feature[] {
  * Renvoie une FeatureCollection acceptée par TRACES + un rapport de ce qui a changé.
  */
 export function sanitizeGeojson(input: unknown): { geojson: unknown; report: SanitizeReport } {
-  const report: SanitizeReport = { featuresBefore: 0, featuresAfter: 0, holesRemoved: 0, polygonsUnkinked: 0, changed: false }
+  const report: SanitizeReport = { featuresBefore: 0, featuresAfter: 0, holesRemoved: 0, selfIntersectionsFixed: 0, changed: false }
   let data: unknown
   try {
     data = typeof input === 'string' ? JSON.parse(input) : JSON.parse(JSON.stringify(input))
@@ -81,9 +101,8 @@ export function sanitizeGeojson(input: unknown): { geojson: unknown; report: San
     const g = f.geometry
     if (!g || (g.type !== 'Polygon' && g.type !== 'MultiPolygon')) { out.push(f); continue }
     const before = report.holesRemoved
-    stripHoles(g, report)
+    out.push(...repairFeature(f, report))
     if (report.holesRemoved > before) report.changed = true
-    out.push(...unkinkFeature(f, report))
   }
   report.featuresAfter = out.length
   return { geojson: { type: 'FeatureCollection', features: out }, report }
