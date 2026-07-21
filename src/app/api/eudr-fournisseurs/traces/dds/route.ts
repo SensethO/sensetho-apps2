@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClient'
-import { getDdsV3 } from '@/lib/eudr/tracesV3'
+import { getDdsV3, withdrawDdsV3 } from '@/lib/eudr/tracesV3'
 import { guard } from '../_auth'
 
 export const dynamic = 'force-dynamic'
@@ -24,11 +24,29 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { org_id?: string; id?: string }
+    const body = await req.json() as { org_id?: string; id?: string; action?: 'refresh' | 'withdraw' }
     const auth = await guard(body.org_id ?? null, { requireEdit: true })
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const admin = createAdminClient()
+
+    // Retrait d'une DDS (withdrawDds) — fenêtre 72 h, statut AVAILABLE, hors verrou douane.
+    if (body.action === 'withdraw') {
+      if (!body.id) return NextResponse.json({ error: 'id requis' }, { status: 400 })
+      const { data: row } = await admin.from('eudr_dds').select('dds_uuid').eq('id', body.id).eq('org_id', body.org_id!).maybeSingle()
+      if (!row) return NextResponse.json({ error: 'DDS introuvable' }, { status: 404 })
+      const creds = await getTracesCredentials(body.org_id!)
+      if (!creds) return NextResponse.json({ error: 'Identifiants TRACES non configurés.' }, { status: 400 })
+      try {
+        await withdrawDdsV3(creds, row.dds_uuid as string)
+      } catch (err) {
+        const info = describeTracesError(err)
+        return NextResponse.json({ error: info.message, detail: info.detail }, { status: 502 })
+      }
+      await admin.from('eudr_dds').update({ status: 'WITHDRAWN', last_checked_at: new Date().toISOString() }).eq('id', body.id)
+      const { data: fresh } = await admin.from('eudr_dds').select('*').eq('org_id', body.org_id!).order('submitted_at', { ascending: false })
+      return NextResponse.json({ data: fresh ?? [] })
+    }
     const q = admin.from('eudr_dds').select('*').eq('org_id', body.org_id!)
     if (body.id) q.eq('id', body.id)
     const { data: rows, error } = await q

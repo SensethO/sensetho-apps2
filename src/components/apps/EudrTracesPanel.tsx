@@ -218,6 +218,20 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
   }
   const tracesBase = info?.environment === 'production'
     ? 'https://eudr.webcloud.ec.europa.eu' : 'https://acceptance.eudr.webcloud.ec.europa.eu'
+  async function withdrawDds(id: string) {
+    if (!window.confirm('Retirer cette DDS de TRACES ?\n\nPossible uniquement dans les 72 h suivant le dépôt, au statut AVAILABLE et hors verrou douane. Vous pourrez ensuite en redéposer une corrigée (nouvel identifiant).')) return
+    setDdsBusy(true)
+    try {
+      const r = await fetch(`/api/eudr-fournisseurs/traces/dds`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, id, action: 'withdraw' }),
+      })
+      const j = await r.json()
+      if (r.ok) setDdsList(j.data ?? [])
+      else window.alert(`Échec du retrait : ${j.error ?? 'erreur'}`)
+    } catch (e) { window.alert(String((e as Error).message ?? e)) }
+    finally { setDdsBusy(false) }
+  }
 
   async function submitDds() {
     setSubmitting(true); setSubmitRes(null)
@@ -384,8 +398,16 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
                         <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{d.reference_number ? <><div className="font-mono">{d.reference_number}</div><div className="font-mono text-gray-400">{d.verification_number}</div></> : '—'}</td>
                         <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{fmt(d.official_date)}{d.official_updated_by ? <div className="text-gray-400">{d.official_updated_by}</div> : null}</td>
                         <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{d.submitted_by || '—'}<div className="text-gray-400">{fmt(d.submitted_at)}</div></td>
-                        <td className="py-2 text-right whitespace-nowrap">
-                          <a className="text-xs text-green-600 dark:text-green-400 hover:underline" href={`${tracesBase}/tracesnt/certificate/eudr/edit/${d.dds_uuid}`} target="_blank" rel="noopener noreferrer">DDS officielle ↗</a>
+                        <td className="py-2 text-right whitespace-nowrap space-y-1">
+                          <a className="block text-xs text-green-600 dark:text-green-400 hover:underline" href={`${tracesBase}/tracesnt/certificate/eudr/edit/${d.dds_uuid}`} target="_blank" rel="noopener noreferrer">Ouvrir dans TRACES ↗</a>
+                          {(() => {
+                            const within72 = (Date.now() - new Date(d.submitted_at).getTime()) < 72 * 3600 * 1000
+                            const gone = ['WITHDRAWN', 'REJECTED', 'CANCELLED'].includes((d.status ?? '').toUpperCase())
+                            if (gone) return null
+                            return within72
+                              ? <button className="block text-xs text-red-600 dark:text-red-400 hover:underline disabled:opacity-40" onClick={() => withdrawDds(d.id)} disabled={ddsBusy}>Retirer (annuler)</button>
+                              : <span className="block text-xs text-gray-400" title="Au-delà de 72 h : modification/retrait via TRACES ou nouvelle DDS">&gt; 72 h — via TRACES</span>
+                          })()}
                         </td>
                       </tr>
                     )

@@ -19,6 +19,7 @@ const NS_DDS = 'http://ec.europa.eu/tracesnt/certificate/eudr/due-diligence-stat
 const ACTION_SUBMIT = `${NS_DDS}/submitDds`
 const ACTION_GET_BY_ID = `${NS_DDS}/getDdsByIdentifiers`
 const ACTION_GET_DDS = `${NS_DDS}/getDds`
+const ACTION_WITHDRAW = `${NS_DDS}/withdrawDds`
 
 function endpoint(creds: TracesCredentials): string {
   return (creds.environment === 'production' ? HOST.production : HOST.acceptance) + DDS_PATH
@@ -215,6 +216,13 @@ export async function pingV3(creds: TracesCredentials): Promise<{ ok: boolean; k
     }
     return { ok: false, kind: 'error', message: msg || `Erreur ${status ?? ''}`.trim(), detail: raw ? raw.slice(0, 500) : undefined }
   }
+}
+
+/** withdrawDds V3 → retire une DDS (fenêtre 72 h, statut AVAILABLE, hors verrou douane). */
+export async function withdrawDdsV3(creds: TracesCredentials, uuid: string): Promise<{ raw: string }> {
+  const body = `<dds:WithdrawDdsRequest><dds:uuid>${xml(uuid)}</dds:uuid></dds:WithdrawDdsRequest>`
+  const raw = await post(creds, ACTION_WITHDRAW, body)
+  return { raw }
 }
 
 /** getDdsByIdentifiers V3 → vérifie une DDS (référence + vérification). */
