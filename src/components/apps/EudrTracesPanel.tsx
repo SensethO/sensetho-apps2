@@ -470,11 +470,22 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
           </div>
           <div>
             <label className={labelCls}>Code SH</label>
-            <input className={inputCls} value={dds.hsHeading} onChange={e => setF('hsHeading', e.target.value)} placeholder="4401" />
+            <input className={inputCls} list="eudr-hs" value={dds.hsHeading} onChange={e => setF('hsHeading', e.target.value)} placeholder="1801 (cacao)" />
+            <datalist id="eudr-hs">
+              <option value="1801" label="Cacao en fèves" />
+              <option value="1804" label="Beurre / graisse / huile de cacao" />
+              <option value="1806" label="Chocolat / préparations au cacao" />
+              <option value="0901" label="Café" />
+              <option value="1511" label="Huile de palme" />
+              <option value="4001" label="Caoutchouc naturel" />
+              <option value="1201" label="Soja (fèves)" />
+              <option value="0102" label="Bovins vivants" />
+              <option value="4401" label="Bois de chauffage" />
+            </datalist>
           </div>
           <div>
             <label className={labelCls}>Description des marchandises</label>
-            <input className={inputCls} value={dds.descriptionOfGoods} onChange={e => setF('descriptionOfGoods', e.target.value)} placeholder="Bois de chauffage" />
+            <input className={inputCls} value={dds.descriptionOfGoods} onChange={e => setF('descriptionOfGoods', e.target.value)} placeholder="Fèves de cacao" />
           </div>
           <div>
             <label className={labelCls}>Poids net (kg)</label>
@@ -511,7 +522,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
           </div>
           <div>
             <label className={labelCls}>Pays producteur (ISO)</label>
-            <input className={inputCls} value={dds.producerCountry} onChange={e => setF('producerCountry', e.target.value)} placeholder="BR" maxLength={2} />
+            <input className={inputCls} value={dds.producerCountry} onChange={e => setF('producerCountry', e.target.value)} placeholder="CI" maxLength={2} />
           </div>
           <div>
             <label className={labelCls}>Nom producteur</label>
