@@ -21,6 +21,7 @@ const ACTION_GET_BY_ID = `${NS_DDS}/getDdsByIdentifiers`
 const ACTION_GET_DDS = `${NS_DDS}/getDds`
 const ACTION_WITHDRAW = `${NS_DDS}/withdrawDds`
 const ACTION_AMEND = `${NS_DDS}/amendDds`
+const ACTION_GET_BY_INTERNAL = `${NS_DDS}/getDdsByInternalReference`
 
 function endpoint(creds: TracesCredentials): string {
   return (creds.environment === 'production' ? HOST.production : HOST.acceptance) + DDS_PATH
@@ -226,6 +227,34 @@ export async function amendDdsV3(creds: TracesCredentials, uuid: string, stateme
   const body = `<dds:AmendDdsRequest><dds:uuid>${xml(uuid)}</dds:uuid>${statementXml(statement)}</dds:AmendDdsRequest>`
   const raw = await post(creds, ACTION_AMEND, body)
   return { uuid, raw }
+}
+
+export interface DdsOverview { uuid: string; internalReferenceNumber: string | null; referenceNumber: string | null; verificationNumber: string | null; status: string | null; date: string | null; updatedBy: string | null }
+
+/**
+ * getDdsByInternalReference V3 → renvoie toutes les DDS portant cette référence interne
+ * (0..n). Utilisé pour découvrir les DDS déposées à partir des numéros de contrat.
+ */
+export async function getDdsByInternalReferenceV3(creds: TracesCredentials, internalReference: string): Promise<DdsOverview[]> {
+  const body = `<dds:GetDdsByInternalReferenceRequest><dds:internalReference>${xml(internalReference)}</dds:internalReference></dds:GetDdsByInternalReferenceRequest>`
+  const raw = await post(creds, ACTION_GET_BY_INTERNAL, body)
+  // Une fenêtre de texte par uuid (robuste quelle que soit la structure du conteneur).
+  const re = /<[^>]*:?uuid>([^<]+)<\/[^>]*:?uuid>/gi
+  const hits: { uuid: string; start: number }[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(raw))) hits.push({ uuid: m[1], start: m.index })
+  return hits.map((h, i) => {
+    const seg = raw.slice(h.start, hits[i + 1]?.start ?? raw.length)
+    return {
+      uuid: h.uuid,
+      internalReferenceNumber: pick(seg, 'internalReferenceNumber'),
+      referenceNumber: pick(seg, 'referenceNumber'),
+      verificationNumber: pick(seg, 'verificationNumber'),
+      status: pick(seg, 'status'),
+      date: pick(seg, 'date'),
+      updatedBy: pick(seg, 'updatedBy'),
+    }
+  })
 }
 
 /** withdrawDds V3 → retire une DDS (fenêtre 72 h, statut AVAILABLE, hors verrou douane). */

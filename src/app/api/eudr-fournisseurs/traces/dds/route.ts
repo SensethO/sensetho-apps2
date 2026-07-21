@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClient'
-import { getDdsV3, withdrawDdsV3 } from '@/lib/eudr/tracesV3'
+import { getDdsV3, withdrawDdsV3, getDdsByInternalReferenceV3 } from '@/lib/eudr/tracesV3'
 import { guard } from '../_auth'
 
 export const dynamic = 'force-dynamic'
@@ -24,11 +24,43 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { org_id?: string; id?: string; uuid?: string; action?: 'refresh' | 'withdraw' | 'import' }
+    const body = await req.json() as { org_id?: string; id?: string; uuid?: string; action?: 'refresh' | 'withdraw' | 'import' | 'discover' }
     const auth = await guard(body.org_id ?? null, { requireEdit: true })
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const admin = createAdminClient()
+
+    // Découverte : balaie les n° de contrat comme références internes et importe les DDS trouvées.
+    if (body.action === 'discover') {
+      const creds = await getTracesCredentials(body.org_id!)
+      if (!creds) return NextResponse.json({ error: 'Identifiants TRACES non configurés.' }, { status: 400 })
+      const { data: contracts } = await admin.from('eudr_contracts').select('contract_number').eq('org_id', body.org_id!)
+      const refs = new Set<string>()
+      for (const c of contracts ?? []) {
+        const cn = (c.contract_number as string | null)?.trim()
+        if (!cn) continue
+        refs.add(cn)
+        cn.split(/\s+/).forEach(p => { if (/^\d{4}-\d{3}/.test(p)) refs.add(p) }) // fragments type 2025-029A
+      }
+      let discovered = 0
+      for (const ref of refs) {
+        try {
+          const overviews = await getDdsByInternalReferenceV3(creds, ref)
+          for (const o of overviews) {
+            await admin.from('eudr_dds').upsert({
+              org_id: body.org_id!, dds_uuid: o.uuid, environment: creds.environment,
+              internal_reference_number: o.internalReferenceNumber, reference_number: o.referenceNumber,
+              verification_number: o.verificationNumber, status: o.status,
+              official_date: o.date, official_updated_by: o.updatedBy,
+              submitted_by: '(importée)', last_checked_at: new Date().toISOString(),
+            }, { onConflict: 'org_id,dds_uuid' })
+            discovered++
+          }
+        } catch { /* une référence en échec ne bloque pas le balayage */ }
+      }
+      const { data: fresh } = await admin.from('eudr_dds').select('*').eq('org_id', body.org_id!).order('submitted_at', { ascending: false })
+      return NextResponse.json({ data: fresh ?? [], discovered })
+    }
 
     // Import d'une DDS existante dans le suivi (par UUID) — getDds fonctionne pour tout statut.
     if (body.action === 'import') {

@@ -233,6 +233,19 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
     } catch (e) { window.alert(String((e as Error).message ?? e)) }
     finally { setDdsBusy(false) }
   }
+  async function discoverDds() {
+    setDdsBusy(true)
+    try {
+      const r = await fetch(`/api/eudr-fournisseurs/traces/dds`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, action: 'discover' }),
+      })
+      const j = await r.json()
+      if (r.ok) { setDdsList(j.data ?? []); window.alert(`${j.discovered ?? 0} DDS trouvée(s) via vos numéros de contrat et ajoutée(s) au suivi.`) }
+      else window.alert(`Recherche impossible : ${j.error ?? 'erreur'}`)
+    } catch (e) { window.alert(String((e as Error).message ?? e)) }
+    finally { setDdsBusy(false) }
+  }
   const tracesBase = info?.environment === 'production'
     ? 'https://eudr.webcloud.ec.europa.eu' : 'https://acceptance.eudr.webcloud.ec.europa.eu'
   async function withdrawDds(id: string) {
@@ -385,9 +398,14 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
         <div className={cardCls}>
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-semibold text-gray-900 dark:text-white">📋 Suivi de mes déclarations DDS</h3>
-            <button className={btnGhost} onClick={() => refreshDds()} disabled={ddsBusy || ddsList.length === 0}>
-              {ddsBusy ? 'Actualisation…' : '🔄 Actualiser les statuts'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button className={btnGhost} onClick={discoverDds} disabled={ddsBusy}>
+                {ddsBusy ? '…' : '🔎 Rechercher mes DDS'}
+              </button>
+              <button className={btnGhost} onClick={() => refreshDds()} disabled={ddsBusy || ddsList.length === 0}>
+                {ddsBusy ? 'Actualisation…' : '🔄 Actualiser les statuts'}
+              </button>
+            </div>
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400">Vision officielle TRACES : statut, date et auteur de chaque dépôt. « Actualiser » interroge le registre EUDR.</p>
           <div className="flex items-center gap-2">
