@@ -24,11 +24,35 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { org_id?: string; id?: string; action?: 'refresh' | 'withdraw' }
+    const body = await req.json() as { org_id?: string; id?: string; uuid?: string; action?: 'refresh' | 'withdraw' | 'import' }
     const auth = await guard(body.org_id ?? null, { requireEdit: true })
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const admin = createAdminClient()
+
+    // Import d'une DDS existante dans le suivi (par UUID) — getDds fonctionne pour tout statut.
+    if (body.action === 'import') {
+      const uuid = (body.uuid ?? '').trim()
+      if (!uuid) return NextResponse.json({ error: 'UUID requis' }, { status: 400 })
+      const creds = await getTracesCredentials(body.org_id!)
+      if (!creds) return NextResponse.json({ error: 'Identifiants TRACES non configurés.' }, { status: 400 })
+      let info
+      try { info = await getDdsV3(creds, uuid) } catch (err) {
+        const e = describeTracesError(err); return NextResponse.json({ error: e.message }, { status: 502 })
+      }
+      if (!info.status && !info.internalReferenceNumber && !info.referenceNumber) {
+        return NextResponse.json({ error: 'Aucune DDS trouvée pour cet UUID (sur cet environnement).' }, { status: 404 })
+      }
+      await admin.from('eudr_dds').upsert({
+        org_id: body.org_id!, dds_uuid: uuid, environment: creds.environment,
+        internal_reference_number: info.internalReferenceNumber, reference_number: info.referenceNumber,
+        verification_number: info.verificationNumber, status: info.status,
+        official_date: info.date, official_updated_by: info.updatedBy,
+        submitted_by: '(importée)', last_checked_at: new Date().toISOString(),
+      }, { onConflict: 'org_id,dds_uuid' })
+      const { data: fresh } = await admin.from('eudr_dds').select('*').eq('org_id', body.org_id!).order('submitted_at', { ascending: false })
+      return NextResponse.json({ data: fresh ?? [] })
+    }
 
     // Retrait d'une DDS (withdrawDds) — fenêtre 72 h, statut AVAILABLE, hors verrou douane.
     if (body.action === 'withdraw') {

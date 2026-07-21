@@ -218,6 +218,21 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
     } catch { /* ignore */ }
     finally { setDdsBusy(false) }
   }
+  const [importUuid, setImportUuid] = useState('')
+  async function importDds() {
+    const uuid = importUuid.trim(); if (!uuid) return
+    setDdsBusy(true)
+    try {
+      const r = await fetch(`/api/eudr-fournisseurs/traces/dds`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, uuid, action: 'import' }),
+      })
+      const j = await r.json()
+      if (r.ok) { setDdsList(j.data ?? []); setImportUuid('') }
+      else window.alert(`Import impossible : ${j.error ?? 'erreur'}`)
+    } catch (e) { window.alert(String((e as Error).message ?? e)) }
+    finally { setDdsBusy(false) }
+  }
   const tracesBase = info?.environment === 'production'
     ? 'https://eudr.webcloud.ec.europa.eu' : 'https://acceptance.eudr.webcloud.ec.europa.eu'
   async function withdrawDds(id: string) {
@@ -375,6 +390,11 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
             </button>
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400">Vision officielle TRACES : statut, date et auteur de chaque dépôt. « Actualiser » interroge le registre EUDR.</p>
+          <div className="flex items-center gap-2">
+            <input className={`${inputCls} max-w-md`} value={importUuid} onChange={e => setImportUuid(e.target.value)} placeholder="UUID d'une DDS existante (depuis TRACES) à importer dans le suivi" />
+            <button className={btnGhost} onClick={importDds} disabled={ddsBusy || !importUuid.trim()}>+ Importer</button>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">TRACES ne permet pas de lister automatiquement toutes les DDS ; copiez l&apos;UUID depuis TRACES (Documents) pour ajouter au suivi les DDS non déposées via l&apos;app. Fonctionne pour tout statut.</p>
           {ddsList.length === 0 ? (
             <p className="text-sm text-gray-400 dark:text-gray-500">Aucune DDS déposée depuis l&apos;application pour le moment.</p>
           ) : (
