@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp } from '@/lib/sharepointMulti'
 import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClient'
@@ -75,6 +76,26 @@ export async function POST(req: NextRequest) {
 
     // V3 : operatorType → operatorRole. La géométrie GeoJSON est encodée en base64 dans le client V3.
     const result = await submitDdsV3(creds, { operatorRole: body.operatorType, statement })
+
+    // Enregistrement du dépôt pour le suivi (best-effort : n'interrompt jamais la réponse).
+    if (result.uuid) {
+      try {
+        const supabase = createUserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        const c0 = statement.commodities?.[0]
+        await createAdminClient().from('eudr_dds').insert({
+          org_id: body.org_id!,
+          dds_uuid: result.uuid,
+          environment: creds.environment,
+          internal_reference_number: statement.internalReferenceNumber ?? null,
+          activity_type: statement.activityType ?? null,
+          commodity: c0?.descriptors?.descriptionOfGoods ?? c0?.hsHeading ?? null,
+          net_weight: c0?.descriptors?.goodsMeasure?.netWeight ?? null,
+          submitted_by: user?.email ?? null,
+        })
+      } catch { /* table absente ou doublon : sans effet sur le dépôt */ }
+    }
+
     return NextResponse.json({ ok: true, environment: creds.environment, ddsIdentifier: result.uuid, geoSanitized: geoReport })
   } catch (err) {
     const info = describeTracesError(err)

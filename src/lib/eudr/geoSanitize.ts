@@ -15,9 +15,14 @@
 // (« Ring Self-intersection ») que ni JTS.isValid ni turf ne détectent en amont.
 // En arrondissant nous-mêmes avant l'envoi, la micro-boucle disparaît.
 // ⚠️ Retirer un trou / arrondir modifie légèrement la surface déclarée — d'où le rapport.
-import { cleanCoords } from '@turf/turf'
+import { cleanCoords, simplify } from '@turf/turf'
 
 const DECIMALS = 6 // ~0,11 m : précision largement suffisante pour des parcelles, et acceptée par TRACES.
+// Simplification Douglas-Peucker appliquée aux anneaux trop denses (sur-échantillonnage GPS).
+// ~0,3 m : imperceptible sur des parcelles de plusieurs ha (écart de surface < 0,1 %),
+// mais divise par ~50 le nombre de points des tracés les plus lourds.
+const SIMPLIFY_TOLERANCE = 0.000003
+const SIMPLIFY_MIN_POINTS = 80 // on ne simplifie que les anneaux au-delà de ce nombre de sommets.
 
 export interface SanitizeReport {
   featuresBefore: number
@@ -25,12 +30,25 @@ export interface SanitizeReport {
   holesRemoved: number         // anneaux intérieurs supprimés
   multiPolygonsSplit: number   // MultiPolygon éclatés en Polygons
   coordinatesRounded: boolean  // arrondi à DECIMALS décimales appliqué
+  pointsBefore: number         // total de sommets avant simplification
+  pointsAfter: number          // total de sommets après simplification/arrondi
   changed: boolean
 }
 
 type Ring = number[][]
 type Geometry = { type: string; coordinates?: unknown }
 type Feature = { type: 'Feature'; geometry: Geometry | null; properties?: unknown }
+
+/** Simplifie (Douglas-Peucker) un anneau trop dense, en préservant sa fermeture. */
+function simplifyRing(ring: Ring): Ring {
+  if (ring.length <= SIMPLIFY_MIN_POINTS) return ring
+  try {
+    const s = simplify({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } } as never,
+      { tolerance: SIMPLIFY_TOLERANCE, highQuality: true, mutate: false }) as { geometry: { coordinates: Ring[] } }
+    const out = s.geometry?.coordinates?.[0]
+    return Array.isArray(out) && out.length >= 4 ? out : ring
+  } catch { return ring }
+}
 
 /** Arrondit un anneau à DECIMALS décimales, retire les doublons consécutifs, referme l'anneau. */
 function roundRing(ring: Ring): Ring {
@@ -49,7 +67,10 @@ function roundRing(ring: Ring): Ring {
 function polygonFeature(rings: Ring[], properties: unknown, report: SanitizeReport): Feature {
   if (rings.length > 1) report.holesRemoved += rings.length - 1
   report.coordinatesRounded = true
-  return { type: 'Feature', properties, geometry: { type: 'Polygon', coordinates: [roundRing(rings[0])] } }
+  report.pointsBefore += rings[0].length
+  const ring = roundRing(simplifyRing(rings[0]))
+  report.pointsAfter += ring.length
+  return { type: 'Feature', properties, geometry: { type: 'Polygon', coordinates: [ring] } }
 }
 
 /** Nettoie + éclate un feature polygonal → 1..n features Polygon simples, sans trou. */
@@ -79,7 +100,7 @@ function sanitizeFeature(feat: Feature, report: SanitizeReport): Feature[] {
  * Renvoie une FeatureCollection acceptée par TRACES + un rapport de ce qui a changé.
  */
 export function sanitizeGeojson(input: unknown): { geojson: unknown; report: SanitizeReport } {
-  const report: SanitizeReport = { featuresBefore: 0, featuresAfter: 0, holesRemoved: 0, multiPolygonsSplit: 0, coordinatesRounded: false, changed: false }
+  const report: SanitizeReport = { featuresBefore: 0, featuresAfter: 0, holesRemoved: 0, multiPolygonsSplit: 0, coordinatesRounded: false, pointsBefore: 0, pointsAfter: 0, changed: false }
   let data: unknown
   try {
     data = typeof input === 'string' ? JSON.parse(input) : JSON.parse(JSON.stringify(input))

@@ -177,7 +177,7 @@ function pick(raw: string, tag: string): string | null {
 export async function getDdsV3(
   creds: TracesCredentials,
   uuid: string,
-): Promise<{ referenceNumber: string | null; verificationNumber: string | null; status: string | null; internalReferenceNumber: string | null; raw: string }> {
+): Promise<{ referenceNumber: string | null; verificationNumber: string | null; status: string | null; internalReferenceNumber: string | null; date: string | null; updatedBy: string | null; raw: string }> {
   const body = `<dds:GetDdsRequest><dds:uuidList>${xml(uuid)}</dds:uuidList></dds:GetDdsRequest>`
   const raw = await post(creds, ACTION_GET_DDS, body)
   return {
@@ -185,6 +185,8 @@ export async function getDdsV3(
     verificationNumber: pick(raw, 'verificationNumber'),
     status: pick(raw, 'status'),
     internalReferenceNumber: pick(raw, 'internalReferenceNumber'),
+    date: pick(raw, 'date'),
+    updatedBy: pick(raw, 'updatedBy'),
     raw,
   }
 }

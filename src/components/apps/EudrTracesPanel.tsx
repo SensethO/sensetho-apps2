@@ -15,6 +15,14 @@ const btnGhost = 'px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-g
 
 interface CredInfo { username: string; environment: 'acceptance' | 'production'; clientId: string; updatedAt: string | null }
 
+interface DdsRow {
+  id: string; dds_uuid: string; environment: string
+  internal_reference_number: string | null; reference_number: string | null; verification_number: string | null
+  status: string | null; activity_type: string | null; commodity: string | null
+  official_date: string | null; official_updated_by: string | null
+  submitted_by: string | null; submitted_at: string; last_checked_at: string | null
+}
+
 interface SupplierLite { id: string; company?: string; country_origin?: string }
 interface ContractLite { id: string; contract_number?: string; product?: string; delivery_country?: string; supplier?: string }
 
@@ -180,6 +188,30 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
     finally { setStatusChecking(false) }
   }
 
+  // ── Suivi des DDS déposées (vision officielle TRACES) ─────────────────────
+  const [ddsList, setDdsList] = useState<DdsRow[]>([])
+  const [ddsBusy, setDdsBusy] = useState(false)
+  const loadDds = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/eudr-fournisseurs/traces/dds?org_id=${orgId}`)
+      const j = await r.json(); if (r.ok) setDdsList(j.data ?? [])
+    } catch { /* ignore */ }
+  }, [orgId])
+  useEffect(() => { if (configured) loadDds() }, [configured, loadDds])
+  async function refreshDds(id?: string) {
+    setDdsBusy(true)
+    try {
+      const r = await fetch(`/api/eudr-fournisseurs/traces/dds`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, id }),
+      })
+      const j = await r.json(); if (r.ok) setDdsList(j.data ?? [])
+    } catch { /* ignore */ }
+    finally { setDdsBusy(false) }
+  }
+  const tracesBase = info?.environment === 'production'
+    ? 'https://eudr.webcloud.ec.europa.eu' : 'https://acceptance.eudr.webcloud.ec.europa.eu'
+
   async function submitDds() {
     setSubmitting(true); setSubmitRes(null)
     try {
@@ -221,7 +253,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
         body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement, geojsonAttachmentId: geojsonAttachmentId || undefined }),
       })
       const j = await res.json().catch(() => ({}))
-      if (res.ok && j.ok) { setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}` }); setLastUuid(j.ddsIdentifier ?? null); setStatusRes(null) }
+      if (res.ok && j.ok) { setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}` }); setLastUuid(j.ddsIdentifier ?? null); setStatusRes(null); loadDds() }
       else setSubmitRes({ ok: false, text: `${j.error ?? 'Échec du dépôt.'}${j.status ? ` (HTTP ${j.status})` : ''}`, detail: j.detail })
     } catch (e) { setSubmitRes({ ok: false, text: String((e as Error).message ?? e) }) }
     finally { setSubmitting(false) }
@@ -301,6 +333,62 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
           <pre className="mt-1 max-h-48 overflow-auto text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900/40 rounded p-2">{echoMsg.detail}</pre>
         )}
       </div>
+
+      {/* Suivi des DDS déposées */}
+      {ready && (
+        <div className={cardCls}>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold text-gray-900 dark:text-white">📋 Suivi de mes déclarations DDS</h3>
+            <button className={btnGhost} onClick={() => refreshDds()} disabled={ddsBusy || ddsList.length === 0}>
+              {ddsBusy ? 'Actualisation…' : '🔄 Actualiser les statuts'}
+            </button>
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Vision officielle TRACES : statut, date et auteur de chaque dépôt. « Actualiser » interroge le registre EUDR.</p>
+          {ddsList.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-gray-500">Aucune DDS déposée depuis l&apos;application pour le moment.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                    <th className="py-2 pr-3">Réf. interne / produit</th>
+                    <th className="py-2 pr-3">Statut officiel</th>
+                    <th className="py-2 pr-3">N° référence / vérification</th>
+                    <th className="py-2 pr-3">Date officielle · auteur</th>
+                    <th className="py-2 pr-3">Déposée par</th>
+                    <th className="py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ddsList.map(d => {
+                    const st = (d.status ?? '').toUpperCase()
+                    const cls = st === 'AVAILABLE' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                      : st === 'REJECTED' || st === 'CANCELLED' || st === 'WITHDRAWN' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                      : st ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                      : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+                    const fmt = (s: string | null) => { if (!s) return '—'; const dt = new Date(s); return isNaN(+dt) ? s : dt.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) }
+                    return (
+                      <tr key={d.id} className="border-b border-gray-100 dark:border-gray-800 align-top">
+                        <td className="py-2 pr-3">
+                          <div className="font-medium text-gray-800 dark:text-gray-200">{d.internal_reference_number || '—'}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">{[d.commodity, d.activity_type].filter(Boolean).join(' · ') || '—'}{d.environment === 'production' ? '' : ' · acceptance'}</div>
+                        </td>
+                        <td className="py-2 pr-3"><span className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>{d.status ?? 'non actualisé'}</span></td>
+                        <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{d.reference_number ? <><div className="font-mono">{d.reference_number}</div><div className="font-mono text-gray-400">{d.verification_number}</div></> : '—'}</td>
+                        <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{fmt(d.official_date)}{d.official_updated_by ? <div className="text-gray-400">{d.official_updated_by}</div> : null}</td>
+                        <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{d.submitted_by || '—'}<div className="text-gray-400">{fmt(d.submitted_at)}</div></td>
+                        <td className="py-2 text-right whitespace-nowrap">
+                          <a className="text-xs text-green-600 dark:text-green-400 hover:underline" href={`${tracesBase}/tracesnt/certificate/eudr/edit/${d.dds_uuid}`} target="_blank" rel="noopener noreferrer">DDS officielle ↗</a>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Vérification DDS */}
       <div className={cardCls}>
