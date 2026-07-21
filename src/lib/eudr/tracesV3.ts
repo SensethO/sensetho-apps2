@@ -168,7 +168,9 @@ export async function submitDdsV3(
 }
 
 function pick(raw: string, tag: string): string | null {
-  const m = raw.match(new RegExp(`<[^>]*:?${tag}>([^<]+)</[^>]*:?${tag}>`, 'i'))
+  // (?:\w+:)? = préfixe de namespace optionnel, puis le nom EXACT — sinon `referenceNumber`
+  // capturait aussi `internalReferenceNumber` (le local-name doit correspondre pile).
+  const m = raw.match(new RegExp(`<(?:\\w+:)?${tag}>([^<]+)</(?:\\w+:)?${tag}>`, 'i'))
   return m ? m[1] : null
 }
 
