@@ -27,6 +27,7 @@ interface DdsRow {
   status: string | null; activity_type: string | null; commodity: string | null
   official_date: string | null; official_updated_by: string | null
   submitted_by: string | null; submitted_at: string; last_checked_at: string | null
+  form_json: Record<string, string> | null; geojson_attachment_id: string | null
 }
 
 interface SupplierLite { id: string; company?: string; country_origin?: string }
@@ -134,6 +135,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
     producerCountry: '', producerName: '', geojson: '',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [amend, setAmend] = useState<{ id: string; uuid: string; ref: string } | null>(null)
   const [simplifyGeometry, setSimplifyGeometry] = useState(true)
   const [submitRes, setSubmitRes] = useState<{ ok: boolean; text: string; detail?: string; geo?: GeoReport | null } | null>(null)
   function setF<K extends keyof typeof dds>(k: K, v: string) { setDds(d => ({ ...d, [k]: v })) }
@@ -232,6 +234,14 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
     } catch (e) { window.alert(String((e as Error).message ?? e)) }
     finally { setDdsBusy(false) }
   }
+  function startAmend(row: DdsRow) {
+    if (!row.form_json) { window.alert('Modification depuis l’app impossible pour cette DDS (déposée avant le suivi complet). Utilisez « Ouvrir dans TRACES ↗ ».'); return }
+    setDds(d => ({ ...d, ...row.form_json }))
+    setGeojsonAttachmentId(row.geojson_attachment_id ?? '')
+    setAmend({ id: row.id, uuid: row.dds_uuid, ref: row.reference_number ?? row.internal_reference_number ?? row.dds_uuid.slice(0, 8) })
+    setSubmitRes(null)
+    if (typeof document !== 'undefined') document.getElementById('eudr-depot-dds')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   async function submitDds() {
     setSubmitting(true); setSubmitRes(null)
@@ -271,10 +281,10 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
       }
       const res = await fetch(`/api/eudr-fournisseurs/traces/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement, geojsonAttachmentId: geojsonAttachmentId || undefined, simplifyGeometry }),
+        body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement, geojsonAttachmentId: geojsonAttachmentId || undefined, simplifyGeometry, formSnapshot: dds, ...(amend ? { amendUuid: amend.uuid, ddsId: amend.id } : {}) }),
       })
       const j = await res.json().catch(() => ({}))
-      if (res.ok && j.ok) { setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}`, geo: j.geoSanitized ?? null }); setLastUuid(j.ddsIdentifier ?? null); setStatusRes(null); loadDds() }
+      if (res.ok && j.ok) { setSubmitRes({ ok: true, text: j.amended ? `DDS modifiée (${j.environment}) — n° de référence conservé.` : `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}`, geo: j.geoSanitized ?? null }); setLastUuid(j.amended ? null : (j.ddsIdentifier ?? null)); setStatusRes(null); setAmend(null); loadDds() }
       else setSubmitRes({ ok: false, text: `${j.error ?? 'Échec du dépôt.'}${j.status ? ` (HTTP ${j.status})` : ''}`, detail: j.detail })
     } catch (e) { setSubmitRes({ ok: false, text: String((e as Error).message ?? e) }) }
     finally { setSubmitting(false) }
@@ -405,7 +415,10 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
                             const gone = ['WITHDRAWN', 'REJECTED', 'CANCELLED'].includes((d.status ?? '').toUpperCase())
                             if (gone) return null
                             return within72
-                              ? <button className="block text-xs text-red-600 dark:text-red-400 hover:underline disabled:opacity-40" onClick={() => withdrawDds(d.id)} disabled={ddsBusy}>Retirer (annuler)</button>
+                              ? <>
+                                  {d.form_json && <button className="block text-xs text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-40" onClick={() => startAmend(d)} disabled={ddsBusy}>Modifier</button>}
+                                  <button className="block text-xs text-red-600 dark:text-red-400 hover:underline disabled:opacity-40" onClick={() => withdrawDds(d.id)} disabled={ddsBusy}>Retirer (annuler)</button>
+                                </>
                               : <span className="block text-xs text-gray-400" title="Au-delà de 72 h : modification/retrait via TRACES ou nouvelle DDS">&gt; 72 h — via TRACES</span>
                           })()}
                         </td>
@@ -450,9 +463,15 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
       </div>
 
       {/* Dépôt DDS */}
-      <div className={cardCls}>
-        <h3 className="font-semibold text-gray-900 dark:text-white">📤 Déposer une DDS</h3>
+      <div className={cardCls} id="eudr-depot-dds">
+        <h3 className="font-semibold text-gray-900 dark:text-white">{amend ? '✏️ Modifier une DDS' : '📤 Déposer une DDS'}</h3>
         <p className="text-sm text-gray-500 dark:text-gray-400">Déclaration de diligence raisonnée (submitDds V3). La géolocalisation est un GeoJSON.</p>
+        {amend && (
+          <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-800 dark:text-blue-300 flex items-center justify-between gap-3">
+            <span>✏️ Modification de la DDS <span className="font-mono">{amend.ref}</span> — le <strong>n° de référence est conservé</strong> (amendDds, fenêtre 72 h). Corrigez les champs puis enregistrez.</span>
+            <button className="text-xs text-blue-700 dark:text-blue-300 hover:underline whitespace-nowrap" onClick={() => setAmend(null)}>Annuler la modification</button>
+          </div>
+        )}
         {contracts.length > 0 && (
           <div>
             <label className={labelCls}>Pré-remplir depuis un contrat</label>
@@ -591,7 +610,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
         </label>
         <div className="flex items-center gap-3">
           <button className={btnPrimary} onClick={submitDds} disabled={submitting || !ready || !dds.internalReferenceNumber.trim() || !dds.hsHeading.trim()}>
-            {submitting ? 'Dépôt…' : 'Déposer la DDS'}
+            {submitting ? (amend ? 'Modification…' : 'Dépôt…') : (amend ? 'Enregistrer la modification' : 'Déposer la DDS')}
           </button>
           {!ready && <span className="text-xs text-gray-400">Configurez d&apos;abord les identifiants.</span>}
         </div>

@@ -13,6 +13,8 @@ create table if not exists eudr_dds (
   net_weight numeric,
   official_date timestamptz,      -- date officielle renvoyée par TRACES
   official_updated_by text,       -- auteur officiel (updatedBy)
+  form_json jsonb,                -- instantané du formulaire de dépôt (pour rouvrir/amender)
+  geojson_attachment_id text,     -- document GeoJSON utilisé (pour ré-injecter à l'amend)
   submitted_by text,              -- email de l'utilisateur qui a déposé depuis l'app
   submitted_at timestamptz not null default now(),
   last_checked_at timestamptz,    -- dernière actualisation du statut via getDds

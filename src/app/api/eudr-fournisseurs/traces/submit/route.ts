@@ -3,7 +3,7 @@ import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp } from '@/lib/sharepointMulti'
 import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClient'
-import { submitDdsV3, DdsStatement } from '@/lib/eudr/tracesV3'
+import { submitDdsV3, amendDdsV3, DdsStatement } from '@/lib/eudr/tracesV3'
 import { toIso2 } from '@/lib/eudr/countries'
 import { sanitizeGeojson, SanitizeReport } from '@/lib/eudr/geoSanitize'
 import { guard } from '../_auth'
@@ -46,7 +46,7 @@ async function geojsonFromAttachment(orgId: string, attachmentId: string, simpli
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { org_id?: string; operatorType?: string; statement?: DdsStatement; geojsonAttachmentId?: string; simplifyGeometry?: boolean }
+    const body = await req.json() as { org_id?: string; operatorType?: string; statement?: DdsStatement; geojsonAttachmentId?: string; simplifyGeometry?: boolean; amendUuid?: string; ddsId?: string; formSnapshot?: Record<string, unknown> }
     const auth = await guard(body.org_id ?? null, { requireEdit: true })
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
@@ -74,23 +74,39 @@ export async function POST(req: NextRequest) {
 
     normalizeCountries(statement)
 
+    const c0 = statement.commodities?.[0]
+    const meta = {
+      internal_reference_number: statement.internalReferenceNumber ?? null,
+      activity_type: statement.activityType ?? null,
+      commodity: c0?.descriptors?.descriptionOfGoods ?? c0?.hsHeading ?? null,
+      net_weight: c0?.descriptors?.goodsMeasure?.netWeight ?? null,
+      form_json: body.formSnapshot ?? null,
+      geojson_attachment_id: body.geojsonAttachmentId ?? null,
+    }
+    const admin = createAdminClient()
+
+    // ── Modification (amend) d'une DDS existante : même n° de référence (fenêtre 72 h). ──
+    if (body.amendUuid) {
+      await amendDdsV3(creds, body.amendUuid, statement)
+      if (body.ddsId) {
+        try { await admin.from('eudr_dds').update({ ...meta, status: null, last_checked_at: null }).eq('id', body.ddsId).eq('org_id', body.org_id!) } catch { /* sans effet sur l'amend */ }
+      }
+      return NextResponse.json({ ok: true, environment: creds.environment, ddsIdentifier: body.amendUuid, amended: true, geoSanitized: geoReport })
+    }
+
+    // ── Nouveau dépôt. ──
     // V3 : operatorType → operatorRole. La géométrie GeoJSON est encodée en base64 dans le client V3.
     const result = await submitDdsV3(creds, { operatorRole: body.operatorType, statement })
 
     // Enregistrement du dépôt pour le suivi (best-effort : n'interrompt jamais la réponse).
     if (result.uuid) {
       try {
-        const supabase = createUserClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        const c0 = statement.commodities?.[0]
-        await createAdminClient().from('eudr_dds').insert({
+        const { data: { user } } = await createUserClient().auth.getUser()
+        await admin.from('eudr_dds').insert({
           org_id: body.org_id!,
           dds_uuid: result.uuid,
           environment: creds.environment,
-          internal_reference_number: statement.internalReferenceNumber ?? null,
-          activity_type: statement.activityType ?? null,
-          commodity: c0?.descriptors?.descriptionOfGoods ?? c0?.hsHeading ?? null,
-          net_weight: c0?.descriptors?.goodsMeasure?.netWeight ?? null,
+          ...meta,
           submitted_by: user?.email ?? null,
         })
       } catch { /* table absente ou doublon : sans effet sur le dépôt */ }

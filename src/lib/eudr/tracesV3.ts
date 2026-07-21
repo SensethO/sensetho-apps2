@@ -20,6 +20,7 @@ const ACTION_SUBMIT = `${NS_DDS}/submitDds`
 const ACTION_GET_BY_ID = `${NS_DDS}/getDdsByIdentifiers`
 const ACTION_GET_DDS = `${NS_DDS}/getDds`
 const ACTION_WITHDRAW = `${NS_DDS}/withdrawDds`
+const ACTION_AMEND = `${NS_DDS}/amendDds`
 
 function endpoint(creds: TracesCredentials): string {
   return (creds.environment === 'production' ? HOST.production : HOST.acceptance) + DDS_PATH
@@ -216,6 +217,13 @@ export async function pingV3(creds: TracesCredentials): Promise<{ ok: boolean; k
     }
     return { ok: false, kind: 'error', message: msg || `Erreur ${status ?? ''}`.trim(), detail: raw ? raw.slice(0, 500) : undefined }
   }
+}
+
+/** amendDds V3 → modifie une DDS existante (même n° de référence, fenêtre 72 h). */
+export async function amendDdsV3(creds: TracesCredentials, uuid: string, statement: DdsStatement): Promise<{ uuid: string; raw: string }> {
+  const body = `<dds:AmendDdsRequest><dds:uuid>${xml(uuid)}</dds:uuid>${statementXml(statement)}</dds:AmendDdsRequest>`
+  const raw = await post(creds, ACTION_AMEND, body)
+  return { uuid, raw }
 }
 
 /** withdrawDds V3 → retire une DDS (fenêtre 72 h, statut AVAILABLE, hors verrou douane). */
