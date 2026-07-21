@@ -15,6 +15,12 @@ const btnGhost = 'px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-g
 
 interface CredInfo { username: string; environment: 'acceptance' | 'production'; clientId: string; updatedAt: string | null }
 
+interface GeoReport {
+  featuresBefore: number; featuresAfter: number; holesRemoved: number; multiPolygonsSplit: number
+  pointsBefore: number; pointsAfter: number; areaBeforeHa: number; areaAfterHa: number
+  holeAlerts: { name: string; plotHa: number; addedHa: number; pct: number }[]; changed: boolean
+}
+
 interface DdsRow {
   id: string; dds_uuid: string; environment: string
   internal_reference_number: string | null; reference_number: string | null; verification_number: string | null
@@ -128,7 +134,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
     producerCountry: '', producerName: '', geojson: '',
   })
   const [submitting, setSubmitting] = useState(false)
-  const [submitRes, setSubmitRes] = useState<{ ok: boolean; text: string; detail?: string } | null>(null)
+  const [submitRes, setSubmitRes] = useState<{ ok: boolean; text: string; detail?: string; geo?: GeoReport | null } | null>(null)
   function setF<K extends keyof typeof dds>(k: K, v: string) { setDds(d => ({ ...d, [k]: v })) }
 
   // Pré-remplissage depuis un contrat existant (mappe les champs disponibles ; le code SH,
@@ -253,7 +259,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
         body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement, geojsonAttachmentId: geojsonAttachmentId || undefined }),
       })
       const j = await res.json().catch(() => ({}))
-      if (res.ok && j.ok) { setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}` }); setLastUuid(j.ddsIdentifier ?? null); setStatusRes(null); loadDds() }
+      if (res.ok && j.ok) { setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}`, geo: j.geoSanitized ?? null }); setLastUuid(j.ddsIdentifier ?? null); setStatusRes(null); loadDds() }
       else setSubmitRes({ ok: false, text: `${j.error ?? 'Échec du dépôt.'}${j.status ? ` (HTTP ${j.status})` : ''}`, detail: j.detail })
     } catch (e) { setSubmitRes({ ok: false, text: String((e as Error).message ?? e) }) }
     finally { setSubmitting(false) }
@@ -557,6 +563,30 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
             {submitRes.detail && (
               <pre className="mt-2 max-h-64 overflow-auto text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{submitRes.detail}</pre>
             )}
+          </div>
+        )}
+        {submitRes?.ok && submitRes.geo && (
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2">
+            <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">🧭 Nettoyage géométrique appliqué avant envoi (l&apos;original SharePoint est conservé)</p>
+            <ul className="text-xs text-gray-600 dark:text-gray-300 space-y-0.5">
+              <li>Parcelles : {submitRes.geo.featuresBefore} → {submitRes.geo.featuresAfter}{submitRes.geo.multiPolygonsSplit > 0 ? ` (${submitRes.geo.multiPolygonsSplit} MultiPolygon éclaté(s))` : ''}</li>
+              <li>Sommets : {submitRes.geo.pointsBefore.toLocaleString('fr-FR')} → {submitRes.geo.pointsAfter.toLocaleString('fr-FR')} (coordonnées arrondies à 6 décimales)</li>
+              <li>Surface : {submitRes.geo.areaBeforeHa.toLocaleString('fr-FR')} ha → <span className="font-medium">{submitRes.geo.areaAfterHa.toLocaleString('fr-FR')} ha</span>{submitRes.geo.holesRemoved > 0 ? ` · ${submitRes.geo.holesRemoved} trou(s) retiré(s)` : ''}
+                {submitRes.geo.areaBeforeHa > 0 && <span className="text-gray-400"> (écart {(((submitRes.geo.areaAfterHa - submitRes.geo.areaBeforeHa) / submitRes.geo.areaBeforeHa) * 100).toFixed(2)} %)</span>}
+              </li>
+            </ul>
+            {submitRes.geo.holeAlerts?.length > 0 ? (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-2">
+                <p className="text-xs font-medium text-amber-800 dark:text-amber-300">⚠️ À vérifier : retrait de trou &gt; 1 % de la parcelle (surface sur-déclarée) — contrôlez ces parcelles sur la carte TRACES.</p>
+                <ul className="mt-1 text-xs text-amber-700 dark:text-amber-400 space-y-0.5">
+                  {submitRes.geo.holeAlerts.map((a, i) => (
+                    <li key={i}>• <span className="font-medium">{a.name}</span> : +{a.addedHa.toLocaleString('fr-FR')} ha sur {a.plotHa.toLocaleString('fr-FR')} ha (+{a.pct} %)</li>
+                  ))}
+                </ul>
+              </div>
+            ) : submitRes.geo.holesRemoved > 0 ? (
+              <p className="text-xs text-green-700 dark:text-green-400">✓ Trous retirés négligeables (&lt; 1 % de chaque parcelle).</p>
+            ) : null}
           </div>
         )}
         {lastUuid && (

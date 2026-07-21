@@ -15,7 +15,7 @@
 // (« Ring Self-intersection ») que ni JTS.isValid ni turf ne détectent en amont.
 // En arrondissant nous-mêmes avant l'envoi, la micro-boucle disparaît.
 // ⚠️ Retirer un trou / arrondir modifie légèrement la surface déclarée — d'où le rapport.
-import { cleanCoords, simplify } from '@turf/turf'
+import { cleanCoords, simplify, area } from '@turf/turf'
 
 const DECIMALS = 6 // ~0,11 m : précision largement suffisante pour des parcelles, et acceptée par TRACES.
 // Simplification Douglas-Peucker appliquée aux anneaux trop denses (sur-échantillonnage GPS).
@@ -23,6 +23,10 @@ const DECIMALS = 6 // ~0,11 m : précision largement suffisante pour des parcell
 // mais divise par ~50 le nombre de points des tracés les plus lourds.
 const SIMPLIFY_TOLERANCE = 0.000003
 const SIMPLIFY_MIN_POINTS = 80 // on ne simplifie que les anneaux au-delà de ce nombre de sommets.
+const HOLE_ALERT_PCT = 1 // alerte si un trou retiré réintègre plus de 1 % de la parcelle.
+
+/** Alerte de conformité : parcelle dont un trou retiré modifie sensiblement la surface. */
+export interface HoleAlert { name: string; plotHa: number; addedHa: number; pct: number }
 
 export interface SanitizeReport {
   featuresBefore: number
@@ -32,12 +36,26 @@ export interface SanitizeReport {
   coordinatesRounded: boolean  // arrondi à DECIMALS décimales appliqué
   pointsBefore: number         // total de sommets avant simplification
   pointsAfter: number          // total de sommets après simplification/arrondi
+  areaBeforeHa: number         // surface déclarée d'origine (trous déduits)
+  areaAfterHa: number          // surface envoyée (trous réintégrés + simplifiée/arrondie)
+  holeAlerts: HoleAlert[]      // parcelles où le retrait d'un trou dépasse le seuil
   changed: boolean
 }
 
 type Ring = number[][]
 type Geometry = { type: string; coordinates?: unknown }
 type Feature = { type: 'Feature'; geometry: Geometry | null; properties?: unknown }
+
+/** Surface (m²) d'un polygone défini par ses anneaux (turf déduit les trous). */
+function polyArea(rings: Ring[]): number {
+  try { return area({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: rings } } as never) } catch { return 0 }
+}
+
+/** Nom lisible d'une parcelle depuis ses propriétés (pour les alertes). */
+function featureName(properties: unknown): string {
+  const p = (properties ?? {}) as Record<string, unknown>
+  return String(p.Name ?? p.name ?? p.Plot_id ?? p.plot_id ?? p.id ?? '') || '(sans nom)'
+}
 
 /** Simplifie (Douglas-Peucker) un anneau trop dense, en préservant sa fermeture. */
 function simplifyRing(ring: Ring): Ring {
@@ -65,11 +83,26 @@ function roundRing(ring: Ring): Ring {
 
 /** Construit un feature Polygon à partir de ses anneaux, en ne gardant que l'extérieur (arrondi). */
 function polygonFeature(rings: Ring[], properties: unknown, report: SanitizeReport): Feature {
-  if (rings.length > 1) report.holesRemoved += rings.length - 1
+  const originalArea = polyArea(rings)          // surface d'origine (trous déduits)
+  const exteriorArea = polyArea([rings[0]])     // surface sans les trous
+  if (rings.length > 1) {
+    report.holesRemoved += rings.length - 1
+    const added = exteriorArea - originalArea   // surface réintégrée par le retrait des trous
+    if (exteriorArea > 0 && (added / exteriorArea) * 100 > HOLE_ALERT_PCT) {
+      report.holeAlerts.push({
+        name: featureName(properties),
+        plotHa: +(exteriorArea / 10000).toFixed(3),
+        addedHa: +(added / 10000).toFixed(3),
+        pct: +((added / exteriorArea) * 100).toFixed(1),
+      })
+    }
+  }
   report.coordinatesRounded = true
   report.pointsBefore += rings[0].length
   const ring = roundRing(simplifyRing(rings[0]))
   report.pointsAfter += ring.length
+  report.areaBeforeHa += originalArea / 10000
+  report.areaAfterHa += polyArea([ring]) / 10000
   return { type: 'Feature', properties, geometry: { type: 'Polygon', coordinates: [ring] } }
 }
 
@@ -100,7 +133,7 @@ function sanitizeFeature(feat: Feature, report: SanitizeReport): Feature[] {
  * Renvoie une FeatureCollection acceptée par TRACES + un rapport de ce qui a changé.
  */
 export function sanitizeGeojson(input: unknown): { geojson: unknown; report: SanitizeReport } {
-  const report: SanitizeReport = { featuresBefore: 0, featuresAfter: 0, holesRemoved: 0, multiPolygonsSplit: 0, coordinatesRounded: false, pointsBefore: 0, pointsAfter: 0, changed: false }
+  const report: SanitizeReport = { featuresBefore: 0, featuresAfter: 0, holesRemoved: 0, multiPolygonsSplit: 0, coordinatesRounded: false, pointsBefore: 0, pointsAfter: 0, areaBeforeHa: 0, areaAfterHa: 0, holeAlerts: [], changed: false }
   let data: unknown
   try {
     data = typeof input === 'string' ? JSON.parse(input) : JSON.parse(JSON.stringify(input))
@@ -123,5 +156,7 @@ export function sanitizeGeojson(input: unknown): { geojson: unknown; report: San
     out.push(...sanitizeFeature(f, report))
   }
   report.featuresAfter = out.length
+  report.areaBeforeHa = +report.areaBeforeHa.toFixed(3)
+  report.areaAfterHa = +report.areaAfterHa.toFixed(3)
   return { geojson: { type: 'FeatureCollection', features: out }, report }
 }
