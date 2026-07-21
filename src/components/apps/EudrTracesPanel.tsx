@@ -449,7 +449,9 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
                         <td className="py-2 text-right whitespace-nowrap space-y-1">
                           <a className="block text-xs text-green-600 dark:text-green-400 hover:underline" href={`${tracesBase}/tracesnt/certificate/eudr/edit/${d.dds_uuid}`} target="_blank" rel="noopener noreferrer">Ouvrir dans TRACES ↗</a>
                           {(() => {
-                            const within72 = (Date.now() - new Date(d.submitted_at).getTime()) < 72 * 3600 * 1000
+                            // Fenêtre 72 h calculée sur la date OFFICIELLE (dépôt réel), pas la date d'import.
+                            const ref = d.official_date || d.submitted_at
+                            const within72 = (Date.now() - new Date(ref).getTime()) < 72 * 3600 * 1000
                             const gone = ['WITHDRAWN', 'REJECTED', 'CANCELLED'].includes((d.status ?? '').toUpperCase())
                             if (gone) return null
                             return within72
