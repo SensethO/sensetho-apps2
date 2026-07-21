@@ -39,6 +39,7 @@ export interface SanitizeReport {
   areaBeforeHa: number         // surface déclarée d'origine (trous déduits)
   areaAfterHa: number          // surface envoyée (trous réintégrés + simplifiée/arrondie)
   holeAlerts: HoleAlert[]      // parcelles où le retrait d'un trou dépasse le seuil
+  simplified: boolean          // simplification Douglas-Peucker appliquée
   changed: boolean
 }
 
@@ -82,7 +83,7 @@ function roundRing(ring: Ring): Ring {
 }
 
 /** Construit un feature Polygon à partir de ses anneaux, en ne gardant que l'extérieur (arrondi). */
-function polygonFeature(rings: Ring[], properties: unknown, report: SanitizeReport): Feature {
+function polygonFeature(rings: Ring[], properties: unknown, report: SanitizeReport, simplifyEnabled: boolean): Feature {
   const originalArea = polyArea(rings)          // surface d'origine (trous déduits)
   const exteriorArea = polyArea([rings[0]])     // surface sans les trous
   if (rings.length > 1) {
@@ -99,7 +100,7 @@ function polygonFeature(rings: Ring[], properties: unknown, report: SanitizeRepo
   }
   report.coordinatesRounded = true
   report.pointsBefore += rings[0].length
-  const ring = roundRing(simplifyRing(rings[0]))
+  const ring = roundRing(simplifyEnabled ? simplifyRing(rings[0]) : rings[0])
   report.pointsAfter += ring.length
   report.areaBeforeHa += originalArea / 10000
   report.areaAfterHa += polyArea([ring]) / 10000
@@ -107,7 +108,7 @@ function polygonFeature(rings: Ring[], properties: unknown, report: SanitizeRepo
 }
 
 /** Nettoie + éclate un feature polygonal → 1..n features Polygon simples, sans trou. */
-function sanitizeFeature(feat: Feature, report: SanitizeReport): Feature[] {
+function sanitizeFeature(feat: Feature, report: SanitizeReport, simplifyEnabled: boolean): Feature[] {
   let f: Feature = feat
   try { f = { type: 'Feature', properties: feat.properties, geometry: (cleanCoords(feat as never) as { geometry: Geometry }).geometry } } catch { /* garde l'original */ }
   const g = f.geometry
@@ -115,14 +116,14 @@ function sanitizeFeature(feat: Feature, report: SanitizeReport): Feature[] {
   if (g.type === 'Polygon') {
     const rings = g.coordinates as Ring[]
     if (rings.length > 1) report.changed = true
-    return [polygonFeature(rings, feat.properties, report)]
+    return [polygonFeature(rings, feat.properties, report, simplifyEnabled)]
   }
   if (g.type === 'MultiPolygon') {
     const polys = g.coordinates as Ring[][]
     if (polys.length > 1) { report.multiPolygonsSplit += 1; report.changed = true }
     return polys.map(poly => {
       if (poly.length > 1) report.changed = true
-      return polygonFeature(poly, feat.properties, report)
+      return polygonFeature(poly, feat.properties, report, simplifyEnabled)
     })
   }
   return [f] // Point / autre : inchangé
@@ -131,9 +132,13 @@ function sanitizeFeature(feat: Feature, report: SanitizeReport): Feature[] {
 /**
  * Nettoie un GeoJSON (chaîne JSON ou objet) sans muter l'entrée.
  * Renvoie une FeatureCollection acceptée par TRACES + un rapport de ce qui a changé.
+ * opts.simplify (défaut true) : simplification Douglas-Peucker des anneaux denses.
+ * false = mode « fidélité maximale » (aucune simplification ; arrondi 6 décimales conservé
+ * car imposé par TRACES).
  */
-export function sanitizeGeojson(input: unknown): { geojson: unknown; report: SanitizeReport } {
-  const report: SanitizeReport = { featuresBefore: 0, featuresAfter: 0, holesRemoved: 0, multiPolygonsSplit: 0, coordinatesRounded: false, pointsBefore: 0, pointsAfter: 0, areaBeforeHa: 0, areaAfterHa: 0, holeAlerts: [], changed: false }
+export function sanitizeGeojson(input: unknown, opts: { simplify?: boolean } = {}): { geojson: unknown; report: SanitizeReport } {
+  const simplifyEnabled = opts.simplify !== false
+  const report: SanitizeReport = { featuresBefore: 0, featuresAfter: 0, holesRemoved: 0, multiPolygonsSplit: 0, coordinatesRounded: false, pointsBefore: 0, pointsAfter: 0, areaBeforeHa: 0, areaAfterHa: 0, holeAlerts: [], simplified: simplifyEnabled, changed: false }
   let data: unknown
   try {
     data = typeof input === 'string' ? JSON.parse(input) : JSON.parse(JSON.stringify(input))
@@ -153,7 +158,7 @@ export function sanitizeGeojson(input: unknown): { geojson: unknown; report: San
   for (const f of features) {
     const g = f.geometry
     if (!g || (g.type !== 'Polygon' && g.type !== 'MultiPolygon')) { out.push(f); continue }
-    out.push(...sanitizeFeature(f, report))
+    out.push(...sanitizeFeature(f, report, simplifyEnabled))
   }
   report.featuresAfter = out.length
   report.areaBeforeHa = +report.areaBeforeHa.toFixed(3)

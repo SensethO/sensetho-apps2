@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 /** Lit un document GeoJSON stocké dans SharePoint et le renvoie encodé en base64. */
-async function geojsonFromAttachment(orgId: string, attachmentId: string): Promise<{ base64: string; report: SanitizeReport }> {
+async function geojsonFromAttachment(orgId: string, attachmentId: string, simplify: boolean): Promise<{ base64: string; report: SanitizeReport }> {
   const admin = createAdminClient()
   const { data: row } = await admin.from('eudr_attachments')
     .select('sharepoint_item_id').eq('id', attachmentId).eq('org_id', orgId).maybeSingle()
@@ -33,8 +33,8 @@ async function geojsonFromAttachment(orgId: string, attachmentId: string): Promi
   const url = item['@microsoft.graph.downloadUrl'] as string | undefined
   if (!url) throw new Error('URL de téléchargement GeoJSON indisponible.')
   const raw = Buffer.from(await (await fetch(url)).arrayBuffer()).toString('utf-8')
-  // Nettoyage TRACES : suppression des trous + réparation des auto-intersections.
-  const { geojson, report } = sanitizeGeojson(raw)
+  // Nettoyage TRACES : éclatement MultiPolygon, suppression des trous, arrondi (+ simplification optionnelle).
+  const { geojson, report } = sanitizeGeojson(raw, { simplify })
   return { base64: Buffer.from(JSON.stringify(geojson)).toString('base64'), report }
 }
 
@@ -46,7 +46,7 @@ async function geojsonFromAttachment(orgId: string, attachmentId: string): Promi
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { org_id?: string; operatorType?: string; statement?: DdsStatement; geojsonAttachmentId?: string }
+    const body = await req.json() as { org_id?: string; operatorType?: string; statement?: DdsStatement; geojsonAttachmentId?: string; simplifyGeometry?: boolean }
     const auth = await guard(body.org_id ?? null, { requireEdit: true })
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     let geoReport: SanitizeReport | null = null
     // GeoJSON depuis un document SharePoint : on lit le fichier, on le nettoie et on l'injecte dans le 1er producteur.
     if (body.geojsonAttachmentId) {
-      const { base64, report } = await geojsonFromAttachment(body.org_id!, body.geojsonAttachmentId)
+      const { base64, report } = await geojsonFromAttachment(body.org_id!, body.geojsonAttachmentId, body.simplifyGeometry !== false)
       geoReport = report
       const c0 = statement.commodities?.[0]
       if (c0) {

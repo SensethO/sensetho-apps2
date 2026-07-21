@@ -18,7 +18,7 @@ interface CredInfo { username: string; environment: 'acceptance' | 'production';
 interface GeoReport {
   featuresBefore: number; featuresAfter: number; holesRemoved: number; multiPolygonsSplit: number
   pointsBefore: number; pointsAfter: number; areaBeforeHa: number; areaAfterHa: number
-  holeAlerts: { name: string; plotHa: number; addedHa: number; pct: number }[]; changed: boolean
+  holeAlerts: { name: string; plotHa: number; addedHa: number; pct: number }[]; simplified?: boolean; changed: boolean
 }
 
 interface DdsRow {
@@ -134,6 +134,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
     producerCountry: '', producerName: '', geojson: '',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [simplifyGeometry, setSimplifyGeometry] = useState(true)
   const [submitRes, setSubmitRes] = useState<{ ok: boolean; text: string; detail?: string; geo?: GeoReport | null } | null>(null)
   function setF<K extends keyof typeof dds>(k: K, v: string) { setDds(d => ({ ...d, [k]: v })) }
 
@@ -256,7 +257,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
       }
       const res = await fetch(`/api/eudr-fournisseurs/traces/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement, geojsonAttachmentId: geojsonAttachmentId || undefined }),
+        body: JSON.stringify({ org_id: orgId, operatorType: dds.operatorType, statement, geojsonAttachmentId: geojsonAttachmentId || undefined, simplifyGeometry }),
       })
       const j = await res.json().catch(() => ({}))
       if (res.ok && j.ok) { setSubmitRes({ ok: true, text: `DDS déposée (${j.environment}). Identifiant : ${j.ddsIdentifier ?? '—'}`, geo: j.geoSanitized ?? null }); setLastUuid(j.ddsIdentifier ?? null); setStatusRes(null); loadDds() }
@@ -551,6 +552,10 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
             </div>
           </div>
         )}
+        <label className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
+          <input type="checkbox" className="mt-0.5" checked={simplifyGeometry} onChange={e => setSimplifyGeometry(e.target.checked)} />
+          <span>Simplifier la géométrie avant l&apos;envoi (recommandé) — allège les tracés sur-échantillonnés (~0,3 m, imperceptible). Décochez pour un <strong>mode fidélité maximale</strong> (aucune simplification ; l&apos;éclatement MultiPolygon, le retrait des trous et l&apos;arrondi à 6 décimales restent appliqués car imposés par TRACES).</span>
+        </label>
         <div className="flex items-center gap-3">
           <button className={btnPrimary} onClick={submitDds} disabled={submitting || !ready || !dds.internalReferenceNumber.trim() || !dds.hsHeading.trim()}>
             {submitting ? 'Dépôt…' : 'Déposer la DDS'}
@@ -570,7 +575,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
             <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">🧭 Nettoyage géométrique appliqué avant envoi (l&apos;original SharePoint est conservé)</p>
             <ul className="text-xs text-gray-600 dark:text-gray-300 space-y-0.5">
               <li>Parcelles : {submitRes.geo.featuresBefore} → {submitRes.geo.featuresAfter}{submitRes.geo.multiPolygonsSplit > 0 ? ` (${submitRes.geo.multiPolygonsSplit} MultiPolygon éclaté(s))` : ''}</li>
-              <li>Sommets : {submitRes.geo.pointsBefore.toLocaleString('fr-FR')} → {submitRes.geo.pointsAfter.toLocaleString('fr-FR')} (coordonnées arrondies à 6 décimales)</li>
+              <li>Sommets : {submitRes.geo.pointsBefore.toLocaleString('fr-FR')} → {submitRes.geo.pointsAfter.toLocaleString('fr-FR')} (arrondi 6 décimales{submitRes.geo.simplified === false ? ' · simplification désactivée — fidélité maximale' : ' · simplification ~0,3 m'})</li>
               <li>Surface : {submitRes.geo.areaBeforeHa.toLocaleString('fr-FR')} ha → <span className="font-medium">{submitRes.geo.areaAfterHa.toLocaleString('fr-FR')} ha</span>{submitRes.geo.holesRemoved > 0 ? ` · ${submitRes.geo.holesRemoved} trou(s) retiré(s)` : ''}
                 {submitRes.geo.areaBeforeHa > 0 && <span className="text-gray-400"> (écart {(((submitRes.geo.areaAfterHa - submitRes.geo.areaBeforeHa) / submitRes.geo.areaBeforeHa) * 100).toFixed(2)} %)</span>}
               </li>
