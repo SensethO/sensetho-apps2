@@ -62,26 +62,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ data: fresh ?? [], discovered })
     }
 
-    // Import d'une DDS existante dans le suivi (par UUID) — getDds fonctionne pour tout statut.
+    // Import d'une DDS dans le suivi — accepte un UUID (getDds) OU une référence interne
+    // (getDdsByInternalReference). Fonctionne pour tout statut.
     if (body.action === 'import') {
-      const uuid = (body.uuid ?? '').trim()
-      if (!uuid) return NextResponse.json({ error: 'UUID requis' }, { status: 400 })
+      const val = (body.uuid ?? '').trim()
+      if (!val) return NextResponse.json({ error: 'UUID ou référence interne requis' }, { status: 400 })
       const creds = await getTracesCredentials(body.org_id!)
       if (!creds) return NextResponse.json({ error: 'Identifiants TRACES non configurés.' }, { status: 400 })
-      let info
-      try { info = await getDdsV3(creds, uuid) } catch (err) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
+
+      const upsert = (o: { uuid: string; internalReferenceNumber: string | null; referenceNumber: string | null; verificationNumber: string | null; status: string | null; date: string | null; updatedBy: string | null }) =>
+        admin.from('eudr_dds').upsert({
+          org_id: body.org_id!, dds_uuid: o.uuid, environment: creds.environment,
+          internal_reference_number: o.internalReferenceNumber, reference_number: o.referenceNumber,
+          verification_number: o.verificationNumber, status: o.status,
+          official_date: o.date, official_updated_by: o.updatedBy,
+          submitted_by: '(importée)', last_checked_at: new Date().toISOString(),
+        }, { onConflict: 'org_id,dds_uuid' })
+
+      try {
+        if (isUuid) {
+          const info = await getDdsV3(creds, val)
+          if (!info.status && !info.internalReferenceNumber && !info.referenceNumber) {
+            return NextResponse.json({ error: 'Aucune DDS trouvée pour cet UUID (sur cet environnement).' }, { status: 404 })
+          }
+          await upsert({ uuid: val, ...info })
+        } else {
+          const found = await getDdsByInternalReferenceV3(creds, val)
+          if (!found.length) {
+            return NextResponse.json({ error: `Aucune DDS pour « ${val} ». Astuce : c'est peut-être un n° de référence officiel (non recherchable seul) — utilisez le bouton « 🔎 Rechercher mes DDS », ou collez l'UUID (dans l'URL TRACES après /edit/).` }, { status: 404 })
+          }
+          for (const o of found) await upsert(o)
+        }
+      } catch (err) {
         const e = describeTracesError(err); return NextResponse.json({ error: e.message }, { status: 502 })
       }
-      if (!info.status && !info.internalReferenceNumber && !info.referenceNumber) {
-        return NextResponse.json({ error: 'Aucune DDS trouvée pour cet UUID (sur cet environnement).' }, { status: 404 })
-      }
-      await admin.from('eudr_dds').upsert({
-        org_id: body.org_id!, dds_uuid: uuid, environment: creds.environment,
-        internal_reference_number: info.internalReferenceNumber, reference_number: info.referenceNumber,
-        verification_number: info.verificationNumber, status: info.status,
-        official_date: info.date, official_updated_by: info.updatedBy,
-        submitted_by: '(importée)', last_checked_at: new Date().toISOString(),
-      }, { onConflict: 'org_id,dds_uuid' })
       const { data: fresh } = await admin.from('eudr_dds').select('*').eq('org_id', body.org_id!).order('submitted_at', { ascending: false })
       return NextResponse.json({ data: fresh ?? [] })
     }

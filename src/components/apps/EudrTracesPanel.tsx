@@ -409,10 +409,10 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400">Vision officielle TRACES : statut, date et auteur de chaque dépôt. « Actualiser » interroge le registre EUDR.</p>
           <div className="flex items-center gap-2">
-            <input className={`${inputCls} max-w-md`} value={importUuid} onChange={e => setImportUuid(e.target.value)} placeholder="UUID d'une DDS existante (depuis TRACES) à importer dans le suivi" />
+            <input className={`${inputCls} max-w-md`} value={importUuid} onChange={e => setImportUuid(e.target.value)} placeholder="UUID (URL TRACES après /edit/) ou référence interne (n° de contrat)" />
             <button className={btnGhost} onClick={importDds} disabled={ddsBusy || !importUuid.trim()}>+ Importer</button>
           </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500">TRACES ne permet pas de lister automatiquement toutes les DDS ; copiez l&apos;UUID depuis TRACES (Documents) pour ajouter au suivi les DDS non déposées via l&apos;app. Fonctionne pour tout statut.</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">Le plus simple : « 🔎 Rechercher mes DDS » (balaie vos contrats). Sinon, importez par <strong>UUID</strong> (dans l&apos;URL TRACES après <span className="font-mono">/edit/</span>) ou par <strong>référence interne</strong>. ⚠️ Le n° de référence officiel (ex. <span className="font-mono">26FR…</span>) n&apos;est pas recherchable seul.</p>
           {ddsList.length === 0 ? (
             <p className="text-sm text-gray-400 dark:text-gray-500">Aucune DDS déposée depuis l&apos;application pour le moment.</p>
           ) : (
