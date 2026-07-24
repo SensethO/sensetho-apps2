@@ -6,48 +6,56 @@ import { getSiteSettings } from '@/lib/settings'
 export const dynamic = 'force-dynamic'
 
 const PUBLIC_APPS = [
-  // ── RSE ──────────────────────────────────────────────────────
+  // ── Le regard (la démarche commence ici) ─────────────────────
+  {
+    id: 'le-miroir',
+    name: "Le Miroir — éthologie d'entreprise",
+    description: 'Faites peindre votre organisation par ses parties prenantes — en espèces et en habitats, côté marché et côté cité. L\'agrégation révèle les écarts entre ce que vous êtes, ce que vous dites et ce que vous faites, sans jamais juger un individu.',
+    icon: '🪞',
+    folder: 'Le regard',
+  },
   {
     id: 'iso26000-guided',
-    name: 'Diagnostic RSE initial guidé ISO 26000',
-    description: 'Parcourez les 13 domaines RSE prioritaires de l\'ISO 26000 en 30 à 50 minutes grâce à un questionnaire guidé étape par étape. Résultats instantanés, recommandations personnalisées par domaine, export PDF et Excel complet avec cartographie ODD.',
+    name: 'Diagnostic initial guidé',
+    description: 'Un premier état des lieux de ce que votre organisation fait déjà : 13 domaines passés en revue en 30 à 50 minutes, questionnaire guidé étape par étape (référentiel ISO 26000), recommandations par domaine, export PDF et Excel avec cartographie ODD.',
     icon: '🧭',
-    folder: 'RSE',
-  },
-  {
-    id: 'csrd-diagnostic',
-    name: 'Diagnostic CSRD / ESRS',
-    description: 'Préparez votre conformité à la directive CSRD en évaluant les Disclosure Requirements des standards ESRS. Suivez votre taux de couverture par standard, identifiez les lacunes prioritaires et générez un rapport de conformité exportable.',
-    icon: '📊',
-    folder: 'RSE',
-  },
-  {
-    id: 'vsme-diagnostic',
-    name: 'Diagnostic VSME EFRAG',
-    description: 'Diagnostic de durabilité simplifié pour les PME selon le standard VSME de l\'EFRAG. Évaluez vos pratiques ESG selon un référentiel adapté aux petites structures, avec export de rapport et recommandations priorisées.',
-    icon: '🌱',
-    folder: 'RSE',
+    folder: 'Le regard',
   },
   {
     id: 'parties-prenantes',
     name: 'Parties Prenantes & Matérialité',
-    description: 'Identifiez et analysez vos parties prenantes, conduisez des consultations structurées et réalisez votre analyse de matérialité à double entrée. Gérez plusieurs sessions par organisation, exportez les résultats en PDF et Excel.',
+    description: 'Identifiez celles et ceux qui vivent avec votre organisation, écoutez-les dans des consultations structurées et croisez les regards dans une analyse de matérialité à double entrée. Plusieurs sessions par organisation, export PDF et Excel.',
     icon: '🤝',
-    folder: 'RSE',
+    folder: 'Le regard',
   },
+  // ── La preuve (quand l'engagement est posé) ──────────────────
   {
     id: 'odd-iso26000',
     name: 'ISO 26000 & ODD',
-    description: 'Explorez visuellement les correspondances entre les 37 domaines d\'action ISO 26000 et les 17 Objectifs de Développement Durable des Nations Unies. Identifiez quels ODD sont couverts par votre démarche RSE. Export Excel des matrices.',
+    description: 'Explorez visuellement les correspondances entre les 37 domaines d\'action ISO 26000 et les 17 Objectifs de Développement Durable des Nations Unies. Identifiez quels ODD vos engagements couvrent déjà. Export Excel des matrices.',
     icon: '🌍',
-    folder: 'RSE',
+    folder: 'La preuve',
+  },
+  {
+    id: 'csrd-diagnostic',
+    name: 'Diagnostic CSRD / ESRS',
+    description: 'Quand le reporting devient une obligation, évaluez les Disclosure Requirements des standards ESRS, suivez votre taux de couverture par standard, identifiez les lacunes prioritaires et générez un rapport de conformité exportable.',
+    icon: '📊',
+    folder: 'La preuve',
+  },
+  {
+    id: 'vsme-diagnostic',
+    name: 'Diagnostic VSME EFRAG',
+    description: 'Le référentiel de durabilité simplifié pour les PME (VSME, EFRAG) : évaluez vos pratiques selon un standard adapté aux petites structures, avec export de rapport et recommandations priorisées.',
+    icon: '🌱',
+    folder: 'La preuve',
   },
   {
     id: 'rapport-integre',
     name: 'Rapport intégré',
-    description: 'Construisez votre rapport intégré en croisant les résultats de vos diagnostics ISO 26000, CSRD/ESRS et GRI. Structurez votre communication extra-financière selon le cadre <IR> de l\'IIRC et exportez un rapport cohérent et prêt à diffuser.',
+    description: 'Racontez ce que vous faites, preuves à l\'appui : croisez les résultats de vos diagnostics ISO 26000, CSRD/ESRS et GRI selon le cadre <IR> de l\'IIRC et exportez un rapport cohérent, prêt à diffuser.',
     icon: '📄',
-    folder: 'RSE',
+    folder: 'La preuve',
   },
   // ── Business ──────────────────────────────────────────────────
   {
@@ -58,6 +66,12 @@ const PUBLIC_APPS = [
     folder: 'Business',
   },
 ]
+
+const FOLDER_COLORS: Record<string, { bg: string; color: string }> = {
+  'Le regard': { bg: 'rgba(52,211,153,0.15)',  color: '#34d399' },
+  'La preuve': { bg: 'rgba(125,211,252,0.15)', color: '#7dd3fc' },
+  Business:    { bg: 'rgba(167,139,250,0.15)', color: '#a78bfa' },
+}
 
 export default async function LandingPage() {
   const S = await getSiteSettings()
@@ -146,15 +160,15 @@ export default async function LandingPage() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-2xl sm:text-3xl font-bold text-white">
-              Pourquoi Sens&apos;ethO Apps ?
+              La démarche : d&apos;abord le regard, ensuite les outils
             </h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { icon: '🔒', title: S.feature_1_title, desc: S.feature_1_desc },
-              { icon: '📋', title: S.feature_2_title, desc: S.feature_2_desc },
-              { icon: '🏢', title: S.feature_3_title, desc: S.feature_3_desc },
-              { icon: '📤', title: S.feature_4_title, desc: S.feature_4_desc },
+              { icon: '👁️', title: S.feature_1_title, desc: S.feature_1_desc },
+              { icon: '🧭', title: S.feature_2_title, desc: S.feature_2_desc },
+              { icon: '🤝', title: S.feature_3_title, desc: S.feature_3_desc },
+              { icon: '🛠️', title: S.feature_4_title, desc: S.feature_4_desc },
             ].map((feat, i) => (
               <div
                 key={i}
@@ -215,12 +229,8 @@ export default async function LandingPage() {
                       <span
                         className="rounded-full px-2 py-0.5 text-xs font-medium"
                         style={{
-                          backgroundColor: app.folder === 'RSE'
-                            ? 'rgba(52,211,153,0.15)'
-                            : 'rgba(167,139,250,0.15)',
-                          color: app.folder === 'RSE'
-                            ? '#34d399'
-                            : '#a78bfa',
+                          backgroundColor: (FOLDER_COLORS[app.folder] ?? FOLDER_COLORS.Business).bg,
+                          color: (FOLDER_COLORS[app.folder] ?? FOLDER_COLORS.Business).color,
                         }}
                       >
                         {app.folder}
@@ -298,10 +308,10 @@ export default async function LandingPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               {[
-                { icon: '🧭', label: 'Diagnostic guidé ISO 26000', desc: '13 domaines prioritaires' },
-                { icon: '📊', label: 'Diagnostic CSRD/ESRS', desc: 'Disclosure Requirements ESRS' },
-                { icon: '🌍', label: 'Mapping ODD', desc: '17 objectifs de l\'ONU' },
-                { icon: '🤝', label: 'Parties Prenantes', desc: 'Matérialité à double entrée' },
+                { icon: '🔒', label: 'Données souveraines', desc: 'Hébergées en Europe, serveurs à énergie renouvelable' },
+                { icon: '🏢', label: 'Multi-organisations', desc: 'Cabinets, groupes, réseaux — un seul compte' },
+                { icon: '📤', label: 'Export & partage', desc: 'PDF, Excel et SharePoint en un clic' },
+                { icon: '💶', label: 'Accessible aux TPE/PME', desc: 'Coûts réduits au maximum, en autonomie' },
               ].map((item) => (
                 <div
                   key={item.label}
@@ -328,13 +338,13 @@ export default async function LandingPage() {
                 style={{ backgroundColor: 'rgba(14,61,77,0.08)', color: '#0e3d4d' }}
               >
                 <span>📋</span>
-                <span>Directive CSRD & Standards ESRS</span>
+                <span>Quand vient le temps de prouver</span>
               </div>
               <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-6" style={{ color: '#0e3d4d' }}>
-                Préparez votre reporting de durabilité CSRD/ESRS
+                Des preuves solides, au moment où on vous les demande
               </h2>
               <p className="text-lg text-gray-500 dark:text-gray-400 leading-relaxed mb-8">
-                Évaluez votre conformité aux Disclosure Requirements des standards ESRS, suivez votre taux de couverture par standard et générez un rapport de conformité prêt à partager.
+                Une fois vos engagements posés, le reporting n&apos;est plus une corvée : c&apos;est le récit de ce que vous faites déjà. CSRD/ESRS, VSME, rapport intégré — la plateforme produit les preuves attendues, prêtes à partager.
               </p>
               <div className="space-y-3">
                 {[
@@ -501,9 +511,9 @@ export default async function LandingPage() {
                 Applications
               </h4>
               <ul className="space-y-2 text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                <li>RSE &amp; ISO 26000</li>
-                <li>CSRD / ESRS &amp; VSME</li>
-                <li>Parties Prenantes</li>
+                <li>Le Miroir &amp; diagnostics initiaux</li>
+                <li>Parties prenantes &amp; dialogue</li>
+                <li>Mesure, conformité &amp; preuves</li>
                 <li>Business &amp; Organisations</li>
               </ul>
             </div>

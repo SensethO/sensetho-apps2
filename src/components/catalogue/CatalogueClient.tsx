@@ -35,7 +35,7 @@ interface CatalogueCategory {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 const CAT_META: Record<string, { icon: string; color: string; border: string; bg: string }> = {
-  rse:    { icon: '🌿', color: 'text-teal-700 dark:text-teal-300',   border: 'border-teal-100 dark:border-teal-800',   bg: 'bg-teal-50/40 dark:bg-teal-950/20' },
+  rse:    { icon: '🧭', color: 'text-teal-700 dark:text-teal-300',   border: 'border-teal-100 dark:border-teal-800',   bg: 'bg-teal-50/40 dark:bg-teal-950/20' },
   business: { icon: '💼', color: 'text-blue-700 dark:text-blue-300',    border: 'border-blue-100 dark:border-blue-800',   bg: 'bg-blue-50/40 dark:bg-blue-950/20' },
   metier: { icon: '🛠️', color: 'text-violet-700 dark:text-violet-300', border: 'border-violet-100 dark:border-violet-800', bg: 'bg-violet-50/40 dark:bg-violet-950/20' },
 }
@@ -252,9 +252,24 @@ export function CatalogueClient() {
           Catalogue des applications
         </h1>
         <p className="text-white/70 text-sm max-w-xl mx-auto">
-          RSE, Business, Métier — chaque outil est accessible par abonnement, avec gestion des droits par organisation.
-          Demandez l&apos;accès depuis cette page ou contactez votre administrateur.
+          Chaque application sert une étape de votre démarche — jamais l&apos;inverse.
+          Accès par abonnement, droits gérés par organisation ; demandez l&apos;accès depuis cette page ou contactez votre administrateur.
         </p>
+
+        {/* La démarche en 3 temps */}
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm text-white/80">
+          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/15 px-4 py-1.5">
+            <span>👁️</span> 1 · Se voir agir
+          </span>
+          <span className="text-white/40">→</span>
+          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/15 px-4 py-1.5">
+            <span>🧭</span> 2 · Retrouver le sens
+          </span>
+          <span className="text-white/40">→</span>
+          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/15 px-4 py-1.5">
+            <span>🛠️</span> 3 · Tenir ses engagements — et le prouver
+          </span>
+        </div>
 
         {/* Bandeau info accès */}
         <div className="mt-6 inline-flex items-center gap-3 rounded-xl bg-white/10 border border-white/20 px-5 py-3 text-sm text-white/80">
