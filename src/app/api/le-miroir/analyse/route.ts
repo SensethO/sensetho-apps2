@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       .map(([k, v]) => `- ${k} : ${v}`)
       .join('\n')
 
-    const system = `Tu es un éthologue d'entreprise (méthode Sens'ethO). On observe une organisation (ou un service) comme un être vivant : on lui associe une ESPÈCE (mode de fonctionnement) et un HABITAT par milieu — le MARCHÉ (sa niche économique) et la CITÉ (sa place sociale/territoriale) — puis un verdict d'adéquation (1=inadéquat … 4=pleinement adéquat) par milieu. Tu choisis STRICTEMENT parmi les ids fournis.\n\n${catalogueForAI()}\n\nEn t'appuyant sur ta connaissance du secteur déclaré, établis aussi un PROFIL SECTORIEL indicatif (attractivité, forces, faiblesses, turnover, stress/burn-out, niveau de rémunération et part fixe vs variable). Sers-toi de ces signaux pour éclairer le choix du milieu et des verdicts : turnover élevé, stress fort ou secteur en déclin → milieu plus hostile et adéquation plus basse ; secteur attractif et porteur → milieu plus ouvert. Donne des ordres de grandeur réalistes, jamais une fausse précision inventée.\n\nRéponds UNIQUEMENT par un objet JSON valide, sans texte autour :\n{"especeId":"<id>","habitatMarcheId":"<id>","habitatCiteId":"<id>","verdictMarche":<1-4>,"verdictCite":<1-4>,"justification":"<2-3 phrases>","secteur":{"nom":"<secteur identifié>","attractivite":"<niveau + 1 phrase>","forces":["<2-3 items>"],"faiblesses":["<2-3 items>"],"turnover":"<ordre de grandeur + commentaire>","stress_burnout":"<niveau + commentaire>","remuneration":"<niveau de salaire et part fixe/variable typiques du secteur>"}}`
+    const system = `Tu es un éthologue d'entreprise (méthode Sens'ethO). L'entreprise vit dans DEUX milieux à la fois : son MARCHÉ (sa niche économique) et sa place dans la CITÉ (territoire, emploi, ce qu'elle prélève et rend à la société). Elle peut y être DEUX ANIMAUX TOTALEMENT DIFFÉRENTS — un requin sur son marché peut être un ver de terre dans la cité. Tu proposes donc : une ESPÈCE pour le marché, une ESPÈCE pour la cité (identique seulement si c'est vraiment justifié), un HABITAT par milieu, et un verdict d'adéquation (1=inadéquat … 4=pleinement adéquat) par milieu. Le portrait-cité est aussi la marque employeur réelle : demande-toi si cet animal est attractif, quelles valeurs et quelle raison d'être il renvoie. Tu choisis STRICTEMENT parmi les ids fournis.\n\n${catalogueForAI()}\n\nEn t'appuyant sur ta connaissance du secteur déclaré, établis aussi un PROFIL SECTORIEL indicatif (attractivité, forces, faiblesses, turnover, stress/burn-out, niveau de rémunération et part fixe vs variable). Sers-toi de ces signaux pour éclairer le choix du milieu et des verdicts : turnover élevé, stress fort ou secteur en déclin → milieu plus hostile et adéquation plus basse ; secteur attractif et porteur → milieu plus ouvert. Donne des ordres de grandeur réalistes, jamais une fausse précision inventée.\n\nRéponds UNIQUEMENT par un objet JSON valide, sans texte autour :\n{"especeId":"<id espèce marché>","especeCiteId":"<id espèce cité>","habitatMarcheId":"<id>","habitatCiteId":"<id>","verdictMarche":<1-4>,"verdictCite":<1-4>,"justification":"<2-3 phrases, dont un mot sur la paire des deux animaux : tension féconde ou écartèlement ?>","secteur":{"nom":"<secteur identifié>","attractivite":"<niveau + 1 phrase>","forces":["<2-3 items>"],"faiblesses":["<2-3 items>"],"turnover":"<ordre de grandeur + commentaire>","stress_burnout":"<niveau + commentaire>","remuneration":"<niveau de salaire et part fixe/variable typiques du secteur>"}}`
 
     const userMsg = `Être à analyser : « ${etreLabel} »\n\nÉléments fournis :\n${lignes || '(peu d\'éléments)'}\n${quizTags?.length ? `\nIndices comportementaux : ${quizTags.join(', ')}` : ''}\n\nPropose le portrait éthologique le plus juste. L'habitat marché doit être un habitat plutôt « marché », l'habitat cité plutôt « cité ».`
 
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
 
     // Validation stricte des ids + clamp des verdicts
     const especeId = ESPECES.some((e) => e.id === parsed.especeId) ? (parsed.especeId as string) : ''
+    const especeCiteId = ESPECES.some((e) => e.id === parsed.especeCiteId) ? (parsed.especeCiteId as string) : especeId
     const habitatMarcheId = HABITATS.some((h) => h.id === parsed.habitatMarcheId) ? (parsed.habitatMarcheId as string) : ''
     const habitatCiteId = HABITATS.some((h) => h.id === parsed.habitatCiteId) ? (parsed.habitatCiteId as string) : ''
     const clamp = (v: unknown) => Math.min(4, Math.max(1, Math.round(Number(v) || 3)))
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       suggestion: {
-        especeId, habitatMarcheId, habitatCiteId,
+        especeId, especeCiteId, habitatMarcheId, habitatCiteId,
         verdictMarche: clamp(parsed.verdictMarche), verdictCite: clamp(parsed.verdictCite),
         justification: typeof parsed.justification === 'string' ? parsed.justification : '',
         secteur,

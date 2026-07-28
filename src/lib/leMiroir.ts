@@ -183,10 +183,63 @@ export function catalogueForAI(): string {
 export const SECTEUR_DISCLAIMER =
   "Profil sectoriel généré par l'IA à titre indicatif (ordres de grandeur, non contractuels). À recouper avec des sources de référence : DARES, Insee, branches professionnelles, baromètres (Empreinte Humaine/OpinionWay, Ayming…)."
 
-// --- Êtres observés ---
-export const ETRE_TYPES = [
-  { key: 'entreprise', label: "L'entreprise" },
-  { key: 'mon-service', label: 'Mon service' },
-  { key: 'mon-manager', label: 'Mon manager (en tant que rôle)' },
-  { key: 'autre-service', label: 'Un autre service' },
+// ════════════════════════════════════════════════════════════════════════════
+// Méthode d'accompagnement v0.6 (corpus : Methode_Accompagnement.md)
+// Cascade des êtres, contrat de règles, seuil, relations, signaux, dédicace.
+// ════════════════════════════════════════════════════════════════════════════
+
+export type EtreKind = 'entreprise' | 'service' | 'poste' | 'partie_prenante'
+
+export const ETRE_KIND_LABELS: Record<EtreKind, string> = {
+  entreprise: "L'entreprise",
+  service: 'Les services',
+  poste: "Les postes d'encadrement",
+  partie_prenante: 'Les parties prenantes',
+}
+
+/** Seuil de restitution : rien n'est restitué en dessous de 4 regards (méthode §3.2). */
+export const SEUIL_RESTITUTION = 4
+
+/** Question-filtre imposée pour les portraits de postes (méthode §4.2 point 4). */
+export const QUESTION_FILTRE_POSTE =
+  "Décrivez le poste, pas la personne : si le titulaire changeait demain, qu'est-ce qui resterait vrai ?"
+
+export const SIGNAUX_HINT =
+  "Que fait cet animal quand il a peur ? Quand il est blessé ? Qu'est-ce qu'il ne voit pas venir ?"
+export const DEDICACE_HINT =
+  "Si l'animal-entreprise pouvait dire une chose au dirigeant, ce serait…"
+export const MILIEU_SERVICE_HINT =
+  "Sa place dans l'entreprise : qui le nourrit (qui lui donne sa matière), qui il nourrit, ses prédateurs et alliés internes, son territoire."
+export const MILIEU_POSTE_HINT =
+  "Ce que la fonction exige et ce dont elle dispose : périmètre, charge, ressources, rythme, prédateurs (urgences, injonctions contradictoires)."
+
+/** Le contrat de règles (méthode §3.2) — accepté par chaque participant avant de peindre. */
+export const CONTRAT_REGLES: string[] = [
+  "Anonymat des contributions : les portraits sont collectés sans nom ; personne ne cherchera qui a peint quoi.",
+  "Seuil de restitution : rien n'est restitué en dessous de 4 regards sur un même être — un être sous le seuil n'apparaît pas.",
+  "Aucune restitution nominative, jamais : ni classement, ni verbatim attribuable, ni « qui a dit ça ».",
+  "Le dirigeant fait l'exercice lui-même, de son côté, et ne voit aucune réponse pendant la collecte.",
+  "Restitution garantie : chaque participant verra la restitution — collecter la parole sans la rendre est contractuellement impossible ici.",
+  "Les portraits de postes décrivent le poste et la fonction, jamais la personne : « si le titulaire changeait demain, qu'est-ce qui resterait vrai ? ». Ils sont restitués au titulaire d'abord.",
+  "Étanchéité RH absolue : ce matériau n'alimente jamais une évaluation individuelle, une rémunération ou un dossier.",
+  "Clause d'arrêt : tout usage nominatif ou disciplinaire du matériau met fin à la démarche.",
+]
+
+/** Relations entreprise ↔ partie prenante (méthode §4.3, vocabulaire du Bestiaire). */
+export interface Relation { id: string; nom: string; emoji: string; sens: string }
+export const RELATIONS: Relation[] = [
+  { id: 'symbiose', nom: 'Symbiose', emoji: '🤝', sens: "Chacun nourrit l'autre — la relation profite aux deux (le poisson nettoyeur et son client)." },
+  { id: 'cooperation', nom: 'Coopération', emoji: '🐺', sens: 'On chasse ensemble vers un but commun, chacun garde son identité.' },
+  { id: 'commensalisme', nom: 'Commensalisme', emoji: '🐦', sens: "L'un profite de l'autre, qui n'y perd rien — mais n'y gagne rien non plus." },
+  { id: 'competition', nom: 'Compétition', emoji: '🦁', sens: 'Même proie, même territoire : on se dispute la ressource.' },
+  { id: 'predation', nom: 'Prédation', emoji: '🦈', sens: "L'un se nourrit de l'autre — qui épuise qui ? (fournisseur-proie, client-prédateur…)" },
+  { id: 'parasitisme', nom: 'Parasitisme', emoji: '🪺', sens: "Capte les ressources sans contribuer, évince les projets légitimes (le coucou dans le nid)." },
+]
+export const relationById = (id: string) => RELATIONS.find((r) => r.id === id)
+
+/** Côtés des parties prenantes : quel milieu de l'entreprise peuplent-elles ? */
+export const PP_COTES = [
+  { id: 'marche', label: 'Côté marché', exemples: 'clients, fournisseurs, partenaires, concurrents, financeurs' },
+  { id: 'cite', label: 'Côté cité', exemples: 'État, collectivités, syndicats, ONG, riverains, chercheurs d’emploi' },
+  { id: 'groupe', label: 'Côté groupe', exemples: 'maison mère, filiales, entités sœurs' },
 ] as const
