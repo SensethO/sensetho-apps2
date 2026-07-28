@@ -7,6 +7,7 @@
 // d'encadrement (le poste, jamais la personne) · parties prenantes.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import {
@@ -306,8 +307,7 @@ function Onboarding({ existing, onSave }: { existing: Participant | null; onSave
 
 // ─── Cadrage (owner) : invitations + postes + parties prenantes ──────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CadragePanel({ campagneId, etresDecl, onChange, supabase }: { campagneId: string; etresDecl: EtreDecl[]; onChange: () => void; supabase: any }) {
+function CadragePanel({ campagneId, etresDecl, onChange, supabase }: { campagneId: string; etresDecl: EtreDecl[]; onChange: () => void; supabase: SupabaseClient }) {
   return (
     <div className="grid lg:grid-cols-2 gap-4 mb-5">
       <ShareManager campagneId={campagneId} />
@@ -372,8 +372,7 @@ function ShareManager({ campagneId }: { campagneId: string }) {
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function EtresManager({ campagneId, etresDecl, onChange, supabase }: { campagneId: string; etresDecl: EtreDecl[]; onChange: () => void; supabase: any }) {
+function EtresManager({ campagneId, etresDecl, onChange, supabase }: { campagneId: string; etresDecl: EtreDecl[]; onChange: () => void; supabase: SupabaseClient }) {
   const [kind, setKind] = useState<'poste' | 'partie_prenante'>('poste')
   const [label, setLabel] = useState('')
   const [cote, setCote] = useState<string>('marche')
@@ -1074,10 +1073,9 @@ function PortraitDetail({ p, index }: { p: Portrait; index: number }) {
 
 // ─── Image cible, engagements, indicateurs (phase 3-4) ───────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ActionPanel({ campagne, portraits, etres, engagements, participants, prev, isOwner, supabase, onChange }: {
   campagne: Campagne; portraits: Portrait[]; etres: Etre[]; engagements: Engagement[]
-  participants: Participant[]; prev: PrevYear | null; isOwner: boolean; supabase: any; onChange: () => void
+  participants: Participant[]; prev: PrevYear | null; isOwner: boolean; supabase: SupabaseClient; onChange: () => void
 }) {
   const [cibleEspece, setCibleEspece] = useState(campagne.image_cible?.espece_id ?? '')
   const [cibleNote, setCibleNote] = useState(campagne.image_cible?.note ?? '')
