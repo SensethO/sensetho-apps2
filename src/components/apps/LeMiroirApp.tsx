@@ -17,7 +17,7 @@ import {
   especeById, habitatById, habitatsPourMilieu, suggererEspeces,
   RELATIONS, relationById, PP_COTES, CONTRAT_REGLES, SEUIL_RESTITUTION,
   QUESTION_FILTRE_POSTE, SIGNAUX_HINT, DEDICACE_HINT, MILIEU_SERVICE_HINT, MILIEU_POSTE_HINT,
-  ETRE_KIND_LABELS, type EtreKind,
+  ETRE_KIND_LABELS, SIGNAUX_CHAMPS, composeSignaux, type EtreKind,
 } from '@/lib/leMiroir'
 import { PLANCHES } from '@/lib/leMiroirPlanches'
 import { PLANCHES_HABITATS } from '@/lib/leMiroirHabitats'
@@ -837,7 +837,10 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
   const [hM, setHM] = useState(''); const [hC, setHC] = useState('')
   const [vM, setVM] = useState(0); const [vC, setVC] = useState(0)
   const [milieuLibre, setMilieuLibre] = useState(''); const [relation, setRelation] = useState('')
-  const [signaux, setSignaux] = useState(''); const [dedicace, setDedicace] = useState(''); const [justif, setJustif] = useState('')
+  // Les trois signaux sont saisis séparément (peur / blessure / angle mort) puis
+  // recomposés en un seul texte lisible à l'enregistrement.
+  const [sig, setSig] = useState<Record<string, string>>({})
+  const [dedicace, setDedicace] = useState(''); const [justif, setJustif] = useState('')
   const [answers, setAnswers] = useState<Record<string, string[]>>({})
   const [oa, setOa] = useState<Record<string, string>>({}); const [analysing, setAnalysing] = useState(false); const [aiMsg, setAiMsg] = useState<string | null>(null)
   const [aiSecteur, setAiSecteur] = useState<AiSecteur | null>(null)
@@ -855,7 +858,7 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
   function resetAll() {
     setEtreKey(''); setRegard('individuel'); setMethode('manuel')
     setEspece(''); setEspeceCite(''); setHM(''); setHC(''); setVM(0); setVC(0)
-    setMilieuLibre(''); setRelation(''); setSignaux(''); setDedicace(''); setJustif('')
+    setMilieuLibre(''); setRelation(''); setSig({}); setDedicace(''); setJustif('')
     setAnswers({}); setOa({}); setAiSecteur(null); setAiSuggestion(null); setAiMsg(null)
     setStep(0); setDone(false)
   }
@@ -936,7 +939,7 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
       verdict_cite: kind === 'entreprise' ? (vC || null) : null,
       milieu_libre: kind === 'service' || kind === 'poste' ? milieuLibre.trim() || null : null,
       relation: kind === 'partie_prenante' ? relation || null : null,
-      signaux: signaux.trim() || null,
+      signaux: composeSignaux(sig),
       dedicace: kind === 'entreprise' && regard === 'individuel' ? dedicace.trim() || null : null,
       justification: justif.trim() || null,
       kind: kind === 'entreprise' && isOwner ? regard : 'individuel',
@@ -1089,7 +1092,19 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
         {cur.key === 'vC' && <ScaleChoices value={vC} onChange={setVC} />}
 
         {cur.key === 'milieu' && textarea(milieuLibre, setMilieuLibre, 4)}
-        {cur.key === 'signaux' && textarea(signaux, setSignaux, 3)}
+        {cur.key === 'signaux' && (
+          <div className="space-y-4 max-w-2xl">
+            {SIGNAUX_CHAMPS.map((c) => (
+              <div key={c.key}>
+                <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{c.label}</div>
+                <div className="text-xs mb-1" style={{ color: 'var(--text-subtle)' }}>{c.hint}</div>
+                <textarea rows={2} value={sig[c.key] ?? ''} placeholder={c.placeholder}
+                  onChange={(e) => setSig((s) => ({ ...s, [c.key]: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm" style={card} />
+              </div>
+            ))}
+          </div>
+        )}
         {cur.key === 'dedicace' && textarea(dedicace, setDedicace, 3)}
 
         {cur.key === 'relation' && (
@@ -1127,7 +1142,9 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
                 <RecapRow label={kind === 'partie_prenante' ? 'Relation viable ?' : 'Adéquation'}>{vLbl(vM)}</RecapRow>
               </>
             )}
-            {signaux.trim() && <RecapRow label="Signaux">{signaux}</RecapRow>}
+            {SIGNAUX_CHAMPS.filter((c) => sig[c.key]?.trim()).map((c) => (
+              <RecapRow key={c.key} label={c.label.replace(/…$/, '').replace(/^Quand /, '')}>{sig[c.key]}</RecapRow>
+            ))}
             {dedicace.trim() && <RecapRow label="Dédicace">« {dedicace} »</RecapRow>}
             {aiSuggestion && (
               <div className="rounded-lg border p-2.5" style={card}>

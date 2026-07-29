@@ -205,7 +205,22 @@ export const QUESTION_FILTRE_POSTE =
   "Décrivez le poste, pas la personne : si le titulaire changeait demain, qu'est-ce qui resterait vrai ?"
 
 export const SIGNAUX_HINT =
-  "Que fait cet animal quand il a peur ? Quand il est blessé ? Qu'est-ce qu'il ne voit pas venir ?"
+  "Trois signaux à décrire séparément — répondez à ceux qui vous parlent, laissez les autres vides."
+
+/** Les trois signaux de la trame 4.2 bis, posés séparément (un champ par signal). */
+export const SIGNAUX_CHAMPS = [
+  { key: 'peur', label: "Quand il a peur, il…", hint: "Sa réaction à la menace : il fuit, se replie, attaque, se camoufle, réorganise ?", placeholder: "ex : il vire de bord — nouveau framework, nouvelle priorité" },
+  { key: 'blessure', label: "Quand il est blessé, il…", hint: "Ce qu'il fait après un coup dur (projet raté, départ, perte d'un client).", placeholder: "ex : il accélère au lieu de soigner" },
+  { key: 'angle_mort', label: "Ce qu'il ne voit pas venir…", hint: "L'angle mort : le danger que personne ne regarde, ou qu'on regarde trop tard.", placeholder: "ex : la dette technique, invisible tant que ça vole" },
+] as const
+
+/** Recompose les trois signaux en un seul texte lisible (stocké dans la colonne signaux). */
+export function composeSignaux(v: Record<string, string>): string | null {
+  const parts = SIGNAUX_CHAMPS
+    .filter((c) => v[c.key]?.trim())
+    .map((c) => `${c.label.replace(/…$/, '').trim()} ${v[c.key].trim()}`)
+  return parts.length ? parts.join(' · ') : null
+}
 export const DEDICACE_HINT =
   "Si l'animal-entreprise pouvait dire une chose au dirigeant, ce serait…"
 export const MILIEU_SERVICE_HINT =
