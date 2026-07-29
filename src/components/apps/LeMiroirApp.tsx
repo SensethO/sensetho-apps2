@@ -940,9 +940,13 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
       dedicace: kind === 'entreprise' && regard === 'individuel' ? dedicace.trim() || null : null,
       justification: justif.trim() || null,
       kind: kind === 'entreprise' && isOwner ? regard : 'individuel',
-      methode,
-      prompt: methode === 'ia' && Object.keys(promptClean).length ? promptClean : null,
-      ia: methode === 'ia' ? aiSuggestion : null,
+      // On enregistre ce qui a RÉELLEMENT servi à construire le portrait : dès qu'une
+      // analyse IA a été appliquée, elle est conservée — même si l'utilisateur a
+      // ensuite rebasculé le sélecteur sur « pas à pas » (sinon le profil sectoriel
+      // était silencieusement perdu à l'enregistrement).
+      methode: aiSuggestion ? 'ia' : 'manuel',
+      prompt: aiSuggestion && Object.keys(promptClean).length ? promptClean : null,
+      ia: aiSuggestion,
     })
     setSaving(false); setDone(true)
   }
@@ -1125,6 +1129,16 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
             )}
             {signaux.trim() && <RecapRow label="Signaux">{signaux}</RecapRow>}
             {dedicace.trim() && <RecapRow label="Dédicace">« {dedicace} »</RecapRow>}
+            {aiSuggestion && (
+              <div className="rounded-lg border p-2.5" style={card}>
+                <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-subtle)' }}>
+                  🤖 ANALYSE IA — conservée avec le portrait
+                </div>
+                {aiSecteur
+                  ? <SecteurBox sect={aiSecteur} disclaimer />
+                  : <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Proposition de l&apos;IA appliquée (sans profil sectoriel).</div>}
+              </div>
+            )}
             <div className="pt-2">
               <div className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Un dernier mot ? (facultatif)</div>
               {textarea(justif, setJustif, 2, 'Justification, contexte, nuance…')}
