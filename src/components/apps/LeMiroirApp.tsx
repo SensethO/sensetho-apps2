@@ -312,7 +312,12 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
         observer.observe(document.body, { childList: true, subtree: true })
         setTimeout(() => { observer.disconnect(); resolve() }, 4000)
       })
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      // Laisser le navigateur peindre — repli setTimeout : les rAF sont gelées
+      // quand la fenêtre est occultée/minimisée, la promesse ne doit pas y rester bloquée.
+      await new Promise<void>((r) => {
+        const t = setTimeout(r, 400)
+        requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(t); r() }))
+      })
       const { exportReport } = await enginePromise
       const orgSlug = orgName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
       await exportReport('le-miroir-pdf-root', `LeMiroir-${orgSlug}-${year}.pdf`)
