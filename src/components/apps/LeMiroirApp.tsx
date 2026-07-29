@@ -7,8 +7,10 @@
 // d'encadrement (le poste, jamais la personne) · parties prenantes.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import type { LeMiroirPdfData, PdfEtreAgg, PdfPortraitMilieu } from '@/components/apps/LeMiroirPDFReport'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import {
   ESPECES, VERDICTS, QUIZ, OPEN_QUESTIONS, SECTEUR_DISCLAIMER,
@@ -47,6 +49,9 @@ interface Engagement { id: string; qui: string; quoi: string; echeance: string |
 interface Etre { key: string; label: string; kind: EtreKind; cote?: string | null }
 interface PrevYear { especeMarche?: string; especeCite?: string; imageCible?: ImageCible | null }
 
+// Rapport PDF chargé en lazy (html2canvas + jspdf hors du bundle principal)
+const LeMiroirPDFReport = dynamic(() => import('@/components/apps/LeMiroirPDFReport'), { ssr: false })
+
 const card = { backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' } as const
 const chipStyle = (active: boolean) => active
   ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
@@ -75,6 +80,9 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
   const [prev, setPrev] = useState<PrevYear | null>(null)
   const [tab, setTab] = useState<'peindre' | 'miroir' | 'action'>('peindre')
   const [showCadrage, setShowCadrage] = useState(false)
+  const [exportingExcel, setExportingExcel] = useState(false)
+  const [exportingPDF, setExportingPDF] = useState(false)
+  const [pdfData, setPdfData] = useState<LeMiroirPdfData | null>(null)
 
   const loadAll = useCallback(async () => {
     if (!orgId) { setLoading(false); return }
@@ -186,8 +194,144 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
     loadAll()
   }
 
+  // ─── Exports exhaustifs (artefacts de restitution — seuil respecté) ─────────
+
+  async function handleExportExcel() {
+    if (!campagne || exportingExcel) return
+    setExportingExcel(true)
+    try {
+      const res = await fetch(`/api/le-miroir/${campagne.id}/export-excel`)
+      if (!res.ok) { const d = await res.json().catch(() => null); throw new Error(d?.error || 'Échec export') }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `LeMiroir_${orgName.replace(/[^a-z0-9]/gi, '_')}_${year}.xlsx`; a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { alert('Erreur export Excel : ' + String(e)) }
+    finally { setExportingExcel(false) }
+  }
+
+  function buildPdfData(): LeMiroirPdfData {
+    const espLbl = (id: string | null | undefined) => { const e = id ? especeById(id) : null; return e ? `${e.emoji} ${e.nom}` : null }
+    const habLbl = (id: string | null | undefined) => { const h = id ? habitatById(id) : null; return h ? `${h.emoji} ${h.nom}` : null }
+    const regardsDe = (key: string) => portraits.filter((p) => p.etre_key === key && p.kind === 'individuel')
+    const nDe = (key: string) => new Set(regardsDe(key).map((p) => p.user_id)).size
+
+    const het = regardsDe('entreprise')
+    const auto = portraits.find((p) => p.etre_key === 'entreprise' && p.kind === 'auto')
+    const espM = modeOf(het.map((p) => p.espece_id))
+    const espC = modeOf(het.map((p) => p.espece_cite_id || p.espece_id))
+    const vM = avgOf(het.map((p) => p.verdict_marche || 0).filter(Boolean))
+    const vC = avgOf(het.map((p) => p.verdict_cite || 0).filter(Boolean))
+    const milieu = (esp: string | undefined, hab: string | undefined, v: number | undefined, dirEsp: string | null | undefined, dirV: number | null | undefined): PdfPortraitMilieu => ({
+      especeLabel: espLbl(esp), habitatLabel: habLbl(hab), verdict: v ?? null,
+      dirigeantEspeceLabel: espLbl(dirEsp), dirigeantVerdict: dirV ?? null,
+      ecartEspece: Boolean(auto && esp && dirEsp && dirEsp !== esp),
+      ecartVerdict: Boolean(auto && v !== undefined && dirV && Math.abs(dirV - v) >= 1),
+    })
+
+    const verdictTitre: Record<EtreKind, string> = {
+      entreprise: 'Adéquation',
+      service: "L'animal du service sert-il l'animal de l'entreprise ?",
+      poste: 'Fonctionnement adapté — et poste viable ?',
+      partie_prenante: 'La relation est-elle viable pour les deux ?',
+    }
+    const agg = (e: Etre): PdfEtreAgg => {
+      const regs = regardsDe(e.key)
+      const n = nDe(e.key)
+      const sousSeuil = n < SEUIL_RESTITUTION
+      const rel = relationById(modeOf(regs.map((p) => p.relation || '').filter(Boolean)) ?? '')
+      return {
+        label: e.label, nRegards: n, sousSeuil,
+        especeLabel: sousSeuil ? null : espLbl(modeOf(regs.map((p) => p.espece_id))),
+        relationLabel: sousSeuil || !rel ? null : `${rel.emoji} ${rel.nom}`,
+        verdict: sousSeuil ? null : (avgOf(regs.map((p) => p.verdict_marche || 0).filter(Boolean)) ?? null),
+        verdictTitre: verdictTitre[e.kind],
+        milieux: sousSeuil ? [] : (regs.map((p) => p.milieu_libre).filter(Boolean) as string[]),
+        signaux: sousSeuil ? [] : (regs.map((p) => p.signaux).filter(Boolean) as string[]),
+        justifications: sousSeuil ? [] : (regs.map((p) => p.justification).filter(Boolean) as string[]),
+      }
+    }
+    const peints = (kind: EtreKind) => etres.filter((e) => e.kind === kind && portraits.some((p) => p.etre_key === e.key))
+
+    const acceptes = participants.filter((p) => p.regles_acceptees !== false).length
+    const etresPeints = etres.filter((e) => portraits.some((p) => p.etre_key === e.key))
+    const restituables = etresPeints.filter((e) => nDe(e.key) >= SEUIL_RESTITUTION)
+    const ecartDirigeant = !auto ? '—' : (() => {
+      const dM = espM && auto.espece_id !== espM
+      const dC = espC && (auto.espece_cite_id || auto.espece_id) !== espC
+      if (dM && dC) return 'Écart sur les deux milieux'
+      if (dM) return 'Écart sur le marché'
+      if (dC) return 'Écart sur la cité'
+      return "Aligné (même famille d'image)"
+    })()
+    const constates = engagements.filter((e) => e.statut === 'constate').length
+    const cibleEsp = especeById(campagne?.image_cible?.espece_id ?? '')
+    const statutLabels = { en_cours: 'En cours', constate: 'Comportement constaté ✓', abandonne: 'Abandonné' } as const
+
+    return {
+      organisation: orgName, year,
+      date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      statutLabel: 'Restitution ouverte',
+      entreprise: het.length || auto ? {
+        nRegards: nDe('entreprise'), sousSeuil: nDe('entreprise') < SEUIL_RESTITUTION,
+        marche: milieu(espM, modeOf(het.map((p) => p.habitat_marche_id || '').filter(Boolean)), vM, auto?.espece_id, auto?.verdict_marche),
+        cite: milieu(espC, modeOf(het.map((p) => p.habitat_cite_id || '').filter(Boolean)), vC, auto?.espece_cite_id || auto?.espece_id, auto?.verdict_cite),
+        paireDiff: Boolean(espM && espC && espM !== espC),
+        dedicaces: het.map((p) => p.dedicace).filter(Boolean) as string[],
+        signaux: het.map((p) => p.signaux).filter(Boolean) as string[],
+      } : null,
+      services: peints('service').map(agg),
+      postes: peints('poste').map(agg),
+      partiesPrenantes: peints('partie_prenante').map(agg),
+      imageCible: campagne?.image_cible ? { especeLabel: cibleEsp ? `${cibleEsp.emoji} ${cibleEsp.nom}` : null, note: campagne.image_cible.note ?? null } : null,
+      engagements: engagements.map((e) => ({ qui: e.qui, quoi: e.quoi, echeance: e.echeance, comportement: e.comportement, statutLabel: statutLabels[e.statut], constate: e.statut === 'constate' })),
+      indicateurs: [
+        { label: 'Participation', value: `${acceptes} participant(s) ayant accepté le contrat de règles` },
+        { label: `Êtres restituables (seuil ≥ ${SEUIL_RESTITUTION})`, value: `${restituables.length} / ${etresPeints.length} êtres peints` },
+        { label: 'Écart dirigeant ↔ équipes', value: ecartDirigeant },
+        { label: 'Tenue des engagements', value: engagements.length ? `${constates} / ${engagements.length} comportement(s) constaté(s)` : 'Aucun engagement posé' },
+      ],
+      regles: CONTRAT_REGLES,
+      seuil: SEUIL_RESTITUTION,
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!campagne || exportingPDF) return
+    setExportingPDF(true)
+    try {
+      const data = buildPdfData()
+      const enginePromise = import('@/lib/pdf/exportReport')
+      setPdfData(data)
+      await new Promise<void>((resolve) => {
+        if (document.querySelector('#le-miroir-pdf-root [data-pdf-page]')) { resolve(); return }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('#le-miroir-pdf-root [data-pdf-page]')) { observer.disconnect(); resolve() }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => { observer.disconnect(); resolve() }, 4000)
+      })
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const { exportReport } = await enginePromise
+      const orgSlug = orgName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      await exportReport('le-miroir-pdf-root', `LeMiroir-${orgSlug}-${year}.pdf`)
+    } catch (e) {
+      console.error('[le-miroir/exportPDF]', e)
+    } finally {
+      setExportingPDF(false)
+      setPdfData(null)
+    }
+  }
+
   return (
     <div className="p-4 md:p-6">
+      {/* ── Rapport PDF (monté hors-écran le temps de l'export) ── */}
+      {pdfData && (
+        <div style={{ position: 'absolute', left: -9999, top: 0 }} aria-hidden="true">
+          <LeMiroirPDFReport id="le-miroir-pdf-root" data={pdfData} />
+        </div>
+      )}
       <div className="flex gap-2 mb-2 flex-wrap items-center">
         {(['peindre', 'miroir', 'action'] as const).map((t) => (
           (t !== 'action' || !enCollecte) && (
@@ -200,6 +344,18 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
           <button onClick={() => setShowCadrage((v) => !v)} className="px-4 py-2 rounded-lg text-sm border" style={{ ...card, color: 'var(--text)' }}>
             ⚙️ Cadrage
           </button>
+        )}
+        {!enCollecte && (
+          <>
+            <button disabled={exportingPDF} onClick={handleExportPDF} title="Rapport PDF exhaustif de la restitution"
+              className="px-4 py-2 rounded-lg text-sm border disabled:opacity-50" style={{ ...card, color: 'var(--text)' }}>
+              {exportingPDF ? '⏳ PDF…' : '⬇ PDF'}
+            </button>
+            <button disabled={exportingExcel} onClick={handleExportExcel} title="Export Excel exhaustif (5 onglets)"
+              className="px-4 py-2 rounded-lg text-sm border disabled:opacity-50" style={{ ...card, color: 'var(--text)' }}>
+              {exportingExcel ? '⏳ Excel…' : '⬇ Excel'}
+            </button>
+          </>
         )}
         <span className="px-3 py-1 rounded-full text-xs border" style={enCollecte
           ? { backgroundColor: '#eef4ee', color: '#3d6b3d', borderColor: '#cfe0cf' }
