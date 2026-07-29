@@ -33,26 +33,72 @@ export async function POST(req: NextRequest) {
 
     const userMsg = `Être à analyser : « ${etreLabel} »\n\nÉléments fournis :\n${lignes || '(peu d\'éléments)'}\n${quizTags?.length ? `\nIndices comportementaux : ${quizTags.join(', ')}` : ''}\n\nPropose le portrait éthologique le plus juste. L'habitat marché doit être un habitat plutôt « marché », l'habitat cité plutôt « cité ».`
 
+    // Sortie structurée : le JSON est garanti conforme au schéma (plus d'extraction par regex).
+    // Les ids d'espèces et d'habitats sont contraints par enum → l'IA ne peut pas inventer un id.
+    const OUTPUT_SCHEMA = {
+      type: 'object',
+      properties: {
+        especeId: { type: 'string', enum: ESPECES.map((e) => e.id), description: "Animal de l'entreprise sur son MARCHÉ" },
+        especeCiteId: { type: 'string', enum: ESPECES.map((e) => e.id), description: "Animal de l'entreprise dans la CITÉ (peut être totalement différent)" },
+        habitatMarcheId: { type: 'string', enum: HABITATS.filter((h) => h.milieu !== 'cité').map((h) => h.id) },
+        habitatCiteId: { type: 'string', enum: HABITATS.filter((h) => h.milieu !== 'marché').map((h) => h.id) },
+        verdictMarche: { type: 'integer', enum: [1, 2, 3, 4] },
+        verdictCite: { type: 'integer', enum: [1, 2, 3, 4] },
+        justification: { type: 'string', description: "2-3 phrases, dont un mot sur la paire des deux animaux (tension féconde ou écartèlement ?)" },
+        secteur: {
+          type: 'object',
+          properties: {
+            nom: { type: 'string' },
+            attractivite: { type: 'string' },
+            forces: { type: 'array', items: { type: 'string' } },
+            faiblesses: { type: 'array', items: { type: 'string' } },
+            turnover: { type: 'string' },
+            stress_burnout: { type: 'string' },
+            remuneration: { type: 'string' },
+          },
+          required: ['nom', 'attractivite', 'forces', 'faiblesses', 'turnover', 'stress_burnout', 'remuneration'],
+          additionalProperties: false,
+        },
+      },
+      required: ['especeId', 'especeCiteId', 'habitatMarcheId', 'habitatCiteId', 'verdictMarche', 'verdictCite', 'justification', 'secteur'],
+      additionalProperties: false,
+    } as const
+
     const client = new Anthropic({ apiKey })
+    // max_tokens généreux : la réflexion adaptative est active par défaut sur les modèles
+    // actuels et partage le budget avec la réponse (800 tronquerait le JSON).
+    const params = {
+      max_tokens: 8000,
+      system,
+      messages: [{ role: 'user' as const, content: userMsg }],
+      output_config: { format: { type: 'json_schema' as const, schema: OUTPUT_SCHEMA } },
+    }
     let text = ''
+    let stopReason: string | null = null
     try {
-      const msg = await client.messages.create({
-        model: 'claude-opus-4-5', max_tokens: 800, system,
-        messages: [{ role: 'user', content: userMsg }],
-      })
+      const msg = await client.messages.create({ model: 'claude-opus-5', ...params })
       text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
+      stopReason = msg.stop_reason
     } catch (primaryErr) {
       console.warn('[le-miroir/analyse] opus indisponible, fallback sonnet:', primaryErr)
-      const msg = await client.messages.create({
-        model: 'claude-sonnet-4-5', max_tokens: 800, system,
-        messages: [{ role: 'user', content: userMsg }],
-      })
+      const msg = await client.messages.create({ model: 'claude-sonnet-5', ...params })
       text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
+      stopReason = msg.stop_reason
     }
 
-    const m = text.match(/\{[\s\S]*\}/)
-    if (!m) return NextResponse.json({ error: 'Réponse IA non interprétable', raw: text }, { status: 502 })
-    const parsed = JSON.parse(m[0]) as Record<string, unknown>
+    if (stopReason === 'refusal') {
+      return NextResponse.json({ error: "L'analyse a été refusée par les garde-fous du modèle. Reformulez la description ou utilisez le mode pas à pas." }, { status: 502 })
+    }
+
+    // La sortie structurée garantit un JSON valide ; le repli regex couvre un éventuel préambule.
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>
+    } catch {
+      const m = text.match(/\{[\s\S]*\}/)
+      if (!m) return NextResponse.json({ error: 'Réponse IA non interprétable', raw: text }, { status: 502 })
+      parsed = JSON.parse(m[0]) as Record<string, unknown>
+    }
 
     // Validation stricte des ids + clamp des verdicts
     const especeId = ESPECES.some((e) => e.id === parsed.especeId) ? (parsed.especeId as string) : ''
