@@ -19,6 +19,7 @@ import {
   QUESTION_FILTRE_POSTE, SIGNAUX_HINT, DEDICACE_HINT, MILIEU_SERVICE_HINT, MILIEU_POSTE_HINT,
   ETRE_KIND_LABELS, type EtreKind,
 } from '@/lib/leMiroir'
+import { PLANCHES } from '@/lib/leMiroirPlanches'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -598,19 +599,39 @@ interface NewPortrait {
 
 const especeImg = (id: string) => `/bestiaire/${id}.jpg`
 
-/** Fiche complète d'une espèce : illustration + mécanisme, traduction, forces, dérives. */
+/** Fiche complète d'une espèce — la planche d'observation du Bestiaire :
+ *  illustration + mode d'organisation, mécanisme, traduction, forces, vigilances, adéquation. */
 function PlancheModal({ especeId, onClose, onChoose }: { especeId: string; onClose: () => void; onChoose?: (id: string) => void }) {
   const e = especeById(especeId)
+  const p = PLANCHES[especeId]
   if (!e) return null
+  const section = (icone: string, titre: string, texte: string) => (
+    <div className="mb-3">
+      <div className="text-xs font-bold tracking-wide mb-0.5" style={{ color: 'var(--accent)' }}>{icone} {titre.toUpperCase()}</div>
+      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{texte}</p>
+    </div>
+  )
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }} onClick={onClose}>
       <div className="rounded-2xl border max-w-2xl w-full max-h-[92vh] overflow-y-auto" style={card} onClick={(ev) => ev.stopPropagation()}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={especeImg(e.id)} alt={e.nom} className="w-full" style={{ maxHeight: '46vh', objectFit: 'cover', borderRadius: '1rem 1rem 0 0' }} />
+        <img src={especeImg(e.id)} alt={e.nom} className="w-full" style={{ maxHeight: '40vh', objectFit: 'cover', borderRadius: '1rem 1rem 0 0' }} />
         <div className="p-5">
           <div className="text-lg font-semibold" style={{ color: 'var(--text)' }}>{e.emoji} {e.nom}</div>
-          <div className="text-sm mb-2" style={{ color: 'var(--accent)' }}>{e.trait}</div>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{e.description}</p>
+          <div className="text-sm font-medium mb-3 pb-2 border-b" style={{ color: 'var(--accent)', borderColor: 'var(--border)' }}>
+            {p?.mode ?? e.trait}
+          </div>
+          {p ? (
+            <>
+              {section('🔬', 'Le mécanisme — dans la nature', p.meca)}
+              {section('🏢', "La traduction — dans l'entreprise", p.traduction)}
+              {section('💪', 'Forces', p.forces)}
+              {section('⚠️', 'Vigilances', p.vigilances)}
+              {section('🌿', 'Adéquation au milieu', p.adequation)}
+            </>
+          ) : (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{e.description}</p>
+          )}
           <div className="flex gap-2 mt-4">
             {onChoose && (
               <button onClick={() => { onChoose(e.id); onClose() }} className="px-4 py-2 rounded-lg text-white text-sm" style={{ backgroundColor: 'var(--accent)' }}>
