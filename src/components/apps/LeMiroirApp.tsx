@@ -17,7 +17,7 @@ import {
   especeById, habitatById, habitatsPourMilieu, suggererEspeces,
   RELATIONS, relationById, PP_COTES, CONTRAT_REGLES, SEUIL_RESTITUTION,
   QUESTION_FILTRE_POSTE, SIGNAUX_HINT, DEDICACE_HINT, MILIEU_SERVICE_HINT, MILIEU_POSTE_HINT,
-  type EtreKind,
+  ETRE_KIND_LABELS, type EtreKind,
 } from '@/lib/leMiroir'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -585,7 +585,7 @@ function EtresManager({ campagneId, etresDecl, onChange, supabase }: { campagneI
   )
 }
 
-// ─── Peindre ──────────────────────────────────────────────────────────────────
+// ─── Peindre : parcours guidé pas à pas (façon formulaire), planches illustrées ──
 
 interface NewPortrait {
   etre_key: string; etre_label: string; espece_id: string; espece_cite_id: string | null
@@ -596,38 +596,182 @@ interface NewPortrait {
   prompt: Record<string, string> | null; ia: AiSuggestion | null
 }
 
-function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwner: boolean; myAutoDone: boolean; onSave: (p: NewPortrait) => Promise<void> }) {
-  const [etreKey, setEtreKey] = useState(etres[0]?.key ?? 'entreprise')
-  const etre = etres.find((x) => x.key === etreKey) ?? etres[0]
-  const kind: EtreKind = etre?.kind ?? 'entreprise'
+const especeImg = (id: string) => `/bestiaire/${id}.jpg`
 
+/** Fiche complète d'une espèce : illustration + mécanisme, traduction, forces, dérives. */
+function PlancheModal({ especeId, onClose, onChoose }: { especeId: string; onClose: () => void; onChoose?: (id: string) => void }) {
+  const e = especeById(especeId)
+  if (!e) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }} onClick={onClose}>
+      <div className="rounded-2xl border max-w-2xl w-full max-h-[92vh] overflow-y-auto" style={card} onClick={(ev) => ev.stopPropagation()}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={especeImg(e.id)} alt={e.nom} className="w-full" style={{ maxHeight: '46vh', objectFit: 'cover', borderRadius: '1rem 1rem 0 0' }} />
+        <div className="p-5">
+          <div className="text-lg font-semibold" style={{ color: 'var(--text)' }}>{e.emoji} {e.nom}</div>
+          <div className="text-sm mb-2" style={{ color: 'var(--accent)' }}>{e.trait}</div>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{e.description}</p>
+          <div className="flex gap-2 mt-4">
+            {onChoose && (
+              <button onClick={() => { onChoose(e.id); onClose() }} className="px-4 py-2 rounded-lg text-white text-sm" style={{ backgroundColor: 'var(--accent)' }}>
+                ✓ Choisir cette espèce
+              </button>
+            )}
+            <button onClick={onClose} className="px-4 py-2 rounded-lg border text-sm" style={{ ...card, color: 'var(--text)' }}>Fermer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Galerie des 18 espèces : illustration + trait, sélection directe + accès à la planche. */
+function EspeceGrid({ value, onChange, suggested, onPlanche }: {
+  value: string; onChange: (v: string) => void; suggested?: Set<string>; onPlanche: (id: string) => void
+}) {
+  return (
+    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(170px,1fr))' }}>
+      {ESPECES.map((e) => (
+        <div key={e.id} className="rounded-xl border overflow-hidden cursor-pointer transition-transform"
+          style={value === e.id ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent)' } : card}
+          onClick={() => onChange(e.id)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={especeImg(e.id)} alt={e.nom} loading="lazy" className="w-full" style={{ height: 110, objectFit: 'cover' }} />
+          <div className="p-2">
+            <div className="text-sm font-medium flex items-center gap-1" style={{ color: 'var(--text)' }}>
+              {value === e.id && <span style={{ color: 'var(--accent)' }}>✓</span>}
+              {e.emoji} {e.nom} {suggested?.has(e.id) && <span className="text-[10px]" style={{ color: 'var(--accent)' }}>★ suggéré</span>}
+            </div>
+            <div className="text-xs mb-1" style={{ color: 'var(--text-subtle)' }}>{e.trait}</div>
+            <button onClick={(ev) => { ev.stopPropagation(); onPlanche(e.id) }} className="text-xs underline" style={{ color: 'var(--accent)' }}>
+              🔍 Voir la planche
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Aide au choix : le questionnaire comportemental (repliable). */
+function QuizHelper({ answers, setAnswers, espece, setEspece }: {
+  answers: Record<string, string[]>; setAnswers: React.Dispatch<React.SetStateAction<Record<string, string[]>>>
+  espece: string; setEspece: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const tags = Object.values(answers).flat()
+  const suggestions = suggererEspeces(tags)
+  const visibleQuiz = QUIZ.filter((q) => !q.showIf || q.showIf(tags))
+  return (
+    <div className="rounded-xl border mb-4" style={card}>
+      <button onClick={() => setOpen((o) => !o)} className="w-full text-left px-4 py-2.5 text-sm font-medium" style={{ color: 'var(--text)' }}>
+        🧭 Besoin d&apos;aide pour trouver l&apos;espèce ? {open ? '▴' : '▾'}
+      </button>
+      {open && (
+        <div className="px-4 pb-4">
+          {visibleQuiz.map((q) => (
+            <div key={q.id} className="mb-3">
+              <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{q.question}</div>
+              {q.hint && <div className="text-xs mb-1.5" style={{ color: 'var(--text-subtle)' }}>{q.hint}</div>}
+              <div className="flex flex-wrap gap-2">
+                {q.options.map((o, i) => {
+                  const active = (answers[q.id] || []).join() === o.tags.join()
+                  return <button key={i} onClick={() => setAnswers((a) => ({ ...a, [q.id]: active ? [] : o.tags }))}
+                    className="px-3 py-1.5 rounded-full border text-xs" style={chipStyle(active)}>{o.label}</button>
+                })}
+              </div>
+            </div>
+          ))}
+          {suggestions.length > 0 && (
+            <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+              <div className="text-sm font-medium mb-2" style={{ color: 'var(--text)' }}>Suggestions d&apos;après vos réponses :</div>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.map((s) => { const e = especeById(s.id)!; return (
+                  <button key={s.id} onClick={() => setEspece(s.id)} className="px-3 py-1.5 rounded-full border text-xs" style={chipStyle(espece === s.id)}>★ {e.emoji} {e.nom}</button>
+                ) })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Choix d'habitat : cartes + fiche du milieu sélectionné. */
+function HabitatChoices({ milieu, value, onChange }: { milieu: 'marché' | 'cité'; value: string; onChange: (v: string) => void }) {
+  const sel = value ? habitatById(value) : null
+  return (
+    <div>
+      <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))' }}>
+        {habitatsPourMilieu(milieu).map((h) => (
+          <button key={h.id} onClick={() => onChange(h.id)} className="text-left rounded-lg border p-2.5"
+            style={value === h.id ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent)' } : card}>
+            <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{value === h.id && <span style={{ color: 'var(--accent)' }}>✓ </span>}{h.emoji} {h.nom}</div>
+            <div className="text-xs" style={{ color: 'var(--text-subtle)' }}>{h.sens}</div>
+          </button>
+        ))}
+      </div>
+      {sel && (
+        <div className="rounded-lg border p-3 text-sm" style={{ ...card, color: 'var(--text-muted)' }}>
+          <span className="font-semibold" style={{ color: 'var(--text)' }}>{sel.emoji} {sel.nom} — </span>{sel.description}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Échelle d'adéquation : liste verticale façon formulaire. */
+function ScaleChoices({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="space-y-2 max-w-md">
+      {VERDICTS.map((v) => (
+        <button key={v.value} onClick={() => onChange(v.value)} className="w-full text-left px-4 py-3 rounded-lg border text-sm flex items-center gap-3"
+          style={value === v.value ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent)' } : card}>
+          <span className="inline-block w-4 h-4 rounded-full border-2 flex-shrink-0"
+            style={{ borderColor: value === v.value ? 'var(--accent)' : 'var(--border)', backgroundColor: value === v.value ? 'var(--accent)' : 'transparent' }} />
+          <span style={{ color: 'var(--text)' }}>{v.label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+interface WizStep { key: string; titre: string; sub?: string; optional?: boolean; valid: boolean }
+
+function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwner: boolean; myAutoDone: boolean; onSave: (p: NewPortrait) => Promise<void> }) {
+  // ── Réponses ──
+  const [etreKey, setEtreKey] = useState<string>('')
+  const etre = etres.find((x) => x.key === etreKey) ?? null
+  const kind: EtreKind | null = etre?.kind ?? null
   const [regard, setRegard] = useState<'individuel' | 'auto'>('individuel')
+  const [methode, setMethode] = useState<'manuel' | 'ia'>('manuel')
   const [espece, setEspece] = useState(''); const [especeCite, setEspeceCite] = useState('')
   const [hM, setHM] = useState(''); const [hC, setHC] = useState('')
   const [vM, setVM] = useState(0); const [vC, setVC] = useState(0)
   const [milieuLibre, setMilieuLibre] = useState(''); const [relation, setRelation] = useState('')
   const [signaux, setSignaux] = useState(''); const [dedicace, setDedicace] = useState(''); const [justif, setJustif] = useState('')
-  const [answers, setAnswers] = useState<Record<string, string[]>>({}); const [saving, setSaving] = useState(false); const [saved, setSaved] = useState(false)
+  const [answers, setAnswers] = useState<Record<string, string[]>>({})
   const [oa, setOa] = useState<Record<string, string>>({}); const [analysing, setAnalysing] = useState(false); const [aiMsg, setAiMsg] = useState<string | null>(null)
   const [aiSecteur, setAiSecteur] = useState<AiSecteur | null>(null)
-  const [methode, setMethode] = useState<'manuel' | 'ia'>('manuel')
   const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null)
+  // ── Parcours ──
+  const [step, setStep] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [done, setDone] = useState(false)
+  const [planche, setPlanche] = useState<string | null>(null)
 
-  const tags = Object.values(answers).flat(); const suggestions = suggererEspeces(tags)
-  const visibleQuiz = QUIZ.filter((q) => !q.showIf || q.showIf(tags))
+  const tags = Object.values(answers).flat()
+  const suggested = new Set(suggererEspeces(tags).map((s) => s.id))
   const etreLabel = etre?.label ?? 'cet être'
 
-  function resetForm() {
+  function resetAll() {
+    setEtreKey(''); setRegard('individuel'); setMethode('manuel')
     setEspece(''); setEspeceCite(''); setHM(''); setHC(''); setVM(0); setVC(0)
     setMilieuLibre(''); setRelation(''); setSignaux(''); setDedicace(''); setJustif('')
     setAnswers({}); setOa({}); setAiSecteur(null); setAiSuggestion(null); setAiMsg(null)
+    setStep(0); setDone(false)
   }
-
-  const ready = kind === 'entreprise'
-    ? Boolean(espece && especeCite && hM && hC && vM && vC)
-    : kind === 'partie_prenante'
-      ? Boolean(espece && relation && vM)
-      : Boolean(espece && milieuLibre.trim() && vM)
 
   async function analyser() {
     setAnalysing(true); setAiMsg(null); setAiSecteur(null); setAiSuggestion(null)
@@ -647,17 +791,55 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
       if (s.verdictCite) setVC(s.verdictCite)
       if (s.justification) setJustif(s.justification)
       if (s.secteur) setAiSecteur(s.secteur as AiSecteur)
-      setAiMsg("✓ Proposition de l'IA appliquée ci-dessous — ajustez si besoin, puis enregistrez.")
+      setAiMsg("✓ Proposition appliquée — les étapes suivantes sont pré-remplies, vous gardez la main pour ajuster.")
     } catch {
       setAiMsg("Erreur lors de l'analyse.")
     }
     setAnalysing(false)
   }
 
+  // ── Définition des étapes selon l'être ──
+  const steps: WizStep[] = [
+    { key: 'etre', titre: 'Que peignez-vous ?', sub: "Chaque entité est un animal vivant dans un milieu. Choisissez l'être à décrire.", valid: Boolean(etreKey) },
+  ]
+  if (kind === 'entreprise') {
+    if (methode === 'ia') steps.push({ key: 'ia', titre: "Décrire l'activité à l'IA", sub: "Quelques éléments suffisent ; l'IA propose les deux animaux et leurs habitats — vous ajusterez.", optional: true, valid: Boolean(aiSuggestion) })
+    steps.push(
+      { key: 'espM', titre: "L'animal du MARCHÉ", sub: "Sur son marché (concurrents, clients, cadence), quel animal est cette entreprise ? Ouvrez les planches pour comparer.", valid: Boolean(espece) },
+      { key: 'habM', titre: 'Son habitat économique', sub: 'Dans quel milieu cet animal vit-il ?', valid: Boolean(hM) },
+      { key: 'vM', titre: 'Est-il armé pour ce milieu ?', sub: "L'espèce est-elle adaptée à ce milieu, tel qu'il évolue ?", valid: vM > 0 },
+      { key: 'espC', titre: "L'animal de la CITÉ", sub: "Regardée comme habitante de la société (territoire, emploi, ce qu'elle prélève et rend), ce peut être un animal totalement différent. C'est aussi sa marque employeur réelle : a-t-on envie de rejoindre sa colonie, sa meute, sa ruche ?", valid: Boolean(especeCite) },
+      { key: 'habC', titre: 'Son habitat social', sub: 'Dans quel milieu de la cité cet animal vit-il ?', valid: Boolean(hC) },
+      { key: 'vC', titre: 'Est-il un habitant viable — et attractif ?', sub: 'Quelles valeurs et quelle raison d’être renvoie-t-il ?', valid: vC > 0 },
+      { key: 'signaux', titre: 'Les signaux', sub: SIGNAUX_HINT, optional: true, valid: true },
+    )
+    if (!isOwner || regard === 'individuel') {
+      steps.push({ key: 'dedicace', titre: 'La dédicace (anonyme)', sub: DEDICACE_HINT, optional: true, valid: true })
+    }
+  } else if (kind === 'service' || kind === 'poste') {
+    steps.push(
+      { key: 'esp', titre: kind === 'poste' ? "L'animal du poste" : "L'animal du service", sub: kind === 'poste' ? QUESTION_FILTRE_POSTE : 'Quel animal est ce service, tel que vous l’observez ?', valid: Boolean(espece) },
+      { key: 'milieu', titre: kind === 'poste' ? 'Son milieu : la fonction' : "Son milieu : sa place dans l'entreprise", sub: kind === 'poste' ? MILIEU_POSTE_HINT : MILIEU_SERVICE_HINT, valid: Boolean(milieuLibre.trim()) },
+      { key: 'v', titre: kind === 'poste' ? 'Le poste est-il adapté — et viable ?' : "Sert-il l'animal de l'entreprise ?", sub: kind === 'poste' ? "L'inadéquation ne dit jamais « mauvais manager » : elle dit poste mal rencontré ou mal conçu." : undefined, valid: vM > 0 },
+      { key: 'signaux', titre: 'Les signaux', sub: SIGNAUX_HINT, optional: true, valid: true },
+    )
+  } else if (kind === 'partie_prenante') {
+    steps.push(
+      { key: 'esp', titre: `L'animal : ${etreLabel}`, sub: 'Quel animal est cette partie prenante, vue depuis l’entreprise ?', valid: Boolean(espece) },
+      { key: 'relation', titre: "La relation avec l'entreprise", sub: 'Qui nourrit qui, qui épuise qui ?', valid: Boolean(relation) },
+      { key: 'v', titre: 'La relation est-elle viable pour les deux ?', valid: vM > 0 },
+    )
+  }
+  if (kind) steps.push({ key: 'recap', titre: 'Relire et envoyer', sub: 'Vérifiez votre portrait — vous pouvez revenir en arrière pour ajuster.', valid: true })
+
+  const cur = steps[Math.min(step, steps.length - 1)]
+  const isLast = cur.key === 'recap'
+  const canNext = cur.valid || cur.optional
+
   async function save() {
-    setSaving(true); setSaved(false)
+    setSaving(true)
     const promptClean = Object.fromEntries(Object.entries(oa).filter(([, v]) => v && v.trim()))
-    const base: NewPortrait = {
+    await onSave({
       etre_key: etreKey, etre_label: etreLabel,
       espece_id: espece,
       espece_cite_id: kind === 'entreprise' ? especeCite : null,
@@ -674,78 +856,112 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
       methode,
       prompt: methode === 'ia' && Object.keys(promptClean).length ? promptClean : null,
       ia: methode === 'ia' ? aiSuggestion : null,
-    }
-    await onSave(base)
-    setSaving(false); setSaved(true); resetForm()
+    })
+    setSaving(false); setDone(true)
   }
 
+  // ── Écran de confirmation ──
+  if (done) {
+    return (
+      <div className="max-w-xl mx-auto text-center py-14">
+        <div className="text-5xl mb-4">🪞</div>
+        <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text)' }}>Votre portrait a été envoyé</h2>
+        <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
+          Merci. Il rejoint le miroir de façon anonyme — il sera restitué avec les autres regards, jamais seul (seuil de {SEUIL_RESTITUTION} regards).
+        </p>
+        <button onClick={resetAll} className="px-5 py-2.5 rounded-lg text-white" style={{ backgroundColor: 'var(--accent)' }}>
+          Peindre un autre être
+        </button>
+      </div>
+    )
+  }
+
+  const textarea = (value: string, set: (v: string) => void, rows = 3, placeholder = '') => (
+    <textarea rows={rows} value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder}
+      className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm max-w-2xl" style={card} />
+  )
+
+  const recapEspece = (id: string) => {
+    const e = especeById(id)
+    return e ? (
+      <span className="inline-flex items-center gap-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={especeImg(id)} alt={e.nom} className="w-9 h-9 rounded object-cover" />
+        <span>{e.emoji} {e.nom}</span>
+      </span>
+    ) : <span>—</span>
+  }
+  const vLbl = (v: number) => VERDICTS.find((x) => x.value === v)?.label ?? '—'
+
   return (
-    <div className="max-w-3xl">
-      <Field label="Quel être peignez-vous ?">
-        <select value={etreKey} onChange={(e) => { setEtreKey(e.target.value); resetForm(); setSaved(false) }} className="px-3 py-2 rounded-lg border bg-transparent" style={card}>
-          <optgroup label="L'entreprise (deux milieux : marché et cité)">
-            <option value="entreprise">{etres[0]?.label}</option>
-          </optgroup>
-          {etres.some((e) => e.kind === 'service') && (
-            <optgroup label="Les services">
-              {etres.filter((e) => e.kind === 'service').map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
-            </optgroup>
-          )}
-          {etres.some((e) => e.kind === 'poste') && (
-            <optgroup label="Les postes d'encadrement (le poste, jamais la personne)">
-              {etres.filter((e) => e.kind === 'poste').map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
-            </optgroup>
-          )}
-          {etres.some((e) => e.kind === 'partie_prenante') && (
-            <optgroup label="Les parties prenantes">
-              {etres.filter((e) => e.kind === 'partie_prenante').map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
-            </optgroup>
-          )}
-        </select>
-      </Field>
+    <div className="max-w-4xl">
+      {planche && <PlancheModal especeId={planche} onClose={() => setPlanche(null)}
+        onChoose={cur.key === 'espC' ? setEspeceCite : setEspece} />}
 
-      {kind === 'poste' && (
-        <div className="rounded-xl border p-3 mb-4 text-sm" style={{ ...card, color: 'var(--text-muted)' }}>
-          <b style={{ color: 'var(--text)' }}>⚠️ {QUESTION_FILTRE_POSTE}</b><br />
-          Tout ce qui ne survivrait pas au changement de titulaire n&apos;a pas sa place dans ce portrait. L&apos;animal, c&apos;est
-          le poste tel qu&apos;il fonctionne ; le milieu, c&apos;est ce que la fonction exige et ce dont elle dispose.
+      {/* ── Barre de progression ── */}
+      <div className="mb-5">
+        <div className="flex items-center justify-between text-xs mb-1.5" style={{ color: 'var(--text-subtle)' }}>
+          <span>Étape {Math.min(step + 1, steps.length)} sur {steps.length}</span>
+          <span>{etre ? etreLabel : ''}</span>
         </div>
-      )}
+        <div className="h-1.5 rounded-full" style={{ backgroundColor: 'var(--border)' }}>
+          <div className="h-1.5 rounded-full transition-all" style={{ backgroundColor: 'var(--accent)', width: `${((step + 1) / steps.length) * 100}%` }} />
+        </div>
+      </div>
 
-      {kind === 'entreprise' && isOwner && (
-        <Field label="Type de regard">
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setRegard('individuel')} className="px-3 py-1.5 rounded-lg border text-sm" style={chipStyle(regard === 'individuel')}>Regard parmi les autres</button>
-            <button onClick={() => setRegard('auto')} className="px-3 py-1.5 rounded-lg border text-sm" style={chipStyle(regard === 'auto')}>
-              Portrait de référence du dirigeant {myAutoDone ? '✓' : ''}
-            </button>
-          </div>
-          {regard === 'auto' && (
-            <div className="text-xs mt-1.5" style={{ color: 'var(--text-subtle)' }}>
-              Votre portrait servira de point de comparaison avec celui des équipes (écart dirigeant ↔ équipes). Il est requis pour clore la collecte.
-            </div>
-          )}
-        </Field>
-      )}
+      {/* ── Question courante ── */}
+      <div className="rounded-2xl border p-5 mb-4" style={card}>
+        <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text)' }}>
+          {cur.titre}{cur.optional && <span className="text-xs font-normal ml-2" style={{ color: 'var(--text-subtle)' }}>(facultatif)</span>}
+        </h2>
+        {cur.sub && <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>{cur.sub}</p>}
 
-      {kind === 'entreprise' && (
-        <Field label="Comment construire le portrait ?">
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => setMethode('ia')} className="px-3 py-1.5 rounded-lg border text-sm" style={chipStyle(methode === 'ia')}>🤖 Automatique (IA, narratif)</button>
-            <button onClick={() => setMethode('manuel')} className="px-3 py-1.5 rounded-lg border text-sm" style={chipStyle(methode === 'manuel')}>✋ Manuel (choix guidé)</button>
+        {cur.key === 'etre' && (
+          <div className="space-y-4">
+            {(['entreprise', 'service', 'poste', 'partie_prenante'] as EtreKind[]).map((k) => {
+              const list = etres.filter((e) => e.kind === k)
+              if (!list.length) return null
+              return (
+                <div key={k}>
+                  <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-subtle)' }}>{ETRE_KIND_LABELS[k].toUpperCase()}
+                    {k === 'entreprise' && ' — DEUX MILIEUX : MARCHÉ ET CITÉ'}
+                    {k === 'poste' && ' — LE POSTE, JAMAIS LA PERSONNE'}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {list.map((e) => (
+                      <button key={e.key} onClick={() => setEtreKey(e.key)} className="px-4 py-2.5 rounded-lg border text-sm" style={chipStyle(etreKey === e.key)}>
+                        {etreKey === e.key ? '✓ ' : ''}{e.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+            {kind === 'entreprise' && isOwner && (
+              <div>
+                <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-subtle)' }}>VOTRE REGARD</div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setRegard('individuel')} className="px-4 py-2.5 rounded-lg border text-sm" style={chipStyle(regard === 'individuel')}>Regard parmi les autres</button>
+                  <button onClick={() => setRegard('auto')} className="px-4 py-2.5 rounded-lg border text-sm" style={chipStyle(regard === 'auto')}>
+                    Portrait de référence du dirigeant {myAutoDone ? '✓' : ''}
+                  </button>
+                </div>
+              </div>
+            )}
+            {kind === 'entreprise' && (
+              <div>
+                <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-subtle)' }}>COMMENT CONSTRUIRE LE PORTRAIT ?</div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setMethode('manuel')} className="px-4 py-2.5 rounded-lg border text-sm" style={chipStyle(methode === 'manuel')}>✋ Pas à pas (guidé)</button>
+                  <button onClick={() => setMethode('ia')} className="px-4 py-2.5 rounded-lg border text-sm" style={chipStyle(methode === 'ia')}>🤖 Avec l&apos;IA (narratif)</button>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="text-xs mt-1.5" style={{ color: 'var(--text-subtle)' }}>
-            {methode === 'ia'
-              ? "Décrivez l'activité avec vos mots ; l'IA propose les deux animaux, les habitats et le profil sectoriel — vous gardez la main."
-              : "Répondez au questionnaire : les questions s'affinent selon vos réponses, puis choisissez les espèces et les milieux."}
-          </div>
-        </Field>
-      )}
+        )}
 
-      {kind === 'entreprise' && methode === 'ia' && (
-        <Field label="🤖 Analyse IA — décrire l'activité">
-          <div className="rounded-xl border p-4 space-y-3" style={card}>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Renseignez quelques éléments sur « {etreLabel} » ; l&apos;IA proposera les animaux et habitats (marché / cité), que vous pourrez ajuster.</p>
+        {cur.key === 'ia' && (
+          <div className="space-y-3 max-w-2xl">
             {OPEN_QUESTIONS.map((q) => (
               <div key={q.id}>
                 <label className="block text-sm mb-0.5" style={{ color: 'var(--text)' }}>{q.label}</label>
@@ -763,175 +979,102 @@ function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]; isOwn
             {aiMsg && <div className="text-sm" style={{ color: 'var(--text-muted)' }}>{aiMsg}</div>}
             {aiSecteur && <SecteurBox sect={aiSecteur} disclaimer />}
           </div>
-        </Field>
-      )}
+        )}
 
-      {kind === 'entreprise' && methode === 'manuel' && (
-        <Field label="🧭 Questionnaire — m'aider à trouver l'espèce">
-          <div className="rounded-xl border p-4" style={card}>
-            {visibleQuiz.map((q) => (
-              <div key={q.id} className="mb-3">
-                <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{q.question}</div>
-                {q.hint && <div className="text-xs mb-1.5" style={{ color: 'var(--text-subtle)' }}>{q.hint}</div>}
-                <div className="flex flex-wrap gap-2">
-                  {q.options.map((o, i) => {
-                    const active = (answers[q.id] || []).join() === o.tags.join()
-                    return <button key={i} onClick={() => setAnswers((a) => ({ ...a, [q.id]: active ? [] : o.tags }))}
-                      className="px-3 py-1.5 rounded-full border text-xs" style={chipStyle(active)}>{o.label}</button>
-                  })}
-                </div>
-              </div>
+        {(cur.key === 'espM' || cur.key === 'esp') && (
+          <>
+            <QuizHelper answers={answers} setAnswers={setAnswers} espece={espece} setEspece={setEspece} />
+            <EspeceGrid value={espece} onChange={setEspece} suggested={suggested} onPlanche={setPlanche} />
+          </>
+        )}
+        {cur.key === 'espC' && (
+          <EspeceGrid value={especeCite} onChange={setEspeceCite} onPlanche={setPlanche} />
+        )}
+
+        {cur.key === 'habM' && <HabitatChoices milieu="marché" value={hM} onChange={setHM} />}
+        {cur.key === 'habC' && <HabitatChoices milieu="cité" value={hC} onChange={setHC} />}
+
+        {(cur.key === 'vM' || cur.key === 'v') && <ScaleChoices value={vM} onChange={setVM} />}
+        {cur.key === 'vC' && <ScaleChoices value={vC} onChange={setVC} />}
+
+        {cur.key === 'milieu' && textarea(milieuLibre, setMilieuLibre, 4)}
+        {cur.key === 'signaux' && textarea(signaux, setSignaux, 3)}
+        {cur.key === 'dedicace' && textarea(dedicace, setDedicace, 3)}
+
+        {cur.key === 'relation' && (
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))' }}>
+            {RELATIONS.map((r) => (
+              <button key={r.id} onClick={() => setRelation(r.id)} className="text-left rounded-lg border p-3"
+                style={relation === r.id ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent)' } : card}>
+                <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{relation === r.id ? '✓ ' : ''}{r.emoji} {r.nom}</div>
+                <div className="text-xs" style={{ color: 'var(--text-subtle)' }}>{r.sens}</div>
+              </button>
             ))}
-            {suggestions.length > 0 && (
-              <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                <div className="text-sm font-medium mb-2" style={{ color: 'var(--text)' }}>Suggestions :</div>
-                <div className="flex flex-wrap gap-2">
-                  {suggestions.map((s) => { const e = especeById(s.id)!; return (
-                    <button key={s.id} onClick={() => setEspece(s.id)} className="px-3 py-1.5 rounded-full border text-xs" style={chipStyle(espece === s.id)}>{e.emoji} {e.nom}</button>
-                  ) })}
-                </div>
-              </div>
+          </div>
+        )}
+
+        {cur.key === 'recap' && (
+          <div className="space-y-2 text-sm max-w-2xl" style={{ color: 'var(--text-muted)' }}>
+            <RecapRow label="Être">{etreLabel}{kind === 'entreprise' && isOwner && regard === 'auto' ? ' — portrait de référence du dirigeant' : ''}</RecapRow>
+            {kind === 'entreprise' ? (
+              <>
+                <RecapRow label="Animal du marché">{recapEspece(espece)}</RecapRow>
+                <RecapRow label="Habitat marché">{(() => { const h = habitatById(hM); return h ? `${h.emoji} ${h.nom}` : '—' })()} · {vLbl(vM)}</RecapRow>
+                <RecapRow label="Animal de la cité">{recapEspece(especeCite)}</RecapRow>
+                <RecapRow label="Habitat cité">{(() => { const h = habitatById(hC); return h ? `${h.emoji} ${h.nom}` : '—' })()} · {vLbl(vC)}</RecapRow>
+                {espece && especeCite && espece !== especeCite && (
+                  <div className="text-xs rounded-lg border p-2.5" style={{ ...card, color: 'var(--text-subtle)' }}>
+                    ⚖️ Vous avez peint deux animaux différents selon le milieu — c&apos;est souvent le cœur du diagnostic.
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <RecapRow label="Animal">{recapEspece(espece)}</RecapRow>
+                {milieuLibre.trim() && <RecapRow label="Milieu">{milieuLibre}</RecapRow>}
+                {relation && <RecapRow label="Relation">{(() => { const r = relationById(relation); return r ? `${r.emoji} ${r.nom}` : '—' })()}</RecapRow>}
+                <RecapRow label={kind === 'partie_prenante' ? 'Relation viable ?' : 'Adéquation'}>{vLbl(vM)}</RecapRow>
+              </>
             )}
-          </div>
-        </Field>
-      )}
-
-      {/* ── Portraits selon la cascade ── */}
-      {kind === 'entreprise' ? (
-        <>
-          <div className="rounded-xl border p-4 mb-4" style={card}>
-            <div className="font-semibold mb-2" style={{ color: 'var(--text)' }}>🏹 Premier portrait — l&apos;entreprise sur son MARCHÉ</div>
-            <EspecePicker value={espece} onChange={setEspece} suggested={new Set(suggestions.map((s) => s.id))} />
-            <HabitatPicker label="Son habitat économique" milieu="marché" value={hM} onChange={setHM} />
-            <Field label="L'espèce est-elle armée pour ce milieu, tel qu'il évolue ?"><Scale value={vM} onChange={setVM} /></Field>
-          </div>
-          <div className="rounded-xl border p-4 mb-4" style={card}>
-            <div className="font-semibold mb-1" style={{ color: 'var(--text)' }}>🏛️ Second portrait — l&apos;entreprise dans la CITÉ</div>
-            <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-              Regardée comme habitante de la société (territoire, emploi, ce qu&apos;elle prélève et rend), ce peut être un animal
-              <b> totalement différent</b>. Ce portrait est aussi sa marque employeur réelle : cet animal-là est-il attractif ?
-              A-t-on envie de rejoindre sa colonie, sa meute, sa ruche ?
-            </p>
-            <EspecePicker value={especeCite} onChange={setEspeceCite} />
-            <HabitatPicker label="Son habitat social" milieu="cité" value={hC} onChange={setHC} />
-            <Field label="Est-il un habitant viable de son territoire — et attractif ?"><Scale value={vC} onChange={setVC} /></Field>
-          </div>
-        </>
-      ) : kind === 'partie_prenante' ? (
-        <div className="rounded-xl border p-4 mb-4" style={card}>
-          <div className="font-semibold mb-2" style={{ color: 'var(--text)' }}>🌐 {etreLabel}</div>
-          <EspecePicker value={espece} onChange={setEspece} />
-          <Field label="La relation entre cet animal et l'entreprise">
-            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))' }}>
-              {RELATIONS.map((r) => (
-                <button key={r.id} onClick={() => setRelation(r.id)} title={r.sens} className="text-left rounded-lg border p-2"
-                  style={relation === r.id ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)' } : card}>
-                  <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{r.emoji} {r.nom}</div>
-                  <div className="text-xs" style={{ color: 'var(--text-subtle)' }}>{r.sens}</div>
-                </button>
-              ))}
+            {signaux.trim() && <RecapRow label="Signaux">{signaux}</RecapRow>}
+            {dedicace.trim() && <RecapRow label="Dédicace">« {dedicace} »</RecapRow>}
+            <div className="pt-2">
+              <div className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Un dernier mot ? (facultatif)</div>
+              {textarea(justif, setJustif, 2, 'Justification, contexte, nuance…')}
             </div>
-          </Field>
-          <Field label="La relation est-elle viable pour les deux ? (qui nourrit qui, qui épuise qui ?)"><Scale value={vM} onChange={setVM} /></Field>
-        </div>
-      ) : (
-        <div className="rounded-xl border p-4 mb-4" style={card}>
-          <div className="font-semibold mb-2" style={{ color: 'var(--text)' }}>{kind === 'poste' ? '🧭' : '🏢'} {etreLabel}</div>
-          <EspecePicker value={espece} onChange={setEspece} />
-          <Field label={kind === 'poste' ? 'Son milieu : la fonction' : 'Son milieu : sa place dans l’entreprise'}>
-            <div className="text-xs mb-1" style={{ color: 'var(--text-subtle)' }}>{kind === 'poste' ? MILIEU_POSTE_HINT : MILIEU_SERVICE_HINT}</div>
-            <textarea rows={3} value={milieuLibre} onChange={(e) => setMilieuLibre(e.target.value)} className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm" style={card} />
-          </Field>
-          <Field label={kind === 'poste'
-            ? 'Le fonctionnement du poste est-il adapté à ce que son milieu exige — et le poste est-il viable ?'
-            : "L'animal du service sert-il l'animal de l'entreprise ?"}>
-            <Scale value={vM} onChange={setVM} />
-          </Field>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
-      <Field label="Les signaux">
-        <div className="text-xs mb-1" style={{ color: 'var(--text-subtle)' }}>{SIGNAUX_HINT}</div>
-        <textarea rows={2} value={signaux} onChange={(e) => setSignaux(e.target.value)} className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm" style={card} />
-      </Field>
-
-      {kind === 'entreprise' && (!isOwner || regard === 'individuel') && (
-        <Field label="La dédicace (anonyme)">
-          <div className="text-xs mb-1" style={{ color: 'var(--text-subtle)' }}>{DEDICACE_HINT}</div>
-          <textarea rows={2} value={dedicace} onChange={(e) => setDedicace(e.target.value)} className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm" style={card} />
-        </Field>
-      )}
-
-      <Field label="Justification (facultatif)">
-        <textarea rows={2} value={justif} onChange={(e) => setJustif(e.target.value)} className="w-full px-3 py-2 rounded-lg border bg-transparent" style={card} />
-      </Field>
-
-      <div className="flex items-center gap-3">
-        <button disabled={!ready || saving} onClick={save} className="px-4 py-2 rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>
-          {saving ? 'Enregistrement…' : 'Enregistrer le portrait'}
-        </button>
-        {saved && <span className="text-sm" style={{ color: 'var(--accent)' }}>✓ Portrait enregistré — vous pouvez en peindre un autre.</span>}
+      {/* ── Navigation ── */}
+      <div className="flex items-center gap-2">
+        {step > 0 && (
+          <button onClick={() => setStep((s) => s - 1)} className="px-4 py-2 rounded-lg border text-sm" style={{ ...card, color: 'var(--text)' }}>
+            ← Précédent
+          </button>
+        )}
+        {!isLast ? (
+          <button disabled={!canNext} onClick={() => setStep((s) => s + 1)} className="px-5 py-2 rounded-lg text-white text-sm disabled:opacity-40" style={{ backgroundColor: 'var(--accent)' }}>
+            {cur.optional && !cur.valid ? 'Passer →' : 'Suivant →'}
+          </button>
+        ) : (
+          <button disabled={saving} onClick={save} className="px-5 py-2 rounded-lg text-white text-sm disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>
+            {saving ? 'Envoi…' : '✓ Envoyer mon portrait'}
+          </button>
+        )}
+        {!cur.valid && !cur.optional && cur.key !== 'etre' && (
+          <span className="text-xs" style={{ color: 'var(--text-subtle)' }}>Répondez pour continuer.</span>
+        )}
       </div>
     </div>
   )
 }
 
-function EspecePicker({ value, onChange, suggested }: { value: string; onChange: (v: string) => void; suggested?: Set<string> }) {
+function RecapRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <Field label="L'espèce (le mode de fonctionnement observé)">
-      <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))' }}>
-        {ESPECES.map((e) => (
-          <button key={e.id} onClick={() => onChange(e.id)} title={e.description} className="text-left rounded-lg border p-2"
-            style={value === e.id ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)' } : card}>
-            <div className="text-2xl">{e.emoji} {suggested?.has(e.id) && <span className="text-[10px] align-middle" style={{ color: 'var(--accent)' }}>★</span>}</div>
-            <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{e.nom}</div>
-            <div className="text-xs" style={{ color: 'var(--text-subtle)' }}>{e.trait}</div>
-          </button>
-        ))}
-      </div>
-      {value && especeById(value) && (
-        <div className="mt-2 rounded-lg border p-3 text-sm" style={{ ...card, color: 'var(--text-muted)' }}>
-          <span className="font-semibold" style={{ color: 'var(--text)' }}>{especeById(value)!.emoji} {especeById(value)!.nom} — </span>
-          {especeById(value)!.description}
-        </div>
-      )}
-    </Field>
-  )
-}
-
-function HabitatPicker({ label, milieu, value, onChange }: { label: string; milieu: 'marché' | 'cité'; value: string; onChange: (v: string) => void }) {
-  return (
-    <Field label={label}>
-      <div className="flex flex-wrap gap-2">
-        {habitatsPourMilieu(milieu).map((h) => (
-          <button key={h.id} onClick={() => onChange(h.id)} title={h.description} className="px-3 py-1.5 rounded-full border text-xs"
-            style={value === h.id ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : { ...card, color: 'var(--text)' }}>
-            {h.emoji} {h.nom}
-          </button>
-        ))}
-      </div>
-    </Field>
-  )
-}
-
-function Scale({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {VERDICTS.map((v) => (
-        <button key={v.value} onClick={() => onChange(v.value)} className="px-3 py-1.5 rounded-lg border text-xs"
-          style={value === v.value ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : { ...card, color: 'var(--text)' }}>
-          {v.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-4">
-      <div className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>{label}</div>
-      {children}
+    <div className="flex gap-3 items-start rounded-lg border p-2.5" style={card}>
+      <span className="text-xs font-semibold w-32 flex-shrink-0 pt-0.5" style={{ color: 'var(--text-subtle)' }}>{label}</span>
+      <span style={{ color: 'var(--text)' }}>{children}</span>
     </div>
   )
 }
