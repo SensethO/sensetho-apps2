@@ -20,6 +20,7 @@ import {
   ETRE_KIND_LABELS, type EtreKind,
 } from '@/lib/leMiroir'
 import { PLANCHES } from '@/lib/leMiroirPlanches'
+import { PLANCHES_HABITATS } from '@/lib/leMiroirHabitats'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -719,23 +720,88 @@ function QuizHelper({ answers, setAnswers, espece, setEspece }: {
   )
 }
 
-/** Choix d'habitat : cartes + fiche du milieu sélectionné. */
+/** Fiche complète d'un milieu — la planche de milieu du Bestiaire :
+ *  caractère, mécanisme (nature), traduction (entreprise), qui y prospère, qui y souffre, signaux. */
+function HabitatModal({ habitatId, onClose, onChoose }: { habitatId: string; onClose: () => void; onChoose?: (id: string) => void }) {
+  const h = habitatById(habitatId)
+  const p = PLANCHES_HABITATS[habitatId]
+  if (!h) return null
+  const milieuLabel = h.milieu === 'les deux' ? 'Marché & Cité' : h.milieu === 'marché' ? 'Marché' : 'Cité'
+  const section = (icone: string, titre: string, texte: string) => (
+    <div className="mb-3">
+      <div className="text-xs font-bold tracking-wide mb-0.5" style={{ color: 'var(--accent)' }}>{icone} {titre.toUpperCase()}</div>
+      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{texte}</p>
+    </div>
+  )
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }} onClick={onClose}>
+      <div className="rounded-2xl border max-w-2xl w-full max-h-[92vh] overflow-y-auto" style={card} onClick={(ev) => ev.stopPropagation()}>
+        <div className="flex items-center justify-center" style={{ height: 110, fontSize: 56, backgroundColor: 'var(--bg)', borderRadius: '1rem 1rem 0 0', borderBottom: '1px solid var(--border)' }}>
+          {h.emoji}
+        </div>
+        <div className="p-5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="text-lg font-semibold" style={{ color: 'var(--text)' }}>{h.nom}</div>
+            <span className="px-2 py-0.5 rounded-full text-xs border" style={{ ...card, color: 'var(--text-subtle)' }}>{milieuLabel}</span>
+          </div>
+          <div className="text-sm font-medium mb-3 pb-2 border-b" style={{ color: 'var(--accent)', borderColor: 'var(--border)' }}>
+            {p?.caractere ?? h.sens}
+          </div>
+          {p ? (
+            <>
+              {section('🔬', 'Le milieu — dans la nature', p.meca)}
+              {section('🏢', "Chez les humains, ça ressemble à…", p.traduction)}
+              {section('🌱', 'Qui y prospère', p.prosperent)}
+              {section('🥀', 'Qui y souffre', p.souffrent)}
+              {section('📡', 'Les signaux du milieu (le reconnaître, le voir évoluer)', p.signaux)}
+            </>
+          ) : (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{h.description}</p>
+          )}
+          <div className="flex gap-2 mt-4">
+            {onChoose && (
+              <button onClick={() => { onChoose(h.id); onClose() }} className="px-4 py-2 rounded-lg text-white text-sm" style={{ backgroundColor: 'var(--accent)' }}>
+                ✓ Choisir ce milieu
+              </button>
+            )}
+            <button onClick={onClose} className="px-4 py-2 rounded-lg border text-sm" style={{ ...card, color: 'var(--text)' }}>Fermer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Choix d'habitat : cartes + accès à la planche de milieu + fiche du milieu sélectionné. */
 function HabitatChoices({ milieu, value, onChange }: { milieu: 'marché' | 'cité'; value: string; onChange: (v: string) => void }) {
+  const [planche, setPlanche] = useState<string | null>(null)
   const sel = value ? habitatById(value) : null
+  const selPlanche = value ? PLANCHES_HABITATS[value] : null
   return (
     <div>
-      <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))' }}>
+      {planche && <HabitatModal habitatId={planche} onClose={() => setPlanche(null)} onChoose={onChange} />}
+      <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))' }}>
         {habitatsPourMilieu(milieu).map((h) => (
-          <button key={h.id} onClick={() => onChange(h.id)} className="text-left rounded-lg border p-2.5"
-            style={value === h.id ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent)' } : card}>
+          <div key={h.id} className="text-left rounded-lg border p-2.5 cursor-pointer"
+            style={value === h.id ? { backgroundColor: 'var(--bg)', borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent)' } : card}
+            onClick={() => onChange(h.id)}>
             <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{value === h.id && <span style={{ color: 'var(--accent)' }}>✓ </span>}{h.emoji} {h.nom}</div>
-            <div className="text-xs" style={{ color: 'var(--text-subtle)' }}>{h.sens}</div>
-          </button>
+            <div className="text-xs mb-1" style={{ color: 'var(--text-subtle)' }}>{h.sens}</div>
+            <button onClick={(ev) => { ev.stopPropagation(); setPlanche(h.id) }} className="text-xs underline" style={{ color: 'var(--accent)' }}>
+              🔍 Voir la planche
+            </button>
+          </div>
         ))}
       </div>
       {sel && (
         <div className="rounded-lg border p-3 text-sm" style={{ ...card, color: 'var(--text-muted)' }}>
-          <span className="font-semibold" style={{ color: 'var(--text)' }}>{sel.emoji} {sel.nom} — </span>{sel.description}
+          <span className="font-semibold" style={{ color: 'var(--text)' }}>{sel.emoji} {sel.nom} — </span>
+          {selPlanche ? selPlanche.traduction : sel.description}
+          {selPlanche && (
+            <div className="text-xs mt-1.5" style={{ color: 'var(--text-subtle)' }}>
+              🌱 <b>Y prospèrent :</b> {selPlanche.prosperent} · 🥀 <b>Y souffrent :</b> {selPlanche.souffrent}
+            </div>
+          )}
         </div>
       )}
     </div>
