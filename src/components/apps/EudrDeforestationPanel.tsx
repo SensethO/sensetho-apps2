@@ -28,6 +28,48 @@ const riskBadge = (r?: string | null) => {
 }
 const riskLabel = (r?: string | null) => ({ high: '🔴 Risque élevé', low: '🟢 Risque faible' } as Record<string, string>)[(r ?? '').toLowerCase()] ?? '⚪ Non analysé'
 
+/**
+ * Vignette satellite : charge l'image via fetch pour pouvoir afficher le motif exact
+ * en cas d'échec (une <img> classique ne montrerait qu'un cadre vide).
+ */
+function SatImage({ url, label }: { url: string; label: string }) {
+  const [st, setSt] = useState<{ loading: boolean; src?: string; error?: string }>({ loading: true })
+  useEffect(() => {
+    let alive = true
+    const ctrl = new AbortController()
+    let objectUrl: string | undefined
+    setSt({ loading: true })
+    ;(async () => {
+      try {
+        const r = await fetch(url, { signal: ctrl.signal })
+        if (!r.ok) {
+          let msg = `HTTP ${r.status}`
+          try { const j = await r.json(); if (j?.error) msg = String(j.error) } catch { /* corps non JSON */ }
+          if (alive) setSt({ loading: false, error: msg })
+          return
+        }
+        const blob = await r.blob()
+        objectUrl = URL.createObjectURL(blob)
+        if (alive) setSt({ loading: false, src: objectUrl })
+      } catch (e) {
+        if (alive && (e as Error).name !== 'AbortError') setSt({ loading: false, error: String((e as Error).message ?? e) })
+      }
+    })()
+    return () => { alive = false; ctrl.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [url])
+
+  return (
+    <figure className="m-0">
+      <div className="w-full aspect-square rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center justify-center">
+        {st.loading && <span className="text-xs text-gray-400">Chargement de l’image satellite…</span>}
+        {st.error && <span className="text-xs text-red-600 dark:text-red-400 px-3 text-center break-words">❌ {st.error}</span>}
+        {st.src && <img src={st.src} alt={`Sentinel-2 ${label}`} className="w-full h-full object-cover" />}
+      </div>
+      <figcaption className="text-xs text-center text-gray-500 dark:text-gray-400 mt-1">{label}</figcaption>
+    </figure>
+  )
+}
+
 export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: string; canWrite: boolean }) {
   const [analyses, setAnalyses] = useState<Analysis[]>([])
   const [atts, setAtts] = useState<Att[]>([])
@@ -112,11 +154,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[{ y: '2020', from: '2020-01-01T00:00:00Z', to: '2020-12-31T23:59:59Z' }, { y: 'Récente', from: '2024-06-01T00:00:00Z', to: nowIso }].map(p => (
-                          <figure key={p.y} className="m-0">
-                            <img src={satUrl(att.id, p.from, p.to, satPlot)} alt={`Sentinel-2 ${p.y}`} loading="lazy"
-                              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 aspect-square object-cover" />
-                            <figcaption className="text-xs text-center text-gray-500 dark:text-gray-400 mt-1">{p.y}</figcaption>
-                          </figure>
+                          <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} />
                         ))}
                       </div>
                     </div>
