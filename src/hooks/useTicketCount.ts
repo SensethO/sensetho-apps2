@@ -19,7 +19,8 @@ export function useTicketCount(isAdmin: boolean) {
     }
 
     fetchCount()
-    const interval = setInterval(fetchCount, 30_000)
+    // Pas d'interrogation quand l'onglet est en arrière-plan (économie d'egress Supabase).
+    const interval = setInterval(() => { if (!document.hidden) fetchCount() }, 60_000)
     return () => clearInterval(interval)
   }, [isAdmin])
 

@@ -25,7 +25,7 @@ export function useAgriCrmUnread() {
 
   useEffect(() => {
     fetch_()
-    const t = setInterval(fetch_, 120_000) // 2 min au lieu de 30s
+    const t = setInterval(() => { if (!document.hidden) fetch_() }, 120_000) // 2 min au lieu de 30s
     return () => clearInterval(t)
   }, [fetch_])
 

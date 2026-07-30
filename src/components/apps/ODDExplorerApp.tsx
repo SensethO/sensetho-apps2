@@ -599,13 +599,16 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
         if (updated.scores) setDiagScores(updated.scores)
       })
       .subscribe((status: string) => { if (status === 'SUBSCRIBED') realtimeOk = true })
+    // Repli si Realtime est indisponible. Onglet en arrière-plan → on n'interroge pas :
+    // ce repli télécharge le diagnostic complet (egress Supabase).
     const poll = setInterval(() => {
       if (realtimeOk) return
+      if (typeof document !== 'undefined' && document.hidden) return
       fetch(`/api/iso26000/${diagId}`)
         .then(r => r.json())
         .then(j => { if (j.data?.scores) setDiagScores(j.data.scores) })
         .catch(() => {})
-    }, 4000)
+    }, 15000)
     return () => { supabase.removeChannel(channel); clearInterval(poll) }
   }, [diagId])
 

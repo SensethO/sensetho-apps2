@@ -27,7 +27,7 @@ export function useAdminNotifications(isAdmin: boolean): AdminNotifications {
     }
 
     fetchCounts()
-    const interval = setInterval(fetchCounts, 120_000) // 2 min au lieu de 30s
+    const interval = setInterval(() => { if (!document.hidden) fetchCounts() }, 120_000) // 2 min au lieu de 30s
     return () => clearInterval(interval)
   }, [isAdmin])
 

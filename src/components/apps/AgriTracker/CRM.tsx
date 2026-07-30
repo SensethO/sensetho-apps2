@@ -309,8 +309,16 @@ function Thread({ plantationId, acheteurUserId, currentUserId, isAcheteur, isAdm
   }, [plantationId, acheteurUserId])
 
   useEffect(() => { load() }, [load])
-  // Polling 4s — synchronisation live sans WebSocket
-  useEffect(() => { const t = setInterval(load, 4000); return () => clearInterval(t) }, [load])
+  // Synchronisation live sans WebSocket. On suspend quand l'onglet est en arrière-plan et
+  // on recharge à son retour : chaque appel retélécharge tout le fil, et des onglets laissés
+  // ouverts ont consommé des Go d'egress Supabase.
+  useEffect(() => {
+    const tick = () => { if (!document.hidden) load() }
+    const t = setInterval(tick, 10000)
+    const onVisible = () => { if (!document.hidden) load() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
+  }, [load])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   async function send() {
@@ -541,7 +549,7 @@ export function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUn
   }, [loadConversations])
 
   useEffect(() => {
-    const t = setInterval(loadConversations, 30000)
+    const t = setInterval(() => { if (!document.hidden) loadConversations() }, 60000)
     return () => clearInterval(t)
   }, [loadConversations])
 
@@ -673,7 +681,7 @@ function MessagesTabPlanteur({ plantationId, currentUserId, isAdmin, onUnreadCha
 
   useEffect(() => { loadConversations() }, [loadConversations])
   useEffect(() => {
-    const t = setInterval(loadConversations, 30000)
+    const t = setInterval(() => { if (!document.hidden) loadConversations() }, 60000)
     return () => clearInterval(t)
   }, [loadConversations])
 

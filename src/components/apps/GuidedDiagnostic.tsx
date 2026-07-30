@@ -679,12 +679,15 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       .subscribe()
 
     // ── Fallback polling (si Realtime indisponible) ───────────────────────
+    // ⚠️ Ne jamais interroger quand l'onglet est en arrière-plan : ce repli télécharge
+    // le diagnostic complet, et des onglets oubliés ont consommé des Go d'egress Supabase.
     let pollTick = 0
     const poll = setInterval(async () => {
       if (realtimeOk || diagSavePending.current) return
+      if (typeof document !== 'undefined' && document.hidden) return
       pollTick++
       try {
-        // Toutes les 2s : sync scores / progress / na
+        // sync scores / progress / na
         const res = await fetch(`/api/guided-diagnostic?org_id=${diagnostic.organisation_id}&year=${diagnostic.year}`)
         if (!res.ok) return
         const json = await res.json()
@@ -694,7 +697,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         setActionNa(remote.action_na ?? {})
         setScores(remote.scores ?? {})
 
-        // Toutes les ~4s (1 tick sur 2) : sync notes + sections (si aucune sauvegarde locale en cours)
+        // 1 tick sur 2 : sync notes + sections (si aucune sauvegarde locale en cours)
         if (pollTick % 2 === 0 && Object.keys(noteSaveTimers.current).length === 0) {
           const nr = await fetch(`/api/guided-diagnostic/${diagId}/notes`)
           if (nr.ok) {
@@ -705,7 +708,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
           }
         }
       } catch { /* silencieux */ }
-    }, 2000)
+    }, 8000)
 
     return () => {
       supabase.removeChannel(channel)
