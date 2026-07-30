@@ -543,6 +543,9 @@ function VueEnsemble({ campagne, etres, participants, portraits, cellules, socle
     blocages.push(`${cellulesFaibles.length} cellule(s) à moins de ${SEUIL_RESTITUTION} membres : fusionner, compléter, ou basculer en entretiens individuels (variante « petite structure »).`)
   }
   if (!participants.length) blocages.push('Aucun participant : créez des cellules et envoyez des liens d’invitation.')
+  else if (!restituables.length) {
+    blocages.push(`Aucun être n'atteint ${SEUIL_RESTITUTION} regards : la restitution serait vide. Invitez d'autres participants, ou passez en entretiens individuels agrégés (variante « petite structure »).`)
+  }
 
   async function majDate(v: string) {
     setDate(v)

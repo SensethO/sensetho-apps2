@@ -209,16 +209,20 @@ export const SIGNAUX_HINT =
 
 /** Les trois signaux de la trame 4.2 bis, posés séparément (un champ par signal). */
 export const SIGNAUX_CHAMPS = [
-  { key: 'peur', label: "Quand il a peur, il…", hint: "Sa réaction à la menace : il fuit, se replie, attaque, se camoufle, réorganise ?", placeholder: "ex : il vire de bord — nouveau framework, nouvelle priorité" },
-  { key: 'blessure', label: "Quand il est blessé, il…", hint: "Ce qu'il fait après un coup dur (projet raté, départ, perte d'un client).", placeholder: "ex : il accélère au lieu de soigner" },
-  { key: 'angle_mort', label: "Ce qu'il ne voit pas venir…", hint: "L'angle mort : le danger que personne ne regarde, ou qu'on regarde trop tard.", placeholder: "ex : la dette technique, invisible tant que ça vole" },
+  { key: 'peur', label: "Quand il a peur, il…", court: 'Peur', hint: "Sa réaction à la menace : il fuit, se replie, attaque, se camoufle, réorganise ?", placeholder: "ex : il vire de bord — nouveau framework, nouvelle priorité" },
+  { key: 'blessure', label: "Quand il est blessé, il…", court: 'Blessure', hint: "Ce qu'il fait après un coup dur (projet raté, départ, perte d'un client).", placeholder: "ex : il accélère au lieu de soigner" },
+  { key: 'angle_mort', label: "Ce qu'il ne voit pas venir…", court: 'Angle mort', hint: "L'angle mort : le danger que personne ne regarde, ou qu'on regarde trop tard.", placeholder: "ex : la dette technique, invisible tant que ça vole" },
 ] as const
 
-/** Recompose les trois signaux en un seul texte lisible (stocké dans la colonne signaux). */
+/**
+ * Recompose les trois signaux en un seul texte lisible (colonne signaux).
+ * Étiquettes courtes : les réponses commencent souvent par un verbe ou par « il »,
+ * un préfixe « Quand il a peur, il » produirait « il il ajoute des process ».
+ */
 export function composeSignaux(v: Record<string, string>): string | null {
   const parts = SIGNAUX_CHAMPS
     .filter((c) => v[c.key]?.trim())
-    .map((c) => `${c.label.replace(/…$/, '').trim()} ${v[c.key].trim()}`)
+    .map((c) => `${c.court} : ${v[c.key].trim()}`)
   return parts.length ? parts.join(' · ') : null
 }
 export const DEDICACE_HINT =

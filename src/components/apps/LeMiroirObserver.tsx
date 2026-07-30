@@ -594,7 +594,7 @@ export function Observer({ etres, isOwner, myAutoDone, onSave }: { etres: Etre[]
               </>
             )}
             {SIGNAUX_CHAMPS.filter((c) => sig[c.key]?.trim()).map((c) => (
-              <RecapRow key={c.key} label={c.label.replace(/…$/, '').replace(/^Quand /, '')}>{sig[c.key]}</RecapRow>
+              <RecapRow key={c.key} label={c.court}>{sig[c.key]}</RecapRow>
             ))}
             {dedicace.trim() && <RecapRow label="Dédicace">« {dedicace} »</RecapRow>}
             {aiSuggestion && (
