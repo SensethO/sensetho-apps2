@@ -33,7 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: { campagneId: 
     const admin = createAdminClient()
     const { data } = await admin
       .from('le_miroir_invitations')
-      .select('id, token, label, kind, cote, cellule_id, participant_id, revoked, used_at, created_at')
+      .select('id, token, label, email, kind, cote, cellule_id, participant_id, revoked, used_at, sent_at, sent_count, created_at')
       .eq('campagne_id', params.campagneId)
       .order('created_at')
     return NextResponse.json({ data: data ?? [] })
@@ -50,20 +50,34 @@ export async function POST(req: NextRequest, { params }: { params: { campagneId:
     if (!(await assertOwner(user.id, params.campagneId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const body = await req.json()
-    const nombre = Math.min(Math.max(Number(body.nombre) || 1, 1), 40)
     const kind: 'interne' | 'externe' = body.kind === 'externe' ? 'externe' : 'interne'
     const cote = ['marche', 'cite', 'groupe'].includes(body.cote) ? body.cote : null
     const celluleId = body.cellule_id || null
     const labelBase = typeof body.label === 'string' && body.label.trim() ? body.label.trim() : null
+    const lien = () => randomBytes(18).toString('base64url')
 
-    const rows = Array.from({ length: nombre }, (_, i) => ({
-      campagne_id: params.campagneId,
-      cellule_id: celluleId,
-      token: randomBytes(18).toString('base64url'),
-      label: labelBase ? (nombre > 1 ? `${labelBase} ${i + 1}` : labelBase) : null,
-      kind,
-      cote: kind === 'externe' ? cote : null,
-    }))
+    // Deux modes : une liste d'adresses (un lien par personne, prêt à envoyer)
+    // ou un simple nombre de liens anonymes à distribuer soi-même.
+    const emails: string[] = Array.isArray(body.emails)
+      ? body.emails.map((e: unknown) => String(e).trim().toLowerCase())
+          .filter((e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e))
+          .slice(0, 40)
+      : []
+
+    const rows = emails.length
+      ? emails.map((email) => ({
+          campagne_id: params.campagneId, cellule_id: celluleId, token: lien(),
+          email,
+          // Le prénom deviné depuis l'adresse sert d'accroche (« Bonjour Marc, ») ; jamais de donnée inventée.
+          label: labelBase ?? (email.split('@')[0].split(/[._-]/)[0].replace(/^./, (c) => c.toUpperCase()) || null),
+          kind, cote: kind === 'externe' ? cote : null,
+        }))
+      : Array.from({ length: Math.min(Math.max(Number(body.nombre) || 1, 1), 40) }, (_, i, a) => ({
+          campagne_id: params.campagneId, cellule_id: celluleId, token: lien(),
+          email: null,
+          label: labelBase ? (a.length > 1 ? `${labelBase} ${i + 1}` : labelBase) : null,
+          kind, cote: kind === 'externe' ? cote : null,
+        }))
 
     const admin = createAdminClient()
     const { data, error } = await admin.from('le_miroir_invitations').insert(rows).select('id, token, label, kind, cote, cellule_id')

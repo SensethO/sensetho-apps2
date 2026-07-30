@@ -466,9 +466,9 @@ function Onboarding({ existing, onSave }: { existing: Participant | null; onSave
 
 interface Cellule { id: string; nom: string; perimetre: string | null }
 interface Invitation {
-  id: string; token: string; label: string | null; kind: 'interne' | 'externe'
+  id: string; token: string; label: string | null; email: string | null; kind: 'interne' | 'externe'
   cote: string | null; cellule_id: string | null; participant_id: string | null
-  revoked: boolean; used_at: string | null
+  revoked: boolean; used_at: string | null; sent_at: string | null; sent_count?: number
 }
 
 /** Compte les regards distincts sur un être (participant si connu, sinon compte). */
@@ -823,6 +823,9 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
   const [label, setLabel] = useState('')
   const [kind, setKind] = useState<'interne' | 'externe'>('interne')
   const [cote, setCote] = useState('marche')
+  const [emails, setEmails] = useState('')
+  const [envoi, setEnvoi] = useState(false)
+  const [rapport, setRapport] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [copie, setCopie] = useState<string | null>(null)
 
@@ -834,13 +837,33 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
 
   const lien = (t: string) => `${typeof window !== 'undefined' ? window.location.origin : ''}/miroir/${t}`
 
+  const adresses = emails.split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e))
+
   async function creer() {
-    setBusy(true)
+    setBusy(true); setRapport(null)
     await fetch(`/api/le-miroir/${campagneId}/invitations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre, cellule_id: celluleId || null, label: label.trim() || null, kind, cote }),
+      body: JSON.stringify({
+        emails: adresses.length ? adresses : undefined,
+        nombre, cellule_id: celluleId || null, label: label.trim() || null, kind, cote,
+      }),
     })
-    setBusy(false); setLabel(''); charger()
+    setBusy(false); setLabel(''); setEmails(''); charger()
+  }
+
+  /** Envoi par Microsoft Graph — corps du message figé côté serveur. */
+  async function envoyer(ids?: string[]) {
+    setEnvoi(true); setRapport(null)
+    const r = await fetch(`/api/le-miroir/${campagneId}/invitations/envoyer`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ids ? { invitation_ids: ids } : {}),
+    })
+    const d = await r.json()
+    setEnvoi(false)
+    setRapport(r.ok
+      ? `✓ ${d.envoyes} invitation(s) envoyée(s)${d.echecs?.length ? ` · ${d.echecs.length} échec(s) : ${d.echecs.map((e: {email: string}) => e.email).join(', ')}` : ''}`
+      : (d.error || 'Échec de l’envoi.'))
+    charger()
   }
   async function revoquer(id: string) {
     await fetch(`/api/le-miroir/${campagneId}/invitations?invitation_id=${id}`, { method: 'DELETE' }); charger()
@@ -849,6 +872,7 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
     try { await navigator.clipboard.writeText(txt); setCopie(id); setTimeout(() => setCopie(null), 1800) } catch { /* presse-papier indisponible */ }
   }
   const actifs = liste.filter((i) => !i.revoked)
+  const aEnvoyer = actifs.filter((i) => i.email && !i.sent_at)
   async function copierTous() {
     const txt = actifs.map((i) => `${i.label ?? 'Participant'} : ${lien(i.token)}`).join('\n')
     copier(txt, 'tous')
@@ -859,7 +883,7 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
       <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
         Un lien par personne, <b>sans création de compte</b> : chacun accepte le contrat de règles, se déclare, puis peint.
         C&apos;est la voie normale en mission (personne ne crée 40 comptes) et la seule pour les <b>parties prenantes externes</b>
-        (clients, fournisseurs, candidats). Un lien est un secret : ne le diffusez pas en liste publique.
+        (clients, fournisseurs, candidats). Un lien est un secret : ne le diffusez pas en liste publique. L&apos;envoi par Microsoft&nbsp;365 utilise un message <b>figé</b> (invitation seule, sans image ni pixel de suivi) : cette fonction ne peut pas servir à un envoi commercial.
       </div>
 
       <div className="rounded-xl border p-3 space-y-2" style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)' }}>
@@ -873,10 +897,22 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
             <button key={c.id} onClick={() => setCote(c.id)} title={c.exemples} className="px-3 py-1.5 rounded-full border text-xs" style={chipStyle(cote === c.id)}>{c.label}</button>
           ))}
         </div>
+        <div>
+          <label className="block text-sm mb-0.5" style={{ color: 'var(--text)' }}>Adresses e-mail (une par ligne — optionnel)</label>
+          <div className="text-xs mb-1" style={{ color: 'var(--text-subtle)' }}>
+            Renseignées, l&apos;app crée un lien par personne et peut les envoyer par Outlook (Microsoft&nbsp;365).
+            Laissez vide pour générer des liens anonymes que vous distribuerez vous-même.
+          </div>
+          <textarea rows={3} value={emails} onChange={(e) => setEmails(e.target.value)}
+            placeholder={'marc.dupont@exemple.fr, sophie.martin@exemple.fr'}
+            className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm" style={card} />
+          {adresses.length > 0 && <div className="text-xs mt-1" style={{ color: 'var(--accent)' }}>{adresses.length} adresse(s) valide(s) détectée(s)</div>}
+        </div>
         <div className="flex flex-wrap gap-2 items-center">
-          <label className="text-sm" style={{ color: 'var(--text)' }}>Nombre</label>
-          <input type="number" min={1} max={40} value={nombre} onChange={(e) => setNombre(Number(e.target.value))}
-            className="w-20 px-2 py-1.5 rounded-lg border bg-transparent text-sm" style={card} />
+          <label className="text-sm" style={{ color: 'var(--text)' }}>{adresses.length ? 'Liens' : 'Nombre'}</label>
+          <input type="number" min={1} max={40} value={adresses.length || nombre} disabled={adresses.length > 0}
+            onChange={(e) => setNombre(Number(e.target.value))}
+            className="w-20 px-2 py-1.5 rounded-lg border bg-transparent text-sm disabled:opacity-50" style={card} />
           <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Libellé (ex : Atelier, Client)"
             className="px-3 py-1.5 rounded-lg border bg-transparent text-sm" style={card} />
           {kind === 'interne' && (
@@ -892,13 +928,20 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
       </div>
 
       {actifs.length > 0 && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{actifs.length} lien(s) actif(s)</div>
           <button onClick={copierTous} className="text-xs underline" style={{ color: 'var(--accent)' }}>
             {copie === 'tous' ? '✓ copiés' : 'copier toute la liste'}
           </button>
+          {aEnvoyer.length > 0 && (
+            <button disabled={envoi} onClick={() => envoyer()} className="px-3 py-1.5 rounded-lg text-white text-xs disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>
+              {envoi ? 'Envoi en cours…' : `✉ Envoyer les ${aEnvoyer.length} invitation(s) non envoyée(s)`}
+            </button>
+          )}
         </div>
       )}
+      {rapport && <div className="text-sm" style={{ color: rapport.startsWith('✓') ? 'var(--accent)' : '#a85b3b' }}>{rapport}</div>}
+      {envoi && <div className="text-xs" style={{ color: 'var(--text-subtle)' }}>Cadence lente volontaire (≈ 1 envoi par seconde) pour ne pas ressembler à un envoi de masse — patientez.</div>}
       <div className="space-y-1.5">
         {liste.map((i) => {
           const part = participants.find((p) => p.id === i.participant_id)
@@ -909,6 +952,7 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
                 {i.kind === 'externe' ? (PP_COTES.find((c) => c.id === i.cote)?.label ?? 'externe') : (cellules.find((c) => c.id === i.cellule_id)?.nom ?? 'interne')}
               </span>
               <span style={{ color: 'var(--text)' }}>{i.label ?? 'Participant'}</span>
+              {i.email && <span className="text-xs" style={{ color: 'var(--text-subtle)' }}>{i.email}</span>}
               <code className="text-xs px-2 py-0.5 rounded truncate max-w-[280px]" style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-subtle)' }}>
                 /miroir/{i.token.slice(0, 12)}…
               </code>
@@ -918,10 +962,16 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
                     <button onClick={() => copier(lien(i.token), i.id)} className="text-xs underline" style={{ color: 'var(--accent)' }}>
                       {copie === i.id ? '✓ copié' : 'copier le lien'}
                     </button>
+                    {i.email && (
+                      <button disabled={envoi} onClick={() => envoyer([i.id])} className="text-xs underline disabled:opacity-50" style={{ color: 'var(--accent)' }}>
+                        {i.sent_at ? 'renvoyer' : 'envoyer'}
+                      </button>
+                    )}
                     <button onClick={() => revoquer(i.id)} className="text-xs underline" style={{ color: 'var(--text-subtle)' }}>révoquer</button>
                   </>}
-              <span className="ml-auto text-xs" style={{ color: i.used_at ? 'var(--accent)' : 'var(--text-subtle)' }}>
+              <span className="ml-auto text-xs text-right" style={{ color: i.used_at ? 'var(--accent)' : 'var(--text-subtle)' }}>
                 {i.used_at ? `utilisé${part?.nom ? ` — ${part.nom}` : ''}` : 'pas encore utilisé'}
+                {i.sent_at && <><br /><span style={{ color: 'var(--text-subtle)' }}>envoyé{(i.sent_count ?? 0) > 1 ? ` ×${i.sent_count}` : ''}</span></>}
               </span>
             </div>
           )
