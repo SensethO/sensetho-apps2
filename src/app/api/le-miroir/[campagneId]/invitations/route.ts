@@ -68,8 +68,10 @@ export async function POST(req: NextRequest, { params }: { params: { campagneId:
       ? emails.map((email) => ({
           campagne_id: params.campagneId, cellule_id: celluleId, token: lien(),
           email,
-          // Le prénom deviné depuis l'adresse sert d'accroche (« Bonjour Marc, ») ; jamais de donnée inventée.
-          label: labelBase ?? (email.split('@')[0].split(/[._-]/)[0].replace(/^./, (c) => c.toUpperCase()) || null),
+          // Le label sert d'accroche personnelle (« Bonjour Marc, ») : il est TOUJOURS
+          // déduit de l'adresse, jamais du libellé de groupe — sinon tous les
+          // destinataires d'un même lot recevraient la même salutation.
+          label: email.split('@')[0].split(/[._-]/)[0].replace(/^./, (c) => c.toUpperCase()) || null,
           kind, cote: kind === 'externe' ? cote : null,
         }))
       : Array.from({ length: Math.min(Math.max(Number(body.nombre) || 1, 1), 40) }, (_, i, a) => ({

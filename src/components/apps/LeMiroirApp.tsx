@@ -913,8 +913,10 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
           <input type="number" min={1} max={40} value={adresses.length || nombre} disabled={adresses.length > 0}
             onChange={(e) => setNombre(Number(e.target.value))}
             className="w-20 px-2 py-1.5 rounded-lg border bg-transparent text-sm disabled:opacity-50" style={card} />
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Libellé (ex : Atelier, Client)"
-            className="px-3 py-1.5 rounded-lg border bg-transparent text-sm" style={card} />
+          <input value={label} onChange={(e) => setLabel(e.target.value)} disabled={adresses.length > 0}
+            placeholder={adresses.length ? 'Accroche déduite de chaque adresse' : 'Libellé (ex : Atelier, Client)'}
+            title={adresses.length ? "Avec des adresses, l'accroche « Bonjour … » est déduite de chaque adresse" : ''}
+            className="px-3 py-1.5 rounded-lg border bg-transparent text-sm disabled:opacity-50" style={card} />
           {kind === 'interne' && (
             <select value={celluleId} onChange={(e) => setCelluleId(e.target.value)} className="px-2 py-1.5 rounded-lg border bg-transparent text-sm" style={card}>
               <option value="">— sans cellule —</option>
