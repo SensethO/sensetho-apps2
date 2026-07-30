@@ -882,7 +882,7 @@ function VueLiens({ campagneId, cellules, participants }: { campagneId: string; 
     <div className="space-y-4">
       <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
         Un lien par personne, <b>sans création de compte</b> : chacun accepte le contrat de règles, se déclare, puis peint.
-        C&apos;est la voie normale en mission (personne ne crée 40 comptes) et la seule pour les <b>parties prenantes externes</b>
+        C&apos;est la voie normale en mission (personne ne crée 40 comptes) et la seule pour les <b>parties prenantes externes</b>{' '}
         (clients, fournisseurs, candidats). Un lien est un secret : ne le diffusez pas en liste publique. L&apos;envoi par Microsoft&nbsp;365 utilise un message <b>figé</b> (invitation seule, sans image ni pixel de suivi) : cette fonction ne peut pas servir à un envoi commercial.
       </div>
 
