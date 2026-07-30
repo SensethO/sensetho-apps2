@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import ViewTabs from '@/components/rse/ViewTabs'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import { createClient } from '@/lib/supabase/client'
+import { usePolling } from '@/hooks/usePolling'
 const ODDNotePanel = dynamic(() => import('./GuidedActionNotePanel'), { ssr: false, loading: () => null })
 
 // ─── Données ISO 26000 (source de vérité locale) ─────────────────────────────
@@ -584,32 +585,42 @@ export default function ODDExplorerApp({ ctx }: { ctx: RseContext }) {
     load()
   }, [org, year])
 
+  // Realtime opérationnel ? Sinon le rafraîchissement adaptatif ci-dessous prend le relais.
+  const realtimeOkRef = useRef(false)
+  const scoresSigRef = useRef('')
+
+  // Repli économe : rien quand Realtime fonctionne ou que l'onglet est en arrière-plan,
+  // et espacement automatique tant que les scores ne changent pas.
+  usePolling(async () => {
+    if (!diagId || realtimeOkRef.current) return false
+    const r = await fetch(`/api/iso26000/${diagId}`)
+    if (!r.ok) return false
+    const j = await r.json()
+    const scores = j.data?.scores
+    if (!scores) return false
+    const sig = JSON.stringify(scores)
+    if (sig === scoresSigRef.current) return false
+    scoresSigRef.current = sig
+    setDiagScores(scores)
+    return true
+  }, { intervalMs: 15_000, maxMs: 120_000 })
+
   useEffect(() => {
     if (!diagId) return
     const supabase = createClient()
-    let realtimeOk = false
+    realtimeOkRef.current = false
     const channel = supabase
       .channel(`odd_diag_scores_${diagId}`)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'iso26000_diagnostics',
         filter: `id=eq.${diagId}`,
       }, (payload: { new: Record<string, unknown> }) => {
-        realtimeOk = true
+        realtimeOkRef.current = true
         const updated = payload.new as { scores?: Record<string, number> }
         if (updated.scores) setDiagScores(updated.scores)
       })
-      .subscribe((status: string) => { if (status === 'SUBSCRIBED') realtimeOk = true })
-    // Repli si Realtime est indisponible. Onglet en arrière-plan → on n'interroge pas :
-    // ce repli télécharge le diagnostic complet (egress Supabase).
-    const poll = setInterval(() => {
-      if (realtimeOk) return
-      if (typeof document !== 'undefined' && document.hidden) return
-      fetch(`/api/iso26000/${diagId}`)
-        .then(r => r.json())
-        .then(j => { if (j.data?.scores) setDiagScores(j.data.scores) })
-        .catch(() => {})
-    }, 15000)
-    return () => { supabase.removeChannel(channel); clearInterval(poll) }
+      .subscribe((status: string) => { if (status === 'SUBSCRIBED') realtimeOkRef.current = true })
+    return () => { supabase.removeChannel(channel) }
   }, [diagId])
 
   useEffect(() => {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { usePolling } from '@/hooks/usePolling'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import Icon from '@/components/ui/Icon'
@@ -631,11 +632,48 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
     }
   }, [org?.id, year]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sync — Realtime WebSocket + fallback polling toutes les 4s ───────────
+  // ── Sync — Realtime WebSocket, avec repli économe si Realtime est indisponible ──
+  const realtimeOkRef = useRef(false)
+  const pollTickRef = useRef(0)
+  const remoteSigRef = useRef('')
+
+  // Repli : aucune requête si Realtime fonctionne, si une sauvegarde locale est en cours,
+  // ou si l'onglet est en arrière-plan ; espacement automatique tant que rien ne change.
+  usePolling(async () => {
+    if (!diagnostic || realtimeOkRef.current || diagSavePending.current) return false
+    const res = await fetch(`/api/guided-diagnostic?org_id=${diagnostic.organisation_id}&year=${diagnostic.year}`)
+    if (!res.ok) return false
+    const json = await res.json()
+    const remote = json.data as DiagnosticRecord | null
+    if (!remote) return false
+
+    const sig = JSON.stringify([remote.action_progress, remote.action_na, remote.scores])
+    const changed = sig !== remoteSigRef.current
+    if (changed) {
+      remoteSigRef.current = sig
+      setActionProgress(remote.action_progress ?? {})
+      setActionNa(remote.action_na ?? {})
+      setScores(remote.scores ?? {})
+    }
+
+    // 1 tick sur 2 : notes + sections (si aucune sauvegarde locale en cours)
+    pollTickRef.current++
+    if (pollTickRef.current % 2 === 0 && Object.keys(noteSaveTimers.current).length === 0) {
+      const nr = await fetch(`/api/guided-diagnostic/${diagnostic.id}/notes`)
+      if (nr.ok) {
+        const nj = await nr.json()
+        setNotes(nj.data?.notes ?? {})
+        setSections(nj.data?.sections ?? {})
+        setNotesRemoteVersion(v => v + 1)
+      }
+    }
+    return changed
+  }, { intervalMs: 10_000, maxMs: 120_000 })
+
   useEffect(() => {
     if (!diagnostic) return
     const diagId = diagnostic.id
-    let realtimeOk = false
+    realtimeOkRef.current = false
 
     // ── Tentative Realtime ────────────────────────────────────────────────
     const supabase = createClient()
@@ -654,7 +692,7 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
         }
       )
       .subscribe((status: string) => {
-        realtimeOk = status === 'SUBSCRIBED'
+        realtimeOkRef.current = status === 'SUBSCRIBED'
       })
 
     // ── Realtime : guided_action_notes ────────────────────────────────────
@@ -678,42 +716,11 @@ export default function GuidedDiagnostic({ ctx }: { ctx: RseContext }) {
       )
       .subscribe()
 
-    // ── Fallback polling (si Realtime indisponible) ───────────────────────
-    // ⚠️ Ne jamais interroger quand l'onglet est en arrière-plan : ce repli télécharge
-    // le diagnostic complet, et des onglets oubliés ont consommé des Go d'egress Supabase.
-    let pollTick = 0
-    const poll = setInterval(async () => {
-      if (realtimeOk || diagSavePending.current) return
-      if (typeof document !== 'undefined' && document.hidden) return
-      pollTick++
-      try {
-        // sync scores / progress / na
-        const res = await fetch(`/api/guided-diagnostic?org_id=${diagnostic.organisation_id}&year=${diagnostic.year}`)
-        if (!res.ok) return
-        const json = await res.json()
-        const remote = json.data as DiagnosticRecord | null
-        if (!remote) return
-        setActionProgress(remote.action_progress ?? {})
-        setActionNa(remote.action_na ?? {})
-        setScores(remote.scores ?? {})
-
-        // 1 tick sur 2 : sync notes + sections (si aucune sauvegarde locale en cours)
-        if (pollTick % 2 === 0 && Object.keys(noteSaveTimers.current).length === 0) {
-          const nr = await fetch(`/api/guided-diagnostic/${diagId}/notes`)
-          if (nr.ok) {
-            const nj = await nr.json()
-            setNotes(nj.data?.notes ?? {})
-            setSections(nj.data?.sections ?? {})
-            setNotesRemoteVersion(v => v + 1)
-          }
-        }
-      } catch { /* silencieux */ }
-    }, 8000)
+    // Le repli (si Realtime est indisponible) est géré par usePolling, plus haut.
 
     return () => {
       supabase.removeChannel(channel)
       supabase.removeChannel(notesChannel)
-      clearInterval(poll)
     }
   }, [diagnostic?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 

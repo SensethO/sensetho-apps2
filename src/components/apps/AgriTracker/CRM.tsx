@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { usePolling } from '@/hooks/usePolling'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { CRMMessage, CRMRdv, CRMRdvType, CRMRdvStatut, CRMNote, CRMConfianceEntry } from './types'
 
@@ -297,28 +298,30 @@ function Thread({ plantationId, acheteurUserId, currentUserId, isAcheteur, isAdm
   const fileRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  const load = useCallback(async () => {
+  // Empreinte du dernier fil chargé : permet de signaler « rien de neuf » au rafraîchissement
+  // adaptatif (qui espace alors les appels) sans re-rendre la liste inutilement.
+  const lastSig = useRef('')
+
+  const load = useCallback(async (): Promise<boolean> => {
     const res = await fetch(
       `/api/agri/crm/messages?plantation_id=${plantationId}&acheteur_user_id=${acheteurUserId}`
     )
+    let changed = true
     if (res.ok) {
       const j = await res.json()
-      setMessages(j.messages ?? [])
+      const list: CRMMessage[] = j.messages ?? []
+      const sig = `${list.length}|${list[list.length - 1]?.id ?? ''}|${list[list.length - 1]?.lu_at ?? ''}`
+      changed = sig !== lastSig.current
+      if (changed) { lastSig.current = sig; setMessages(list) }
     }
     setLoading(false)
+    return changed
   }, [plantationId, acheteurUserId])
 
   useEffect(() => { load() }, [load])
-  // Synchronisation live sans WebSocket. On suspend quand l'onglet est en arrière-plan et
-  // on recharge à son retour : chaque appel retélécharge tout le fil, et des onglets laissés
-  // ouverts ont consommé des Go d'egress Supabase.
-  useEffect(() => {
-    const tick = () => { if (!document.hidden) load() }
-    const t = setInterval(tick, 10000)
-    const onVisible = () => { if (!document.hidden) load() }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
-  }, [load])
+  // Synchronisation live sans WebSocket, via le hook économe (pause en arrière-plan,
+  // plancher d'intervalle, ralentissement quand le fil ne bouge pas).
+  usePolling(load, { intervalMs: 10_000, maxMs: 60_000 })
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   async function send() {
@@ -548,10 +551,7 @@ export function MessagesTabAcheteur({ plantationId, currentUserId, isAdmin, onUn
     loadConversations()
   }, [loadConversations])
 
-  useEffect(() => {
-    const t = setInterval(() => { if (!document.hidden) loadConversations() }, 60000)
-    return () => clearInterval(t)
-  }, [loadConversations])
+  usePolling(loadConversations, { intervalMs: 60_000, maxMs: 120_000 })
 
   const grouped = conversations.reduce<Record<string, Record<string, ConvAcheteur[]>>>((acc, c) => {
     const culture = c.main_culture ?? 'Autre'
@@ -680,10 +680,7 @@ function MessagesTabPlanteur({ plantationId, currentUserId, isAdmin, onUnreadCha
   }, [plantationId, onUnreadChange])
 
   useEffect(() => { loadConversations() }, [loadConversations])
-  useEffect(() => {
-    const t = setInterval(() => { if (!document.hidden) loadConversations() }, 60000)
-    return () => clearInterval(t)
-  }, [loadConversations])
+  usePolling(loadConversations, { intervalMs: 60_000, maxMs: 120_000 })
 
   const timeStr = (dt: string | null) => {
     if (!dt) return ''

@@ -6,7 +6,9 @@
     "dev": "next dev -p 3002",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:polling": "node scripts/check-polling.mjs",
+    "prebuild": "node scripts/check-polling.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

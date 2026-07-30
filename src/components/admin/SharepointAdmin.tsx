@@ -888,7 +888,8 @@ function MigrationsTab({ configs }: { configs: SpConfig[] }) {
   useEffect(() => {
     const hasRunning = jobs.some(j => j.status === 'running')
     if (hasRunning && !pollRef.current) {
-      pollRef.current = setInterval(loadJobs, 3000)
+      // Suivi d'une migration en cours : on ne suit que si l'onglet est au premier plan.
+      pollRef.current = setInterval(() => { if (!document.hidden) loadJobs() }, 8000)
     } else if (!hasRunning && pollRef.current) {
       clearInterval(pollRef.current)
       pollRef.current = null
