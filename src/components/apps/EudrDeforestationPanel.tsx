@@ -35,8 +35,9 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [sat, setSat] = useState<string | null>(null)
-  const satUrl = (attId: string, from: string, to: string) =>
-    `/api/eudr-fournisseurs/satellite?org_id=${orgId}&attachmentId=${attId}&from=${from}&to=${to}`
+  const [satPlot, setSatPlot] = useState<number | null>(null) // null = toute l'emprise
+  const satUrl = (attId: string, from: string, to: string, plot: number | null) =>
+    `/api/eudr-fournisseurs/satellite?org_id=${orgId}&attachmentId=${attId}&from=${from}&to=${to}${plot != null ? `&plot=${plot}` : ''}`
   const nowIso = new Date().toISOString()
 
   const load = useCallback(async () => {
@@ -93,17 +94,26 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                     <div className="flex items-center gap-2">
                       {a && <span className={`text-xs px-2 py-1 rounded-full ${riskBadge(a.overall_risk)}`}>{riskLabel(a.overall_risk)}</span>}
                       {a && <button className="text-xs text-gray-500 hover:underline" onClick={() => setOpen(open === att.id ? null : att.id)}>{open === att.id ? 'Masquer' : 'Détail'}</button>}
-                      <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setSat(sat === att.id ? null : att.id)}>{sat === att.id ? 'Masquer satellite' : '🛰️ Satellite'}</button>
+                      <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline" onClick={() => { setSat(sat === att.id ? null : att.id); setSatPlot(null) }}>{sat === att.id ? 'Masquer satellite' : '🛰️ Satellite'}</button>
                       {canWrite && <button className={btn} onClick={() => analyze(att)} disabled={busy === att.id}>{busy === att.id ? 'Analyse…' : (a ? 'Ré-analyser' : 'Analyser')}</button>}
                     </div>
                   </div>
                   {sat === att.id && (
                     <div className="mt-3">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">🛰️ Sentinel‑2 (Copernicus), vraie couleur — mosaïque la moins nuageuse de chaque période. Compare l’état forestier <strong>2020</strong> (date‑butoir EUDR) et <strong>aujourd’hui</strong>.</p>
+                      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 m-0">🛰️ Sentinel‑2 (Copernicus), vraie couleur — mosaïque la moins nuageuse. État forestier <strong>2020</strong> (date‑butoir EUDR) vs <strong>aujourd’hui</strong>.</p>
+                        {a?.plots?.length ? (
+                          <select className="text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1"
+                            value={satPlot ?? ''} onChange={e => setSatPlot(e.target.value === '' ? null : Number(e.target.value))}>
+                            <option value="">Toute l’emprise</option>
+                            {a.plots.map((p, i) => <option key={i} value={i}>Parcelle {p.plotId}</option>)}
+                          </select>
+                        ) : null}
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[{ y: '2020', from: '2020-01-01T00:00:00Z', to: '2020-12-31T23:59:59Z' }, { y: 'Récente', from: '2024-06-01T00:00:00Z', to: nowIso }].map(p => (
                           <figure key={p.y} className="m-0">
-                            <img src={satUrl(att.id, p.from, p.to)} alt={`Sentinel-2 ${p.y}`} loading="lazy"
+                            <img src={satUrl(att.id, p.from, p.to, satPlot)} alt={`Sentinel-2 ${p.y}`} loading="lazy"
                               className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 aspect-square object-cover" />
                             <figcaption className="text-xs text-center text-gray-500 dark:text-gray-400 mt-1">{p.y}</figcaption>
                           </figure>
