@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Pool } from 'pg'
+import { requireAdmin } from '@/lib/requireAdmin'
 
 export async function POST(request: NextRequest) {
+  // Outil d'administration : réservé aux comptes admin (le middleware n'authentifie pas /api/).
+  const denied = await requireAdmin()
+  if (denied) return denied
+
   let body: { url: string; serviceRoleKey: string; dbPassword: string; projectRef: string }
 
   try {

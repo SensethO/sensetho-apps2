@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg'
+import { requireAdmin } from '@/lib/requireAdmin'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -293,6 +294,10 @@ async function listSecrets(source: ProjectCredentials, send: (e: StepEvent) => v
 // ── Main SSE handler ──────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
+  // Outil d'administration : réservé aux comptes admin (le middleware n'authentifie pas /api/).
+  const denied = await requireAdmin()
+  if (denied) return denied
+
   const body = await request.json() as TransferBody
   const { source, destination, options } = body
   const encoder = new TextEncoder()
