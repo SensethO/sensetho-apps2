@@ -19,6 +19,8 @@ const PUBLIC_ROUTES = [
   '/enquete',           // page publique questionnaire parties prenantes
   '/api/pp-survey/',    // API publique données enquête
   '/api/pp-track/',     // tracking email (pixel + clic)
+  '/miroir/',              // Le Miroir : participation par lien d'invitation (sans compte)
+  '/api/le-miroir/public/', // API publique du Miroir (le jeton authentifie)
 ]
 
 const AUTH_PAGES = ['/auth/login', '/auth/register', '/auth/forgot-password']

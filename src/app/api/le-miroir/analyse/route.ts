@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
      * (« ordre de grandeur : 20-30 % » répété 30 fois). On découpe en segments,
      * on supprime les redites (comparaison normalisée), on borne la longueur.
      */
-    function tidy(v: unknown, maxChars = 320): string {
+    const tidy = (v: unknown, maxChars = 320): string => {
       if (typeof v !== 'string') return ''
       const segments = v.replace(/\s+/g, ' ').trim().split(/(?<=[.!?·;])\s+/)
       const vus = new Set<string>()
