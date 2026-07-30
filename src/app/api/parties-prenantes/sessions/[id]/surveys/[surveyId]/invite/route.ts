@@ -70,9 +70,14 @@ export async function POST(
         // Évite d'être bloqué par les filtres antivirus/Safe Links des serveurs de messagerie
         const BASE_URL = 'https://apps.sensetho.com'
         const directUrl = `${BASE_URL}/enquete/${token}?tid=${inviteRow.tracking_id}`
-        const pixelUrl = `${BASE_URL}/api/pp-track/${inviteRow.tracking_id}`
 
         // Envoi email (non bloquant — l'invite est enregistrée même si l'email échoue)
+        //
+        // Délivrabilité (2026-07-29) : ni pixel de suivi, ni en-têtes
+        // List-Unsubscribe. Ces deux signaux déclaraient le message comme
+        // courrier commercial de masse alors que l'invitation est nominative et
+        // transactionnelle — cause probable des mises en indésirables. Le suivi
+        // subsiste par le paramètre `tid` de l'URL de l'enquête.
         try {
           const { html, text } = buildSurveyInviteEmail({
             surveyName: survey.name,
@@ -80,7 +85,6 @@ export async function POST(
             surveyUrl: directUrl,
             personalMessage: body.message ?? undefined,
             expiresAt,
-            trackingPixelUrl: pixelUrl,
           })
           await sendEmail(
             trimmed,
@@ -89,10 +93,6 @@ export async function POST(
             {
               fromName: "SensethO Apps",
               textBody: text,
-              headers: [
-                { name: 'List-Unsubscribe', value: '<mailto:web@sensetho.com?subject=unsubscribe>' },
-                { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
-              ],
             }
           )
         } catch (emailErr) {

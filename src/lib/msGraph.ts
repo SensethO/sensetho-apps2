@@ -231,20 +231,28 @@ export async function sendEmail(
 
 // ─── Template HTML — invitation enquête de matérialité ───────────────────────
 
+/**
+ * Invitation à une enquête de matérialité.
+ *
+ * PAS DE PIXEL DE SUIVI (retiré le 2026-07-29) : une image 1×1 appelant nos
+ * serveurs est l'un des signaux « courrier commercial de masse » les plus lourds
+ * pour les filtres Microsoft et Google, et c'était la cause probable des mises
+ * en indésirables. L'ouverture de l'enquête reste tracée par le paramètre `tid`
+ * de l'URL, qui suffit : ce qui compte est de savoir qui a répondu, pas qui a
+ * affiché les images de son courrier.
+ */
 export function buildSurveyInviteEmail({
   surveyName,
   sessionOrganisation,
   surveyUrl,
   personalMessage,
   expiresAt,
-  trackingPixelUrl,
 }: {
   surveyName: string
   sessionOrganisation?: string
   surveyUrl: string
   personalMessage?: string
   expiresAt?: string
-  trackingPixelUrl?: string
 }): { html: string; text: string } {
   const orgLine = sessionOrganisation
     ? `<p style="color:#6b7280;margin:0 0 16px">pour <strong>${sessionOrganisation}</strong></p>`
@@ -285,7 +293,6 @@ export function buildSurveyInviteEmail({
       </p>
     </div>
   </div>
-  ${trackingPixelUrl ? `<img src="${trackingPixelUrl}" width="1" height="1" style="display:none;border:0" alt="" />` : ''}
 </body>
 </html>`
 
