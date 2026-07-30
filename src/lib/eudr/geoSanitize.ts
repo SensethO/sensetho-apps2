@@ -82,12 +82,17 @@ function roundRing(ring: Ring): Ring {
   return out.length >= 4 ? out : ring
 }
 
-/** Construit un feature Polygon à partir de ses anneaux, en ne gardant que l'extérieur (arrondi). */
-function polygonFeature(rings: Ring[], properties: unknown, report: SanitizeReport, simplifyEnabled: boolean): Feature {
+/**
+ * Nettoie les anneaux d'UN polygone : ne garde que l'extérieur (trous retirés — non
+ * supportés par TRACES), simplifie + arrondit. Alimente le rapport (trous, surface, alertes).
+ * Renvoie les coordonnées d'un polygone à anneau unique.
+ */
+function cleanPolygonRings(rings: Ring[], properties: unknown, report: SanitizeReport, simplifyEnabled: boolean): Ring[] {
   const originalArea = polyArea(rings)          // surface d'origine (trous déduits)
   const exteriorArea = polyArea([rings[0]])     // surface sans les trous
   if (rings.length > 1) {
     report.holesRemoved += rings.length - 1
+    report.changed = true
     const added = exteriorArea - originalArea   // surface réintégrée par le retrait des trous
     if (exteriorArea > 0 && (added / exteriorArea) * 100 > HOLE_ALERT_PCT) {
       report.holeAlerts.push({
@@ -104,10 +109,15 @@ function polygonFeature(rings: Ring[], properties: unknown, report: SanitizeRepo
   report.pointsAfter += ring.length
   report.areaBeforeHa += originalArea / 10000
   report.areaAfterHa += polyArea([ring]) / 10000
-  return { type: 'Feature', properties, geometry: { type: 'Polygon', coordinates: [ring] } }
+  return [ring]
 }
 
-/** Nettoie + éclate un feature polygonal → 1..n features Polygon simples, sans trou. */
+/**
+ * Nettoie un feature polygonal en préservant son type : Polygon → Polygon, MultiPolygon →
+ * MultiPolygon (les MultiPolygon sont acceptés par la spec EUDR ; on ne les éclate pas, pour
+ * rester fidèle à la structure « une parcelle = un lieu de production »). Trous retirés,
+ * coordonnées simplifiées/arrondies. → toujours 1 feature.
+ */
 function sanitizeFeature(feat: Feature, report: SanitizeReport, simplifyEnabled: boolean): Feature[] {
   let f: Feature = feat
   try { f = { type: 'Feature', properties: feat.properties, geometry: (cleanCoords(feat as never) as { geometry: Geometry }).geometry } } catch { /* garde l'original */ }
@@ -115,16 +125,12 @@ function sanitizeFeature(feat: Feature, report: SanitizeReport, simplifyEnabled:
   if (!g) return [feat]
   if (g.type === 'Polygon') {
     const rings = g.coordinates as Ring[]
-    if (rings.length > 1) report.changed = true
-    return [polygonFeature(rings, feat.properties, report, simplifyEnabled)]
+    return [{ type: 'Feature', properties: feat.properties, geometry: { type: 'Polygon', coordinates: cleanPolygonRings(rings, feat.properties, report, simplifyEnabled) } }]
   }
   if (g.type === 'MultiPolygon') {
     const polys = g.coordinates as Ring[][]
-    if (polys.length > 1) { report.multiPolygonsSplit += 1; report.changed = true }
-    return polys.map(poly => {
-      if (poly.length > 1) report.changed = true
-      return polygonFeature(poly, feat.properties, report, simplifyEnabled)
-    })
+    const cleaned = polys.map(poly => cleanPolygonRings(poly, feat.properties, report, simplifyEnabled))
+    return [{ type: 'Feature', properties: feat.properties, geometry: { type: 'MultiPolygon', coordinates: cleaned } }]
   }
   return [f] // Point / autre : inchangé
 }
