@@ -106,7 +106,7 @@ export async function POST(req: NextRequest, { params }: { params: { campagneId:
     const [{ data: org }, { data: cellules }, { data: prof }] = await Promise.all([
       admin.from('organisations').select('denomination').eq('id', camp.org_id).maybeSingle(),
       admin.from('le_miroir_cellules').select('id, nom').eq('campagne_id', camp.id),
-      admin.from('profiles').select('email, full_name').eq('id', camp.owner_id).maybeSingle(),
+      admin.from('profiles').select('full_name').eq('id', camp.owner_id).maybeSingle(),
     ])
     const organisation = org?.denomination ?? "l'organisation"
     const base = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
@@ -131,10 +131,16 @@ export async function POST(req: NextRequest, { params }: { params: { campagneId:
           `Le Miroir — votre regard sur ${organisation}`,
           html,
           {
+            // Note : Exchange Online remplace ce nom d'affichage par celui de la
+            // boîte d'envoi (constaté chez un destinataire externe). Conservé au
+            // cas où l'envoi passerait un jour par une autre voie.
             fromName: prof?.full_name ? `${prof.full_name} (via Sens'ethO)` : "Sens'ethO",
-            replyTo: prof?.email ?? undefined,
+            // Pas de Reply-To : les réponses reviennent à la boîte d'envoi
+            // (web@sensetho.com). From et Reply-To alignés — un écart entre les
+            // deux est un motif d'hameçonnage que certains filtres pénalisent.
+            // Décision du 2026-07-30 : la boîte partagée relève les questions.
             textBody: text,
-            // Volontairement : aucun en-tête de liste de diffusion, aucun pixel.
+            // Volontairement aussi : aucun en-tête de liste de diffusion, aucun pixel.
           }
         )
         await admin.from('le_miroir_invitations')
