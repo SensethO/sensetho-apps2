@@ -28,10 +28,13 @@ export async function GET(req: NextRequest) {
   const orgId = new URL(req.url).searchParams.get('org_id')
   const auth = await guard(orgId)
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
-  const { data, error } = await createAdminClient()
-    .from('eudr_deforestation').select('*').eq('org_id', orgId!).order('analyzed_at', { ascending: false })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ data: data ?? [] })
+  const admin = createAdminClient()
+  const [analyses, atts] = await Promise.all([
+    admin.from('eudr_deforestation').select('*').eq('org_id', orgId!).order('analyzed_at', { ascending: false }),
+    admin.from('eudr_attachments').select('id, name, entity_type, entity_id, created_at').eq('org_id', orgId!).eq('doc_type', 'geojson').order('created_at', { ascending: false }),
+  ])
+  if (analyses.error) return NextResponse.json({ error: analyses.error.message }, { status: 500 })
+  return NextResponse.json({ data: analyses.data ?? [], attachments: atts.data ?? [] })
 }
 
 /**
