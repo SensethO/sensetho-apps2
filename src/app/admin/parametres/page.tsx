@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import PageContainer from '@/components/layout/PageContainer'
 import SiteSettings from '@/components/admin/SiteSettings'
+import BackupPanel from '@/components/admin/BackupPanel'
 
 export const metadata = { title: 'Paramètres du site — Admin' }
 
@@ -22,7 +23,10 @@ export default async function AdminParametresPage() {
         title="Paramètres du site"
         description="Modifiez les textes et informations affichés sur les pages publiques."
       >
-        <SiteSettings />
+        <div className="space-y-6">
+          <SiteSettings />
+          <BackupPanel />
+        </div>
       </PageContainer>
     </AppShell>
   )
