@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 
 // Analyse de risque déforestation EUDR (via Whisp / Open Foris) par document GeoJSON.
 // Pour chaque parcelle : perturbation après le 31/12/2020 + verdict de risque (cultures / bois).
@@ -34,7 +34,14 @@ const riskLabel = (r?: string | null) => ({ high: '🔴 Risque élevé', low: '�
  */
 function SatImage({ url, label }: { url: string; label: string }) {
   const [st, setSt] = useState<{ loading: boolean; src?: string; error?: string }>({ loading: true })
+  // Verrou : une URL donnée n'est téléchargée qu'UNE fois, quels que soient les rendus.
+  // Sans ce garde-fou, une URL instable (ex. horodatage recalculé à chaque rendu) relance
+  // l'effet en boucle — ce qui a provoqué 344 000 requêtes en 5 min le 31/07/2026.
+  const fetchedRef = useRef<string | null>(null)
+
   useEffect(() => {
+    if (fetchedRef.current === url) return
+    fetchedRef.current = url
     let alive = true
     const ctrl = new AbortController()
     let objectUrl: string | undefined
@@ -80,7 +87,9 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   const [satPlot, setSatPlot] = useState<number | null>(null) // null = toute l'emprise
   const satUrl = (attId: string, from: string, to: string, plot: number | null) =>
     `/api/eudr-fournisseurs/satellite?org_id=${orgId}&attachmentId=${attId}&from=${from}&to=${to}${plot != null ? `&plot=${plot}` : ''}`
-  const nowIso = new Date().toISOString()
+  // ⚠️ Borne de fin FIXE (jour courant, calculé une seule fois). Un `new Date()` évalué à
+  // chaque rendu changeait l'URL en continu et relançait le téléchargement en boucle.
+  const nowIso = useMemo(() => `${new Date().toISOString().slice(0, 10)}T23:59:59Z`, [])
 
   const load = useCallback(async () => {
     try {
