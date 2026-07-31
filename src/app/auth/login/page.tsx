@@ -31,7 +31,17 @@ export default function LoginPage() {
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      setLoginError('Email ou mot de passe incorrect.')
+      // Distinguer une panne du service d'un vrai refus d'identifiants : lors de
+      // l'incident du 30/07/2026, une base injoignable affichait « mot de passe
+      // incorrect » et poussait les utilisateurs à réinitialiser inutilement.
+      const msg = (error.message || '').toLowerCase()
+      const unreachable =
+        error.status === 0 || error.status === undefined ||
+        (error.status !== undefined && error.status >= 500) ||
+        /failed to fetch|network|timeout|load failed/.test(msg)
+      setLoginError(unreachable
+        ? 'Service momentanément indisponible — vos identifiants n’ont pas pu être vérifiés. Réessayez dans un instant.'
+        : 'Email ou mot de passe incorrect.')
       setLoginLoading(false)
       return
     }
