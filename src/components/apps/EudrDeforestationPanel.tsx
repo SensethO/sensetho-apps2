@@ -32,7 +32,35 @@ const riskLabel = (r?: string | null) => ({ high: '🔴 Risque élevé', low: '�
  * Vignette satellite : charge l'image via fetch pour pouvoir afficher le motif exact
  * en cas d'échec (une <img> classique ne montrerait qu'un cadre vide).
  */
-function SatImage({ url, label }: { url: string; label: string }) {
+/** Contours des parcelles à superposer, exprimés dans la même bbox que l'image. */
+interface Overlay { bbox: number[]; rings: number[][][] }
+
+/**
+ * Trace les contours des parcelles au-dessus de l'image. L'API Sentinel Hub étire la bbox
+ * sur toute la vignette : une projection linéaire lon/lat → % suffit donc à caler le tracé
+ * (d'où preserveAspectRatio="none").
+ */
+function PlotOutlines({ overlay }: { overlay: Overlay }) {
+  const [minx, miny, maxx, maxy] = overlay.bbox
+  const w = maxx - minx, h = maxy - miny
+  if (!(w > 0 && h > 0)) return null
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+      {overlay.rings.map((ring, i) => (
+        <polygon
+          key={i}
+          points={ring.map(([lon, lat]) => `${((lon - minx) / w * 100).toFixed(3)},${((maxy - lat) / h * 100).toFixed(3)}`).join(' ')}
+          fill="rgba(250, 204, 21, 0.13)"
+          stroke="#facc15"
+          strokeWidth="0.45"
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+    </svg>
+  )
+}
+
+function SatImage({ url, label, overlay }: { url: string; label: string; overlay?: Overlay | null }) {
   const [st, setSt] = useState<{ loading: boolean; src?: string; error?: string }>({ loading: true })
   // Verrou : une URL donnée n'est téléchargée qu'UNE fois, quels que soient les rendus.
   // Sans ce garde-fou, une URL instable (ex. horodatage recalculé à chaque rendu) relance
@@ -67,10 +95,11 @@ function SatImage({ url, label }: { url: string; label: string }) {
 
   return (
     <figure className="m-0">
-      <div className="w-full aspect-square rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center justify-center">
+      <div className="relative w-full aspect-square rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center justify-center">
         {st.loading && <span className="text-xs text-gray-400">Chargement de l’image satellite…</span>}
         {st.error && <span className="text-xs text-red-600 dark:text-red-400 px-3 text-center break-words">❌ {st.error}</span>}
         {st.src && <img src={st.src} alt={`Sentinel-2 ${label}`} className="w-full h-full object-cover" />}
+        {st.src && overlay && <PlotOutlines overlay={overlay} />}
       </div>
       <figcaption className="text-xs text-center text-gray-500 dark:text-gray-400 mt-1">{label}</figcaption>
     </figure>
@@ -90,6 +119,23 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   // ⚠️ Borne de fin FIXE (jour courant, calculé une seule fois). Un `new Date()` évalué à
   // chaque rendu changeait l'URL en continu et relançait le téléchargement en boucle.
   const nowIso = useMemo(() => `${new Date().toISOString().slice(0, 10)}T23:59:59Z`, [])
+
+  // Contours des parcelles à superposer aux images (une requête par document/parcelle).
+  const [overlay, setOverlay] = useState<Overlay | null>(null)
+  const overlayKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!sat) { setOverlay(null); overlayKeyRef.current = null; return }
+    const key = `${sat}|${satPlot ?? ''}`
+    if (overlayKeyRef.current === key) return   // même verrou anti-boucle que SatImage
+    overlayKeyRef.current = key
+    let alive = true
+    setOverlay(null)
+    fetch(`/api/eudr-fournisseurs/satellite/geometry?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (alive && j?.bbox && j?.rings) setOverlay(j as Overlay) })
+      .catch(() => { /* la superposition est un confort : on n'alerte pas */ })
+    return () => { alive = false }
+  }, [sat, satPlot, orgId])
 
   const load = useCallback(async () => {
     try {
@@ -152,7 +198,10 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                   {sat === att.id && (
                     <div className="mt-3">
                       <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 m-0">🛰️ Sentinel‑2 (Copernicus), vraie couleur — mosaïque la moins nuageuse. État forestier <strong>2020</strong> (date‑butoir EUDR) vs <strong>aujourd’hui</strong>.</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 m-0">
+                          🛰️ Sentinel‑2 (Copernicus), vraie couleur — mosaïque la moins nuageuse. État forestier <strong>2020</strong> (date‑butoir EUDR) vs <strong>aujourd’hui</strong>.
+                          {overlay && <> <span className="inline-block w-3 h-2 align-middle rounded-sm" style={{ background: 'rgba(250,204,21,0.25)', border: '1px solid #facc15' }} /> contour des parcelles déclarées.</>}
+                        </p>
                         {a?.plots?.length ? (
                           <select className="text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1"
                             value={satPlot ?? ''} onChange={e => setSatPlot(e.target.value === '' ? null : Number(e.target.value))}>
@@ -163,7 +212,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[{ y: '2020', from: '2020-01-01T00:00:00Z', to: '2020-12-31T23:59:59Z' }, { y: 'Récente', from: '2024-06-01T00:00:00Z', to: nowIso }].map(p => (
-                          <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} />
+                          <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} overlay={overlay} />
                         ))}
                       </div>
                     </div>
