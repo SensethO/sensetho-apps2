@@ -473,10 +473,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                           </button>
                         )}
                       </div>
-                      {/* Une image par ligne : chaque axe double par rapport au côte-à-côte,
-                          ce qui rend la navigation et le zoom praticables. La comparaison
-                          reste possible, le zoom et le déplacement étant partagés. */}
-                      <div className="grid grid-cols-1 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[{ y: '2020', from: '2020-01-01T00:00:00Z', to: '2020-12-31T23:59:59Z' }, { y: 'Récente', from: '2024-06-01T00:00:00Z', to: nowIso }].map(p => (
                           <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} overlay={overlay} osm={osm} view={view} onView={setView} />
                         ))}
