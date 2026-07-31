@@ -35,7 +35,14 @@ const riskLabel = (r?: string | null) => ({ high: '🔴 Risque élevé', low: '�
 /** Contours des parcelles à superposer, exprimés dans la même bbox que l'image. */
 interface Overlay { bbox: number[]; rings: number[][][] }
 /** Calque OpenStreetMap : routes (lignes) et bâtiments (polygones), même bbox. */
-interface OsmLayer { bbox: number[]; roads: number[][][]; buildings: number[][][]; scaleKm: number }
+interface OsmRoad { pts: number[][]; name: string | null }
+interface OsmPlace { lon: number; lat: number; name: string; type: string }
+interface OsmCity { name: string; type: string; population: number | null; km: number; direction: string }
+interface OsmContext { country: string | null; countryCode: string | null; region: string | null; nearestCity: OsmCity | null }
+interface OsmLayer {
+  bbox: number[]; roads: OsmRoad[]; buildings: number[][][]
+  places: OsmPlace[]; context: OsmContext; scaleKm: number
+}
 
 /**
  * Trace les contours des parcelles au-dessus de l'image. L'API Sentinel Hub étire la bbox
@@ -84,19 +91,58 @@ interface View { s: number; x: number; y: number }
 const VIEW_RESET: View = { s: 1, x: 0, y: 0 }
 const MAX_ZOOM = 10
 
-/** Routes et habitations OpenStreetMap, projetées dans la même bbox que l'image. */
-function OsmOutlines({ osm }: { osm: OsmLayer }) {
+/** Routes, habitations et toponymes OpenStreetMap, projetés dans la même bbox que l'image. */
+function OsmOutlines({ osm, zoom }: { osm: OsmLayer; zoom: number }) {
   const [minx, miny, maxx, maxy] = osm.bbox
   const w = maxx - minx, h = maxy - miny
   if (!(w > 0 && h > 0)) return null
-  const pts = (line: number[][]) =>
-    line.map(([lon, lat]) => `${((lon - minx) / w * 100).toFixed(3)},${((maxy - lat) / h * 100).toFixed(3)}`).join(' ')
+  const px = (lon: number) => (lon - minx) / w * 100
+  const py = (lat: number) => (maxy - lat) / h * 100
+  const pts = (line: number[][]) => line.map(([lon, lat]) => `${px(lon).toFixed(3)},${py(lat).toFixed(3)}`).join(' ')
+
+  // Les libellés compensent le zoom du conteneur : ils gardent une taille constante à l'écran.
+  const fs = Math.max(0.3, 2.2 / zoom)
+
+  // Un nom de route n'est écrit qu'une fois, sur son tronçon le plus long, et seulement
+  // s'il occupe assez de place à l'échelle courante — sinon la carte devient illisible.
+  const byName = new Map<string, { x: number; y: number; len: number }>()
+  for (const r of osm.roads) {
+    if (!r.name || r.pts.length < 2) continue
+    let len = 0
+    for (let i = 1; i < r.pts.length; i++) {
+      len += Math.hypot(px(r.pts[i][0]) - px(r.pts[i - 1][0]), py(r.pts[i][1]) - py(r.pts[i - 1][1]))
+    }
+    const prev = byName.get(r.name)
+    if (prev && prev.len >= len) continue
+    const m = r.pts[Math.floor(r.pts.length / 2)]
+    byName.set(r.name, { x: px(m[0]), y: py(m[1]), len })
+  }
+  const roadLabels = [...byName].filter(([, v]) => v.len * zoom > 20)
+
+  const halo = { stroke: 'rgba(0,0,0,0.85)', strokeWidth: fs * 0.32, paintOrder: 'stroke' as const, strokeLinejoin: 'round' as const }
+
   return (
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
       {/* Liseré sombre sous le trait clair : les routes restent lisibles sur fond végétal. */}
-      {osm.roads.map((r, i) => <polyline key={`u${i}`} points={pts(r)} fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />)}
-      {osm.roads.map((r, i) => <polyline key={`r${i}`} points={pts(r)} fill="none" stroke="#fb923c" strokeWidth="1.1" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />)}
+      {osm.roads.map((r, i) => <polyline key={`u${i}`} points={pts(r.pts)} fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />)}
+      {osm.roads.map((r, i) => <polyline key={`r${i}`} points={pts(r.pts)} fill="none" stroke="#fb923c" strokeWidth="1.1" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />)}
       {osm.buildings.map((b, i) => <polygon key={`b${i}`} points={pts(b)} fill="rgba(248,113,113,0.55)" stroke="#fecaca" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />)}
+
+      {roadLabels.map(([name, v]) => (
+        <text key={`rl${name}`} x={v.x} y={v.y} fontSize={fs} fill="#fed7aa" textAnchor="middle" {...halo}>{name}</text>
+      ))}
+
+      {osm.places.map((p, i) => {
+        // Les villes et bourgs priment visuellement sur les hameaux.
+        const major = p.type === 'city' || p.type === 'town'
+        return (
+          <g key={`p${i}`}>
+            <circle cx={px(p.lon)} cy={py(p.lat)} r={fs * (major ? 0.32 : 0.22)} fill="#fff" stroke="rgba(0,0,0,0.8)" strokeWidth={fs * 0.12} />
+            <text x={px(p.lon)} y={py(p.lat) - fs * 0.55} fontSize={fs * (major ? 1.15 : 0.9)} fill="#ffffff"
+              textAnchor="middle" fontWeight={major ? 700 : 400} {...halo}>{p.name}</text>
+          </g>
+        )
+      })}
     </svg>
   )
 }
@@ -199,8 +245,21 @@ function SatImage({ url, label, overlay, osm, view, onView }: {
             style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}
           >
             <img src={st.src} alt={`Sentinel-2 ${label}`} className="w-full h-full object-cover select-none" draggable={false} />
-            {osm && <OsmOutlines osm={osm} />}
+            {osm && <OsmOutlines osm={osm} zoom={view.s} />}
             {overlay && <PlotOutlines overlay={overlay} />}
+          </div>
+        )}
+        {/* Repère géographique : hors du conteneur transformé, il reste lisible quel que soit le zoom. */}
+        {st.src && osm?.context && (osm.context.country || osm.context.nearestCity) && (
+          <div className="absolute top-1 left-1 max-w-[85%] text-[10px] leading-tight px-1.5 py-1 rounded bg-black/55 text-white pointer-events-none">
+            {osm.context.country && (
+              <div>📍 {osm.context.country}{osm.context.region ? ` — ${osm.context.region}` : ''}</div>
+            )}
+            {osm.context.nearestCity && (
+              <div>
+                🏙️ {osm.context.nearestCity.name} à {osm.context.nearestCity.km} km ({osm.context.nearestCity.direction})
+              </div>
+            )}
           </div>
         )}
         {st.src && view.s > 1 && (
@@ -247,7 +306,9 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
     if (hit) { setOsm(hit); setOsmMsg(hit.roads.length + hit.buildings.length === 0 ? 'Aucune route ni habitation cartographiée dans cette zone.' : null); return }
     let alive = true
     setOsmBusy(true); setOsmMsg(null); setOsm(null)
-    fetch(`/api/eudr-fournisseurs/satellite/osm?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}`)
+    // `v` : la réponse est mise en cache 24 h côté navigateur ; incrémenter ce jeton à chaque
+    // changement de forme du JSON évite qu'une ancienne réponse mette la superposition en défaut.
+    fetch(`/api/eudr-fournisseurs/satellite/osm?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}&v=2`)
       .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`); return j })
       .then((j: OsmLayer) => {
         if (!alive) return
@@ -344,9 +405,15 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                           {' '}<span className="text-gray-400">Molette pour zoomer, glisser pour déplacer — les deux images bougent ensemble (double-clic : réinitialiser).</span>
                           {osm && <>
                             {' '}<span className="inline-block w-3 h-0.5 align-middle" style={{ background: '#fb923c' }} /> routes,{' '}
-                            <span className="inline-block w-2 h-2 align-middle rounded-sm" style={{ background: 'rgba(248,113,113,0.7)' }} /> habitations —{' '}
+                            <span className="inline-block w-2 h-2 align-middle rounded-sm" style={{ background: 'rgba(248,113,113,0.7)' }} /> habitations, noms des voies et localités —{' '}
                             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">© contributeurs OpenStreetMap</a>
                             {osm.scaleKm > 15 && <span className="text-gray-400"> (axes principaux seulement à cette échelle)</span>}
+                            {osm.context?.nearestCity && (
+                              <> {' '}Ville influente la plus proche : <strong>{osm.context.nearestCity.name}</strong>
+                                {osm.context.nearestCity.population ? ` (~${osm.context.nearestCity.population.toLocaleString('fr-FR')} hab.)` : ''}
+                                {' '}à {osm.context.nearestCity.km} km vers le {osm.context.nearestCity.direction}.
+                              </>
+                            )}
                           </>}
                         </p>
                         {osmMsg && <p className="text-xs text-amber-600 dark:text-amber-400 m-0">⚠️ {osmMsg}</p>}
