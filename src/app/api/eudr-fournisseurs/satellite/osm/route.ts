@@ -164,7 +164,15 @@ async function overpass(q: string): Promise<{ elements?: OverpassEl[] }> {
       return JSON.parse(text)
     } catch (e) { lastErr = String((e as Error).message ?? e) }
   }
-  throw new Error(`OpenStreetMap indisponible (${lastErr})`)
+  throw new Error(lastErr)
+}
+
+/** Cause courte et lisible : l'UI compose la phrase, la route ne fournit que le motif. */
+function shortCause(e: string): string {
+  if (/abort|timeout|timed out/i.test(e)) return 'délai dépassé'
+  if (/\b(429|502|503|504)\b/.test(e)) return 'serveur saturé'
+  if (/\b(4\d\d|5\d\d)\b/.test(e)) return `réponse ${e.match(/\b[45]\d\d\b/)![0]}`
+  return e
 }
 
 /** GET ?org_id&attachmentId&plot= → { bbox, roads, buildings, places, context } en lon/lat. */
@@ -198,7 +206,7 @@ export async function GET(req: NextRequest) {
       overpass(queryFor(bbox, km, cLat, cLon)).catch(e => ({ error: String((e as Error).message ?? e) })),
       reverseGeocode(cLat, cLon),
     ])
-    const warning = 'error' in osmRes ? osmRes.error : null
+    const warning = 'error' in osmRes ? shortCause(osmRes.error) : null
     const els = ('elements' in osmRes ? osmRes.elements : []) ?? []
 
     const roads = els.filter(e => e.tags?.highway && e.geometry)

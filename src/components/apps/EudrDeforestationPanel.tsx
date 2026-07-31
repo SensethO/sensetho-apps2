@@ -49,7 +49,7 @@ interface OsmLayer {
  * des réponses change. Images, contours et calques sont mis en cache jusqu'à 7 jours : sans
  * ce jeton, un cadrage modifié ne serait visible qu'à l'expiration.
  */
-const MAP_V = 4
+const MAP_V = 5
 
 /**
  * Mémoire des calques, hors du composant pour survivre au démontage (fermer puis rouvrir
@@ -357,7 +357,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   const [osmMsg, setOsmMsg] = useState<string | null>(null)
 
   const osmNote = (j: OsmLayer) =>
-    j.warning ? `OpenStreetMap n’a pas répondu (${j.warning}) — seul le repère pays/ville est affiché.`
+    j.warning ? `OpenStreetMap n’a pas répondu : ${j.warning}. Routes et noms indisponibles pour l’instant ; le repère pays et ville reste affiché.`
       : j.roads.length + j.buildings.length + j.places.length === 0 ? 'Aucune route ni habitation cartographiée dans cette zone.'
         : null
 

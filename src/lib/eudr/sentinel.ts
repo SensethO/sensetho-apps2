@@ -89,7 +89,16 @@ export async function fetchSentinelImage(bbox: BBox, from: string, to: string, s
   const body = {
     input: {
       bounds: { bbox, properties: { crs: 'http://www.opengis.net/def/crs/EPSG/0/4326' } },
-      data: [{ type: 'sentinel-2-l2a', dataFilter: { timeRange: { from, to }, maxCloudCoverage: 40 }, mosaickingOrder: 'leastCC' }],
+      data: [{
+        type: 'sentinel-2-l2a',
+        dataFilter: { timeRange: { from, to }, maxCloudCoverage: 40 },
+        mosaickingOrder: 'leastCC',
+        // Sentinel Hub ré-échantillonne au plus proche voisin par défaut : sur une vue
+        // parcelle, 110 pixels captés étalés sur 512 donnaient de gros carrés. Le bicubique
+        // rend une image lisse. Il n'invente évidemment pas de détail — la limite reste les
+        // 10 m/pixel du capteur — mais il évite un rendu en mosaïque.
+        processing: { upsampling: 'BICUBIC', downsampling: 'BILINEAR' },
+      }],
     },
     output: { width: size, height: size, responses: [{ identifier: 'default', format: { type: SENTINEL_MIME } }] },
     evalscript: TRUE_COLOR,
