@@ -44,18 +44,35 @@ function PlotOutlines({ overlay }: { overlay: Overlay }) {
   const [minx, miny, maxx, maxy] = overlay.bbox
   const w = maxx - minx, h = maxy - miny
   if (!(w > 0 && h > 0)) return null
+  const px = (lon: number) => (lon - minx) / w * 100
+  const py = (lat: number) => (maxy - lat) / h * 100
+
   return (
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
-      {overlay.rings.map((ring, i) => (
-        <polygon
-          key={i}
-          points={ring.map(([lon, lat]) => `${((lon - minx) / w * 100).toFixed(3)},${((maxy - lat) / h * 100).toFixed(3)}`).join(' ')}
-          fill="rgba(250, 204, 21, 0.13)"
-          stroke="#facc15"
-          strokeWidth="0.45"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
+      {overlay.rings.map((ring, i) => {
+        const xs = ring.map(([lon]) => px(lon)), ys = ring.map(([, lat]) => py(lat))
+        const minX = Math.min(...xs), maxX = Math.max(...xs)
+        const minY = Math.min(...ys), maxY = Math.max(...ys)
+        // Vue d'ensemble : une parcelle de quelques hectares ne fait que 1-2 px sur une
+        // emprise de dizaines de km. On la matérialise alors par un cercle repère.
+        const tiny = (maxX - minX) < 2.5 && (maxY - minY) < 2.5
+        if (tiny) {
+          return (
+            <circle key={i} cx={(minX + maxX) / 2} cy={(minY + maxY) / 2} r={1.6}
+              fill="rgba(250, 204, 21, 0.35)" stroke="#facc15" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
+          )
+        }
+        return (
+          <polygon
+            key={i}
+            points={ring.map(([lon, lat]) => `${px(lon).toFixed(3)},${py(lat).toFixed(3)}`).join(' ')}
+            fill="rgba(250, 204, 21, 0.13)"
+            stroke="#facc15"
+            strokeWidth="0.45"
+            vectorEffect="non-scaling-stroke"
+          />
+        )
+      })}
     </svg>
   )
 }
@@ -226,6 +243,9 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                             : <span className="text-green-700 dark:text-green-400">✓ Toutes les parcelles à risque faible, aucune perturbation détectée après 2020.</span>}
                         </p>
                       )}
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+                        Cliquez sur une ligne pour situer la parcelle sur l’image satellite (recliquez pour revenir à l’ensemble).
+                      </p>
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
@@ -236,8 +256,19 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                         </thead>
                         <tbody>
                           {a.plots.map((p, i) => (
-                            <tr key={i} className="border-b border-gray-100 dark:border-gray-800">
-                              <td className="py-1 pr-3">{p.plotId}</td>
+                            <tr
+                              key={i}
+                              onClick={() => { setSat(att.id); setSatPlot(satPlot === i ? null : i) }}
+                              title="Cliquer pour voir cette parcelle sur l’image satellite"
+                              className={`border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${
+                                sat === att.id && satPlot === i
+                                  ? 'bg-amber-50 dark:bg-amber-900/20'
+                                  : 'hover:bg-gray-50 dark:hover:bg-gray-700/40'}`}
+                            >
+                              <td className="py-1 pr-3">
+                                {sat === att.id && satPlot === i && <span className="mr-1">🛰️</span>}
+                                {p.plotId}
+                              </td>
                               <td className="py-1 pr-3">{p.area != null ? `${p.area.toFixed(2)} ${p.unit ?? 'ha'}` : '—'}</td>
                               <td className="py-1 pr-3">{p.disturbanceAfter2020 ? <span className="text-red-600 dark:text-red-400 font-medium">Oui</span> : <span className="text-green-700 dark:text-green-400">Non</span>}</td>
                               <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${riskBadge(p.riskPcrop)}`}>{p.riskPcrop ?? '—'}</span></td>

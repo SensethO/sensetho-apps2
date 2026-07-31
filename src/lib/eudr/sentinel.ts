@@ -23,7 +23,12 @@ async function getToken(): Promise<string> {
 
 type BBox = [number, number, number, number]
 
-/** BBox [minLon,minLat,maxLon,maxLat] d'un GeoJSON (ou d'une seule parcelle), avec marge. */
+/**
+ * BBox [minLon,minLat,maxLon,maxLat] d'un GeoJSON (ou d'une seule parcelle), avec marge.
+ * La bbox est rendue **carrée** (on élargit le côté le plus court autour du centre) : les
+ * vignettes étant carrées, cela évite que l'image et les contours soient écrasés quand les
+ * parcelles s'étendent beaucoup plus en longitude qu'en latitude.
+ */
 export function bboxOf(geojson: { features?: Array<{ geometry?: { coordinates?: unknown } }> }, plotIndex?: number, pad = 0.0015): BBox {
   const feats = geojson.features ?? []
   const targets = (plotIndex != null && feats[plotIndex]) ? [feats[plotIndex]] : feats
@@ -35,7 +40,12 @@ export function bboxOf(geojson: { features?: Array<{ geometry?: { coordinates?: 
   }
   targets.forEach(f => walk(f.geometry?.coordinates))
   if (minx > maxx) return [-180, -90, 180, 90]
-  return [minx - pad, miny - pad, maxx + pad, maxy + pad]
+
+  minx -= pad; miny -= pad; maxx += pad; maxy += pad
+  const w = maxx - minx, h = maxy - miny
+  const side = Math.max(w, h)
+  const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2
+  return [cx - side / 2, cy - side / 2, cx + side / 2, cy + side / 2]
 }
 
 const TRUE_COLOR = '//VERSION=3\nfunction setup(){return{input:["B02","B03","B04"],output:{bands:3}}}\nfunction evaluatePixel(s){return[2.5*s.B04,2.5*s.B03,2.5*s.B02]}'
