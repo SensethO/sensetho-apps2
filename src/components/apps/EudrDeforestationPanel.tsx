@@ -34,6 +34,8 @@ const riskLabel = (r?: string | null) => ({ high: '🔴 Risque élevé', low: '�
  */
 /** Contours des parcelles à superposer, exprimés dans la même bbox que l'image. */
 interface Overlay { bbox: number[]; rings: number[][][] }
+/** Calque OpenStreetMap : routes (lignes) et bâtiments (polygones), même bbox. */
+interface OsmLayer { bbox: number[]; roads: number[][][]; buildings: number[][][]; scaleKm: number }
 
 /**
  * Trace les contours des parcelles au-dessus de l'image. L'API Sentinel Hub étire la bbox
@@ -82,8 +84,25 @@ interface View { s: number; x: number; y: number }
 const VIEW_RESET: View = { s: 1, x: 0, y: 0 }
 const MAX_ZOOM = 10
 
-function SatImage({ url, label, overlay, view, onView }: {
-  url: string; label: string; overlay?: Overlay | null
+/** Routes et habitations OpenStreetMap, projetées dans la même bbox que l'image. */
+function OsmOutlines({ osm }: { osm: OsmLayer }) {
+  const [minx, miny, maxx, maxy] = osm.bbox
+  const w = maxx - minx, h = maxy - miny
+  if (!(w > 0 && h > 0)) return null
+  const pts = (line: number[][]) =>
+    line.map(([lon, lat]) => `${((lon - minx) / w * 100).toFixed(3)},${((maxy - lat) / h * 100).toFixed(3)}`).join(' ')
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+      {/* Liseré sombre sous le trait clair : les routes restent lisibles sur fond végétal. */}
+      {osm.roads.map((r, i) => <polyline key={`u${i}`} points={pts(r)} fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />)}
+      {osm.roads.map((r, i) => <polyline key={`r${i}`} points={pts(r)} fill="none" stroke="#fb923c" strokeWidth="1.1" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />)}
+      {osm.buildings.map((b, i) => <polygon key={`b${i}`} points={pts(b)} fill="rgba(248,113,113,0.55)" stroke="#fecaca" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />)}
+    </svg>
+  )
+}
+
+function SatImage({ url, label, overlay, osm, view, onView }: {
+  url: string; label: string; overlay?: Overlay | null; osm?: OsmLayer | null
   view: View; onView: (v: View | ((prev: View) => View)) => void
 }) {
   const [st, setSt] = useState<{ loading: boolean; src?: string; error?: string }>({ loading: true })
@@ -180,6 +199,7 @@ function SatImage({ url, label, overlay, view, onView }: {
             style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}
           >
             <img src={st.src} alt={`Sentinel-2 ${label}`} className="w-full h-full object-cover select-none" draggable={false} />
+            {osm && <OsmOutlines osm={osm} />}
             {overlay && <PlotOutlines overlay={overlay} />}
           </div>
         )}
@@ -211,6 +231,34 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   // Zoom/déplacement PARTAGÉ par les deux vignettes : on compare toujours la même zone.
   const [view, setView] = useState<View>(VIEW_RESET)
   useEffect(() => { setView(VIEW_RESET) }, [sat, satPlot]) // nouvelle vue = zoom réinitialisé
+
+  // Calque OpenStreetMap — chargé UNIQUEMENT sur demande (Overpass est un service gratuit
+  // qu'il faut ménager), puis mémorisé par emprise pour ne jamais le redemander deux fois.
+  const [osmOn, setOsmOn] = useState(false)
+  const [osm, setOsm] = useState<OsmLayer | null>(null)
+  const [osmBusy, setOsmBusy] = useState(false)
+  const [osmMsg, setOsmMsg] = useState<string | null>(null)
+  const osmCache = useRef<Map<string, OsmLayer>>(new Map())
+
+  useEffect(() => {
+    if (!osmOn || !sat) { setOsm(null); setOsmMsg(null); return }
+    const key = `${sat}|${satPlot ?? ''}`
+    const hit = osmCache.current.get(key)
+    if (hit) { setOsm(hit); setOsmMsg(hit.roads.length + hit.buildings.length === 0 ? 'Aucune route ni habitation cartographiée dans cette zone.' : null); return }
+    let alive = true
+    setOsmBusy(true); setOsmMsg(null); setOsm(null)
+    fetch(`/api/eudr-fournisseurs/satellite/osm?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}`)
+      .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`); return j })
+      .then((j: OsmLayer) => {
+        if (!alive) return
+        osmCache.current.set(key, j)
+        setOsm(j)
+        if (j.roads.length + j.buildings.length === 0) setOsmMsg('Aucune route ni habitation cartographiée dans cette zone.')
+      })
+      .catch(e => { if (alive) setOsmMsg(String((e as Error).message ?? e)) })
+      .finally(() => { if (alive) setOsmBusy(false) })
+    return () => { alive = false }
+  }, [osmOn, sat, satPlot, orgId])
 
   // Contours des parcelles à superposer aux images (une requête par document/parcelle).
   const [overlay, setOverlay] = useState<Overlay | null>(null)
@@ -294,7 +342,14 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                           🛰️ Sentinel‑2 (Copernicus), vraie couleur — mosaïque la moins nuageuse. État forestier <strong>2020</strong> (date‑butoir EUDR) vs <strong>aujourd’hui</strong>.
                           {overlay && <> <span className="inline-block w-3 h-2 align-middle rounded-sm" style={{ background: 'rgba(250,204,21,0.25)', border: '1px solid #facc15' }} /> contour des parcelles déclarées.</>}
                           {' '}<span className="text-gray-400">Molette pour zoomer, glisser pour déplacer — les deux images bougent ensemble (double-clic : réinitialiser).</span>
+                          {osm && <>
+                            {' '}<span className="inline-block w-3 h-0.5 align-middle" style={{ background: '#fb923c' }} /> routes,{' '}
+                            <span className="inline-block w-2 h-2 align-middle rounded-sm" style={{ background: 'rgba(248,113,113,0.7)' }} /> habitations —{' '}
+                            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">© contributeurs OpenStreetMap</a>
+                            {osm.scaleKm > 15 && <span className="text-gray-400"> (axes principaux seulement à cette échelle)</span>}
+                          </>}
                         </p>
+                        {osmMsg && <p className="text-xs text-amber-600 dark:text-amber-400 m-0">⚠️ {osmMsg}</p>}
                         {a?.plots?.length ? (
                           <select className="text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1"
                             value={satPlot ?? ''} onChange={e => setSatPlot(e.target.value === '' ? null : Number(e.target.value))}>
@@ -302,6 +357,11 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                             {a.plots.map((p, i) => <option key={i} value={i}>Parcelle {p.plotId}</option>)}
                           </select>
                         ) : null}
+                        <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
+                          <input type="checkbox" checked={osmOn} onChange={e => setOsmOn(e.target.checked)} />
+                          🛣️ Routes et habitations
+                          {osmBusy && <span className="text-gray-400">(chargement…)</span>}
+                        </label>
                         {view.s > 1 && (
                           <button className="text-xs text-gray-500 hover:underline" onClick={() => setView(VIEW_RESET)}>
                             Réinitialiser le zoom
@@ -310,7 +370,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[{ y: '2020', from: '2020-01-01T00:00:00Z', to: '2020-12-31T23:59:59Z' }, { y: 'Récente', from: '2024-06-01T00:00:00Z', to: nowIso }].map(p => (
-                          <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} overlay={overlay} view={view} onView={setView} />
+                          <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} overlay={overlay} osm={osm} view={view} onView={setView} />
                         ))}
                       </div>
                     </div>
