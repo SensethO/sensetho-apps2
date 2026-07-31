@@ -37,12 +37,41 @@ interface Overlay { bbox: number[]; rings: number[][][] }
 /** Calque OpenStreetMap : routes (lignes) et bâtiments (polygones), même bbox. */
 interface OsmRoad { pts: number[][]; name: string | null }
 interface OsmPlace { lon: number; lat: number; name: string; type: string }
-interface OsmCity { name: string; type: string; population: number | null; km: number; direction: string }
+interface OsmCity { name: string; type: string; population: number | null; km: number; direction: string; source: 'osm' | 'nominatim' }
 interface OsmContext { country: string | null; countryCode: string | null; region: string | null; nearestCity: OsmCity | null }
 interface OsmLayer {
   bbox: number[]; roads: OsmRoad[]; buildings: number[][][]
-  places: OsmPlace[]; context: OsmContext; scaleKm: number
+  places: OsmPlace[]; context: OsmContext; scaleKm: number; warning?: string | null
 }
+
+/**
+ * Mémoire des calques, hors du composant pour survivre au démontage (fermer puis rouvrir
+ * la vue satellite ne redemande rien), et recopiée dans sessionStorage pour survivre à un
+ * rechargement de page. Les images, elles, sont mises en cache par le navigateur grâce aux
+ * en-têtes Cache-Control des routes : rien à stocker ici.
+ */
+const OSM_TTL_MS = 24 * 3600 * 1000
+function makeStore<T>(prefix: string) {
+  const mem = new Map<string, { at: number; v: T }>()
+  return {
+    get(key: string): T | null {
+      const hit = mem.get(key) ?? readSession<T>(prefix + key)
+      if (!hit || Date.now() - hit.at > OSM_TTL_MS) return null
+      mem.set(key, hit)
+      return hit.v
+    },
+    set(key: string, v: T) {
+      const rec = { at: Date.now(), v }
+      mem.set(key, rec)
+      try { sessionStorage.setItem(prefix + key, JSON.stringify(rec)) } catch { /* quota ou mode privé : la mémoire suffit */ }
+    },
+  }
+}
+function readSession<T>(k: string): { at: number; v: T } | null {
+  try { const s = sessionStorage.getItem(k); return s ? JSON.parse(s) as { at: number; v: T } : null } catch { return null }
+}
+const osmStore = makeStore<OsmLayer>('eudr.osm.')
+const geomStore = makeStore<Overlay>('eudr.geom.')
 
 /**
  * Trace les contours des parcelles au-dessus de l'image. L'API Sentinel Hub étire la bbox
@@ -291,30 +320,36 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   const [view, setView] = useState<View>(VIEW_RESET)
   useEffect(() => { setView(VIEW_RESET) }, [sat, satPlot]) // nouvelle vue = zoom réinitialisé
 
-  // Calque OpenStreetMap — chargé UNIQUEMENT sur demande (Overpass est un service gratuit
-  // qu'il faut ménager), puis mémorisé par emprise pour ne jamais le redemander deux fois.
-  const [osmOn, setOsmOn] = useState(false)
+  // Calque OpenStreetMap, actif par défaut : les noms de voies, de localités et le repère
+  // pays/ville sont ce qui permet de situer une parcelle. Il n'est demandé qu'à l'ouverture
+  // d'une vue satellite, jamais au chargement de la page, et le résultat est mémorisé.
+  const [osmOn, setOsmOn] = useState(true)
   const [osm, setOsm] = useState<OsmLayer | null>(null)
   const [osmBusy, setOsmBusy] = useState(false)
   const [osmMsg, setOsmMsg] = useState<string | null>(null)
-  const osmCache = useRef<Map<string, OsmLayer>>(new Map())
+
+  const osmNote = (j: OsmLayer) =>
+    j.warning ? `OpenStreetMap n’a pas répondu (${j.warning}) — seul le repère pays/ville est affiché.`
+      : j.roads.length + j.buildings.length + j.places.length === 0 ? 'Aucune route ni habitation cartographiée dans cette zone.'
+        : null
 
   useEffect(() => {
     if (!osmOn || !sat) { setOsm(null); setOsmMsg(null); return }
     const key = `${sat}|${satPlot ?? ''}`
-    const hit = osmCache.current.get(key)
-    if (hit) { setOsm(hit); setOsmMsg(hit.roads.length + hit.buildings.length === 0 ? 'Aucune route ni habitation cartographiée dans cette zone.' : null); return }
+    const hit = osmStore.get(key)
+    if (hit) { setOsm(hit); setOsmMsg(osmNote(hit)); return }
     let alive = true
     setOsmBusy(true); setOsmMsg(null); setOsm(null)
     // `v` : la réponse est mise en cache 24 h côté navigateur ; incrémenter ce jeton à chaque
     // changement de forme du JSON évite qu'une ancienne réponse mette la superposition en défaut.
-    fetch(`/api/eudr-fournisseurs/satellite/osm?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}&v=2`)
+    fetch(`/api/eudr-fournisseurs/satellite/osm?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}&v=3`)
       .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`); return j })
       .then((j: OsmLayer) => {
         if (!alive) return
-        osmCache.current.set(key, j)
+        // Une réponse dégradée n'est pas mémorisée : le prochain affichage doit retenter.
+        if (!j.warning) osmStore.set(key, j)
         setOsm(j)
-        if (j.roads.length + j.buildings.length === 0) setOsmMsg('Aucune route ni habitation cartographiée dans cette zone.')
+        setOsmMsg(osmNote(j))
       })
       .catch(e => { if (alive) setOsmMsg(String((e as Error).message ?? e)) })
       .finally(() => { if (alive) setOsmBusy(false) })
@@ -329,11 +364,13 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
     const key = `${sat}|${satPlot ?? ''}`
     if (overlayKeyRef.current === key) return   // même verrou anti-boucle que SatImage
     overlayKeyRef.current = key
+    const hit = geomStore.get(key)
+    if (hit) { setOverlay(hit); return }
     let alive = true
     setOverlay(null)
     fetch(`/api/eudr-fournisseurs/satellite/geometry?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}`)
       .then(r => r.ok ? r.json() : null)
-      .then(j => { if (alive && j?.bbox && j?.rings) setOverlay(j as Overlay) })
+      .then(j => { if (alive && j?.bbox && j?.rings) { geomStore.set(key, j as Overlay); setOverlay(j as Overlay) } })
       .catch(() => { /* la superposition est un confort : on n'alerte pas */ })
     return () => { alive = false }
   }, [sat, satPlot, orgId])
@@ -409,7 +446,8 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">© contributeurs OpenStreetMap</a>
                             {osm.scaleKm > 15 && <span className="text-gray-400"> (axes principaux seulement à cette échelle)</span>}
                             {osm.context?.nearestCity && (
-                              <> {' '}Ville influente la plus proche : <strong>{osm.context.nearestCity.name}</strong>
+                              <> {' '}{osm.context.nearestCity.source === 'osm' ? 'Ville influente la plus proche' : 'Localité la plus proche'} :{' '}
+                                <strong>{osm.context.nearestCity.name}</strong>
                                 {osm.context.nearestCity.population ? ` (~${osm.context.nearestCity.population.toLocaleString('fr-FR')} hab.)` : ''}
                                 {' '}à {osm.context.nearestCity.km} km vers le {osm.context.nearestCity.direction}.
                               </>
@@ -435,7 +473,10 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                           </button>
                         )}
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Une image par ligne : chaque axe double par rapport au côte-à-côte,
+                          ce qui rend la navigation et le zoom praticables. La comparaison
+                          reste possible, le zoom et le déplacement étant partagés. */}
+                      <div className="grid grid-cols-1 gap-3">
                         {[{ y: '2020', from: '2020-01-01T00:00:00Z', to: '2020-12-31T23:59:59Z' }, { y: 'Récente', from: '2024-06-01T00:00:00Z', to: nowIso }].map(p => (
                           <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} overlay={overlay} osm={osm} view={view} onView={setView} />
                         ))}

@@ -22,24 +22,34 @@ const ENDPOINTS = [
 ]
 const UA = 'sensetho-apps2/1.0 (EUDR due diligence; contact: info@monheure.fr)'
 
-/** Filtre adapté à l'étendue : plus la vue est large, plus on se limite aux axes lisibles. */
-function queryFor(bbox: number[], km: number): { q: string; buildings: boolean } {
+/**
+ * UNE seule requête Overpass pour tout : voies, bâtiments, localités du cadre et villes
+ * influentes alentour. Deux requêtes concurrentes pouvaient dépasser le maxDuration de la
+ * fonction avant même d'avoir essayé le serveur de repli — d'où les « OpenStreetMap
+ * indisponible » observés. Le filtre s'adapte à l'étendue : plus la vue est large, plus on
+ * se limite aux axes lisibles.
+ */
+function queryFor(bbox: number[], km: number, cLat: number, cLon: number): string {
   const [minx, miny, maxx, maxy] = bbox
   const bb = `${miny},${minx},${maxy},${maxx}` // Overpass : sud,ouest,nord,est
-  // Les localités (place) sont toujours demandées : ce sont elles qui portent les noms.
+  // Localités du cadre : ce sont elles qui portent les noms affichés sur l'image.
   const places = `node["place"~"^(city|town|village|hamlet)$"](${bb});`
+  // Villes influentes bien au-delà du cadre : c'est le repère qui situe une parcelle isolée.
+  const cities = `node["place"~"^(city|town)$"](around:${NEAR_RADIUS_M},${cLat},${cLon});`
+  const head = '[out:json][timeout:25]'
   if (km <= 3) {
     // Vue parcelle : tout est lisible et le volume reste faible.
-    return { q: `[out:json][timeout:50];(way["highway"](${bb});way["building"](${bb});${places});out geom;`, buildings: true }
+    return `${head};(way["highway"](${bb});way["building"](${bb});${places}${cities});out geom;`
   }
   if (km <= 15) {
     const re = 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|track'
-    return { q: `[out:json][timeout:50];(way["highway"~"^(${re})$"](${bb});way["building"](${bb});${places});out geom;`, buildings: true }
+    return `${head};(way["highway"~"^(${re})$"](${bb});way["building"](${bb});${places}${cities});out geom;`
   }
   // Vue large : uniquement les axes structurants ; les bâtiments seraient des points invisibles.
   const re = 'motorway|trunk|primary|secondary|tertiary'
-  return { q: `[out:json][timeout:50];(way["highway"~"^(${re})$"](${bb});${places});out geom;`, buildings: false }
+  return `${head};(way["highway"~"^(${re})$"](${bb});${places}${cities});out geom;`
 }
+const NEAR_RADIUS_M = 60_000
 
 type Pt = { lat: number; lon: number }
 
@@ -59,37 +69,69 @@ function bearingLabel(aLat: number, aLon: number, bLat: number, bLon: number): s
   return CARDINALS[Math.round(deg / 45) % 8]
 }
 
-/** Pays et région via Nominatim (1 requête, usage modéré conformément à leur politique). */
-async function reverseGeocode(lat: number, lon: number): Promise<{ country: string | null; countryCode: string | null; region: string | null }> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=8&accept-language=fr`,
-      { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(12_000) },
-    )
-    if (!res.ok) return { country: null, countryCode: null, region: null }
-    const j = await res.json() as { address?: Record<string, string> }
-    const a = j.address ?? {}
-    return { country: a.country ?? null, countryCode: (a.country_code ?? '').toUpperCase() || null, region: a.state ?? a.region ?? a.county ?? null }
-  } catch { return { country: null, countryCode: null, region: null } }
+interface Near { name: string; type: string; population: number | null; km: number; direction: string; source: 'osm' | 'nominatim' }
+interface Geo { country: string | null; countryCode: string | null; region: string | null; place: Near | null }
+
+/** Cache mémoire du contexte (arrondi ~1 km) : une instance chaude ne réinterroge pas Nominatim. */
+const geoCache = new Map<string, Geo>()
+
+async function nominatim(lat: number, lon: number, zoom: number) {
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=${zoom}&extratags=1&accept-language=fr`,
+    { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) },
+  )
+  if (!res.ok) throw new Error(`Nominatim ${res.status}`)
+  return await res.json() as {
+    name?: string; addresstype?: string; lat?: string; lon?: string
+    address?: Record<string, string>; extratags?: Record<string, string>
+  }
 }
 
-/** Ville influente la plus proche : d'abord les « city », sinon les bourgs de + de 50 000 hab. */
-async function nearestCity(lat: number, lon: number) {
-  const q = `[out:json][timeout:40];(node["place"~"^(city|town)$"](around:60000,${lat},${lon}););out body;`
+/**
+ * Pays, région et localité la plus proche via Nominatim. Contrairement à Overpass — service
+ * communautaire régulièrement saturé — Nominatim répond en ~100 ms, ce qui en fait le socle
+ * fiable du repère géographique ; Overpass ne fait que l'affiner quand il répond.
+ * Deux appels séquentiels (zoom 8 = région, zoom 12 = localité), conformément à leur
+ * politique d'un appel par seconde.
+ */
+async function reverseGeocode(lat: number, lon: number): Promise<Geo> {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`
+  const cached = geoCache.get(key)
+  if (cached) return cached
+
+  const out: Geo = { country: null, countryCode: null, region: null, place: null }
   try {
-    const data = await overpass(q)
-    const places = (data.elements ?? [])
-      .filter(e => e.tags?.name && typeof e.lat === 'number' && typeof e.lon === 'number')
-      .map(e => ({
-        name: e.tags!.name, type: e.tags!.place,
-        population: Number(e.tags!.population ?? 0) || null,
-        km: +distKm(lat, lon, e.lat!, e.lon!).toFixed(1),
-        direction: bearingLabel(lat, lon, e.lat!, e.lon!),
-      }))
-    if (!places.length) return null
-    const influential = places.filter(p => p.type === 'city' || (p.population ?? 0) >= 50_000)
-    return (influential.length ? influential : places).sort((a, b) => a.km - b.km)[0]
-  } catch { return null }
+    const a = (await nominatim(lat, lon, 8)).address ?? {}
+    out.country = a.country ?? null
+    out.countryCode = (a.country_code ?? '').toUpperCase() || null
+    out.region = a.state ?? a.region ?? a.county ?? null
+  } catch { /* le repère reste partiel plutôt qu'absent */ }
+  try {
+    const j = await nominatim(lat, lon, 12)
+    const pLat = Number(j.lat), pLon = Number(j.lon)
+    if (j.name && Number.isFinite(pLat) && Number.isFinite(pLon)) {
+      out.place = {
+        name: j.name, type: j.addresstype ?? 'place',
+        population: Number(j.extratags?.population ?? 0) || null,
+        km: +distKm(lat, lon, pLat, pLon).toFixed(1),
+        direction: bearingLabel(lat, lon, pLat, pLon),
+        source: 'nominatim',
+      }
+    }
+  } catch { /* idem */ }
+
+  if (out.country || out.place) geoCache.set(key, out)
+  return out
+}
+
+/**
+ * Ville influente la plus proche : d'abord les « city » ou les bourgs de plus de 50 000
+ * habitants, à défaut le bourg le plus proche. Un hameau à 800 m ne situe pas une parcelle.
+ */
+function pickInfluential(cands: Near[]): Near | null {
+  if (!cands.length) return null
+  const influential = cands.filter(p => p.type === 'city' || (p.population ?? 0) >= 50_000)
+  return (influential.length ? influential : cands).sort((a, b) => a.km - b.km)[0]
 }
 /** Arrondi à 5 décimales (~1 m) + suppression des points consécutifs identiques. */
 function simplify(geom: Pt[]): number[][] {
@@ -111,7 +153,9 @@ async function overpass(q: string): Promise<{ elements?: OverpassEl[] }> {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA },
         body: 'data=' + encodeURIComponent(q),
-        signal: AbortSignal.timeout(45_000),
+        // 12 s par serveur. Overpass sain répond en ~2 s ; saturé, il met 60 à 90 s. Mieux
+        // vaut renoncer vite et afficher le repère pays/ville que faire patienter pour rien.
+        signal: AbortSignal.timeout(12_000),
       })
       const text = await res.text()
       if (!res.ok) { lastErr = `HTTP ${res.status}`; continue }
@@ -144,33 +188,48 @@ export async function GET(req: NextRequest) {
 
     const bbox = bboxOf(geojson, plot)  // même emprise que l'image
     const km = (bbox[2] - bbox[0]) * 111.32 * Math.cos((bbox[1] * Math.PI) / 180)
-    const { q } = queryFor(bbox, km)
-
     const cLon = (bbox[0] + bbox[2]) / 2, cLat = (bbox[1] + bbox[3]) / 2
 
-    // Les trois appels sont indépendants : on les mène de front pour tenir dans maxDuration.
-    const [data, city, geo] = await Promise.all([
-      overpass(q),
-      nearestCity(cLat, cLon),
+    // Overpass et Nominatim sont indépendants : menés de front, et surtout tolérants à
+    // l'échec l'un de l'autre. Si Overpass sature, on rend quand même le repère pays.
+    const [osmRes, geo] = await Promise.all([
+      overpass(queryFor(bbox, km, cLat, cLon)).catch(e => ({ error: String((e as Error).message ?? e) })),
       reverseGeocode(cLat, cLon),
     ])
-    const els = data.elements ?? []
+    const warning = 'error' in osmRes ? osmRes.error : null
+    const els = ('elements' in osmRes ? osmRes.elements : []) ?? []
+
     const roads = els.filter(e => e.tags?.highway && e.geometry)
       .map(e => ({ pts: simplify(e.geometry!), name: e.tags!.name ?? null }))
     const buildings = els.filter(e => e.tags?.building && e.geometry).map(e => simplify(e.geometry!))
-    const places = els.filter(e => e.tags?.place && e.tags.name && typeof e.lat === 'number')
-      .map(e => ({
-        lon: +e.lon!.toFixed(5), lat: +e.lat!.toFixed(5),
+
+    const placeNodes = els.filter(e => e.tags?.place && e.tags.name && typeof e.lat === 'number' && typeof e.lon === 'number')
+    // Les nœuds du cadre servent d'étiquettes ; ceux du rayon élargi (villes et bourgs)
+    // servent à désigner la ville influente — les deux jeux arrivent dans la même réponse.
+    const places = placeNodes
+      .filter(e => e.lon! >= bbox[0] && e.lon! <= bbox[2] && e.lat! >= bbox[1] && e.lat! <= bbox[3])
+      .map(e => ({ lon: +e.lon!.toFixed(5), lat: +e.lat!.toFixed(5), name: e.tags!.name, type: e.tags!.place }))
+    // Overpass qualifie mieux la ville (population, statut) quand il répond ; sinon la
+    // localité vue par Nominatim tient le rôle de repère. Le champ `source` permet à l'UI
+    // de nommer honnêtement ce qu'elle affiche.
+    const nearestCity = pickInfluential(
+      placeNodes.filter(e => e.tags!.place === 'city' || e.tags!.place === 'town').map(e => ({
         name: e.tags!.name, type: e.tags!.place,
-      }))
+        population: Number(e.tags!.population ?? 0) || null,
+        km: +distKm(cLat, cLon, e.lat!, e.lon!).toFixed(1),
+        direction: bearingLabel(cLat, cLon, e.lat!, e.lon!),
+        source: 'osm' as const,
+      })),
+    ) ?? geo.place
 
     return NextResponse.json(
       {
-        bbox, roads, buildings, places, scaleKm: Math.round(km),
-        context: { country: geo.country, countryCode: geo.countryCode, region: geo.region, nearestCity: city },
+        bbox, roads, buildings, places, warning, scaleKm: Math.round(km),
+        context: { country: geo.country, countryCode: geo.countryCode, region: geo.region, nearestCity },
       },
       // Les données OSM évoluent lentement : on autorise un cache navigateur d'un jour.
-      { headers: { 'Cache-Control': 'private, max-age=86400' } },
+      // Une réponse dégradée (Overpass en échec) ne doit pas, elle, être mémorisée.
+      { headers: { 'Cache-Control': warning ? 'no-store' : 'private, max-age=86400' } },
     )
   } catch (err) {
     return NextResponse.json({ error: String((err as Error).message ?? err) }, { status: 502 })

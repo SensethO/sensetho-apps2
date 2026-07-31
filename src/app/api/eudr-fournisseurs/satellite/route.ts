@@ -37,7 +37,10 @@ export async function GET(req: NextRequest) {
     const png = await fetchSentinelImage(bbox, from, to)
     return new NextResponse(new Uint8Array(png), {
       status: 200,
-      headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600' },
+      // L'URL fixe entièrement l'image (document, période, parcelle) : son contenu ne peut
+      // plus changer. Un cache long évite de repayer Sentinel et une invocation à chaque
+      // ouverture de la carte — c'était une heure, donc redemandé sans cesse.
+      headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=604800, immutable' },
     })
   } catch (err) {
     return NextResponse.json({ error: String((err as Error).message ?? err) }, { status: 502 })

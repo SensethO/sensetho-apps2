@@ -1,0 +1,166 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-06-12T12:14:17Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 443327886,
+  "lat": 7.1271577,
+  "lon": -6.4770282,
+  "tags": {
+    "name": "Bonoufla",
+    "place": "town",
+    "wikidata": "Q2910329",
+    "wikipedia": "fr:Bonoufla"
+  }
+},
+{
+  "type": "node",
+  "id": 443329790,
+  "lat": 7.3793487,
+  "lon": -6.4796624,
+  "tags": {
+    "is_capital": "county",
+    "is_in:country_code": "CI",
+    "is_in:county": "Vavoua",
+    "is_in:state": "Haut-Sassandra Region",
+    "name": "Vavoua",
+    "place": "city",
+    "population": "132528",
+    "population:date": "2021",
+    "source:population": "RGPH 2021",
+    "wikidata": "Q12712267",
+    "wikipedia": "fr:Vavoua"
+  }
+},
+{
+  "type": "node",
+  "id": 443330540,
+  "lat": 7.4150360,
+  "lon": -6.6474706,
+  "tags": {
+    "name": "Vaafla",
+    "place": "town",
+    "wikidata": "Q3553060",
+    "wikipedia": "fr:Vaafla"
+  }
+},
+{
+  "type": "node",
+  "id": 443330869,
+  "lat": 7.4403748,
+  "lon": -6.7181556,
+  "tags": {
+    "alt_name": "Seitifla",
+    "is_capital": "county",
+    "name": "Séitifla",
+    "place": "town",
+    "population": "109252",
+    "population:date": "2021",
+    "source:population": "RGPH 2021",
+    "wikidata": "Q3510597",
+    "wikipedia": "fr:Séitifla"
+  }
+},
+{
+  "type": "node",
+  "id": 443331228,
+  "lat": 7.4866832,
+  "lon": -6.7880533,
+  "tags": {
+    "alt_name": "Miniouré;Minyouré;Mignoré",
+    "name": "Minoré",
+    "place": "town",
+    "wikidata": "Q3312897",
+    "wikipedia": "fr:Mignoré"
+  }
+},
+{
+  "type": "node",
+  "id": 1239009716,
+  "lat": 7.2568170,
+  "lon": -7.2353970,
+  "tags": {
+    "alt_name": "Kouibli",
+    "name": "Kouibly",
+    "place": "town",
+    "wikidata": "Q3199252",
+    "wikipedia": "en:Kouibly"
+  }
+},
+{
+  "type": "node",
+  "id": 2725995822,
+  "lat": 7.9614107,
+  "lon": -6.6702351,
+  "tags": {
+    "capital": "4",
+    "name": "Séguéla",
+    "name:ru": "Сегела",
+    "place": "town",
+    "population": "103980",
+    "population:date": "2021",
+    "source:population": "RGPH 2021",
+    "wikidata": "Q952665",
+    "wikipedia": "fr:Séguéla"
+  }
+},
+{
+  "type": "node",
+  "id": 2948573986,
+  "lat": 7.1523989,
+  "lon": -6.8416126,
+  "tags": {
+    "alt_name": "Dianafla",
+    "name": "Dania",
+    "place": "town",
+    "population": "106612",
+    "population:date": "2021",
+    "source:population": "RGPH 2021",
+    "wikidata": "Q1237800",
+    "wikipedia": "fr:Dania (Côte d'Ivoire)"
+  }
+},
+{
+  "type": "node",
+  "id": 3112520640,
+  "lat": 7.4212885,
+  "lon": -6.8669760,
+  "tags": {
+    "name": "Diafla",
+    "place": "town"
+  }
+},
+{
+  "type": "node",
+  "id": 3139825913,
+  "lat": 7.6715987,
+  "lon": -6.9685449,
+  "tags": {
+    "name": "Grosso (Ancien Prozi)",
+    "place": "town",
+    "wikidata": "Q2845764",
+    "wikipedia": "fr:Ancien Prozi"
+  }
+},
+{
+  "type": "node",
+  "id": 3141965342,
+  "lat": 7.4431126,
+  "lon": -6.9915285,
+  "tags": {
+    "alt_name": "Vao",
+    "name": "Vaou",
+    "place": "town",
+    "wikidata": "Q3554648",
+    "wikipedia": "fr:Vao (Côte d'Ivoire)"
+  }
+}
+
+  ]
+}

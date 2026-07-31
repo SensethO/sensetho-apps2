@@ -52,7 +52,11 @@ export async function GET(req: NextRequest) {
     const feats = geojson.features ?? []
     const target = (plot != null && feats[plot]) ? [feats[plot]] : feats
 
-    return NextResponse.json({ bbox, rings: outerRings(target) })
+    return NextResponse.json(
+      { bbox, rings: outerRings(target) },
+      // Contours figés par le document : inutile de les redemander à chaque ouverture.
+      { headers: { 'Cache-Control': 'private, max-age=86400' } },
+    )
   } catch (err) {
     return NextResponse.json({ error: String((err as Error).message ?? err) }, { status: 502 })
   }
