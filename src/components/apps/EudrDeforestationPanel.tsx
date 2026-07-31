@@ -125,7 +125,20 @@ function PlotOutlines({ overlay }: { overlay: Overlay }) {
 /** Zoom/déplacement partagé par les deux vignettes, pour comparer toujours la même zone. */
 interface View { s: number; x: number; y: number }
 const VIEW_RESET: View = { s: 1, x: 0, y: 0 }
-const MAX_ZOOM = 10
+
+/**
+ * Zoom maximal : déduit de la finesse réelle de l'image plutôt que fixé arbitrairement, de
+ * sorte qu'une vue d'ensemble puisse descendre à l'échelle au sol d'une vue parcelle.
+ * Douze pixels d'écran par pixel source suffisent à cette parité quelle que soit la largeur
+ * du cadre : une vue d'ensemble (2048 px sur 44,8 km) atteint ×52 dans un cadre de 470 px
+ * et ×35 dans un cadre de 700 px, soit 1,8 m par pixel d'écran dans les deux cas — l'échelle
+ * d'une vue parcelle à ×1. Une vue parcelle (512 px) reste au plancher de ×10, comme avant.
+ *
+ * L'image restera visiblement grossie à ce niveau : la source d'une vue large vaut 21,9 m
+ * par pixel, aucun zoom ne crée du détail qui n'a pas été capté.
+ */
+const SCREEN_PX_PER_SOURCE_PX = 12
+const MIN_MAX_ZOOM = 10, ABS_MAX_ZOOM = 60
 
 /** Routes, habitations et toponymes OpenStreetMap, projetés dans la même bbox que l'image. */
 function OsmOutlines({ osm, zoom }: { osm: OsmLayer; zoom: number }) {
@@ -222,10 +235,17 @@ function SatImage({ url, label, overlay, osm, view, onView }: {
   // ── Zoom (molette) et déplacement (glisser) ──────────────────────────────
   const boxRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
+  // Largeur native de l'image reçue : c'est elle qui fixe jusqu'où le zoom reste utile.
+  const naturalRef = useRef(0)
+
+  const maxZoomFor = (box: number) => {
+    if (!naturalRef.current || !box) return MIN_MAX_ZOOM
+    return Math.min(ABS_MAX_ZOOM, Math.max(MIN_MAX_ZOOM, (naturalRef.current / box) * SCREEN_PX_PER_SOURCE_PX))
+  }
 
   // Recadre pour que l'image couvre toujours le cadre (pas de bande vide).
   const clamp = (v: View, size: number): View => {
-    const s = Math.min(MAX_ZOOM, Math.max(1, v.s))
+    const s = Math.min(maxZoomFor(size), Math.max(1, v.s))
     const limit = size * (s - 1)
     return { s, x: Math.min(0, Math.max(-limit, v.x)), y: Math.min(0, Math.max(-limit, v.y)) }
   }
@@ -239,7 +259,7 @@ function SatImage({ url, label, overlay, osm, view, onView }: {
       const r = el.getBoundingClientRect()
       const cx = e.clientX - r.left, cy = e.clientY - r.top
       onView(prev => {
-        const s = Math.min(MAX_ZOOM, Math.max(1, prev.s * (e.deltaY < 0 ? 1.25 : 1 / 1.25)))
+        const s = Math.min(maxZoomFor(r.width), Math.max(1, prev.s * (e.deltaY < 0 ? 1.25 : 1 / 1.25)))
         const k = s / prev.s
         return clamp({ s, x: cx - (cx - prev.x) * k, y: cy - (cy - prev.y) * k }, r.width)
       })
@@ -280,7 +300,8 @@ function SatImage({ url, label, overlay, osm, view, onView }: {
             className="absolute inset-0 origin-top-left"
             style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}
           >
-            <img src={st.src} alt={`Sentinel-2 ${label}`} className="w-full h-full object-cover select-none" draggable={false} />
+            <img src={st.src} alt={`Sentinel-2 ${label}`} className="w-full h-full object-cover select-none" draggable={false}
+              onLoad={e => { naturalRef.current = e.currentTarget.naturalWidth }} />
             {osm && <OsmOutlines osm={osm} zoom={view.s} />}
             {overlay && <PlotOutlines overlay={overlay} />}
           </div>
