@@ -32,22 +32,24 @@ const UA = 'sensetho-apps2/1.0 (EUDR due diligence; contact: info@monheure.fr)'
 function queryFor(bbox: number[], km: number, cLat: number, cLon: number): string {
   const [minx, miny, maxx, maxy] = bbox
   const bb = `${miny},${minx},${maxy},${maxx}` // Overpass : sud,ouest,nord,est
-  // Localités du cadre : ce sont elles qui portent les noms affichés sur l'image.
-  const places = `node["place"~"^(city|town|village|hamlet)$"](${bb});`
+  // Localités du cadre : ce sont elles qui portent les noms affichés sur l'image. Comme pour
+  // les voies, plus la vue est large, moins on descend dans la hiérarchie — sinon les
+  // étiquettes se recouvrent et la carte devient illisible.
+  const placesOf = (re: string) => `node["place"~"^(${re})$"](${bb});`
   // Villes influentes bien au-delà du cadre : c'est le repère qui situe une parcelle isolée.
   const cities = `node["place"~"^(city|town)$"](around:${NEAR_RADIUS_M},${cLat},${cLon});`
   const head = '[out:json][timeout:25]'
   if (km <= 3) {
     // Vue parcelle : tout est lisible et le volume reste faible.
-    return `${head};(way["highway"](${bb});way["building"](${bb});${places}${cities});out geom;`
+    return `${head};(way["highway"](${bb});way["building"](${bb});${placesOf('city|town|village|hamlet')}${cities});out geom;`
   }
   if (km <= 15) {
     const re = 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|track'
-    return `${head};(way["highway"~"^(${re})$"](${bb});way["building"](${bb});${places}${cities});out geom;`
+    return `${head};(way["highway"~"^(${re})$"](${bb});way["building"](${bb});${placesOf('city|town|village')}${cities});out geom;`
   }
   // Vue large : uniquement les axes structurants ; les bâtiments seraient des points invisibles.
   const re = 'motorway|trunk|primary|secondary|tertiary'
-  return `${head};(way["highway"~"^(${re})$"](${bb});${places}${cities});out geom;`
+  return `${head};(way["highway"~"^(${re})$"](${bb});${placesOf('city|town')}${cities});out geom;`
 }
 const NEAR_RADIUS_M = 60_000
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp } from '@/lib/sharepointMulti'
-import { fetchSentinelImage, bboxOf } from '@/lib/eudr/sentinel'
+import { fetchSentinelImage, bboxOf, SENTINEL_MIME } from '@/lib/eudr/sentinel'
 import { guard } from '../traces/_auth'
 
 export const dynamic = 'force-dynamic'
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
       // L'URL fixe entièrement l'image (document, période, parcelle) : son contenu ne peut
       // plus changer. Un cache long évite de repayer Sentinel et une invocation à chaque
       // ouverture de la carte — c'était une heure, donc redemandé sans cesse.
-      headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=604800, immutable' },
+      headers: { 'Content-Type': SENTINEL_MIME, 'Cache-Control': 'private, max-age=604800, immutable' },
     })
   } catch (err) {
     return NextResponse.json({ error: String((err as Error).message ?? err) }, { status: 502 })

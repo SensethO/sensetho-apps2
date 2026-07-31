@@ -45,6 +45,13 @@ interface OsmLayer {
 }
 
 /**
+ * Jeton de version des cartes, à incrémenter dès que le cadrage, la résolution ou la forme
+ * des réponses change. Images, contours et calques sont mis en cache jusqu'à 7 jours : sans
+ * ce jeton, un cadrage modifié ne serait visible qu'à l'expiration.
+ */
+const MAP_V = 4
+
+/**
  * Mémoire des calques, hors du composant pour survivre au démontage (fermer puis rouvrir
  * la vue satellite ne redemande rien), et recopiée dans sessionStorage pour survivre à un
  * rechargement de page. Les images, elles, sont mises en cache par le navigateur grâce aux
@@ -70,8 +77,8 @@ function makeStore<T>(prefix: string) {
 function readSession<T>(k: string): { at: number; v: T } | null {
   try { const s = sessionStorage.getItem(k); return s ? JSON.parse(s) as { at: number; v: T } : null } catch { return null }
 }
-const osmStore = makeStore<OsmLayer>('eudr.osm.')
-const geomStore = makeStore<Overlay>('eudr.geom.')
+const osmStore = makeStore<OsmLayer>(`eudr.osm.v${MAP_V}.`)
+const geomStore = makeStore<Overlay>(`eudr.geom.v${MAP_V}.`)
 
 /**
  * Trace les contours des parcelles au-dessus de l'image. L'API Sentinel Hub étire la bbox
@@ -311,7 +318,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   const [sat, setSat] = useState<string | null>(null)
   const [satPlot, setSatPlot] = useState<number | null>(null) // null = toute l'emprise
   const satUrl = (attId: string, from: string, to: string, plot: number | null) =>
-    `/api/eudr-fournisseurs/satellite?org_id=${orgId}&attachmentId=${attId}&from=${from}&to=${to}${plot != null ? `&plot=${plot}` : ''}`
+    `/api/eudr-fournisseurs/satellite?org_id=${orgId}&attachmentId=${attId}&from=${from}&to=${to}${plot != null ? `&plot=${plot}` : ''}&v=${MAP_V}`
   // ⚠️ Borne de fin FIXE (jour courant, calculé une seule fois). Un `new Date()` évalué à
   // chaque rendu changeait l'URL en continu et relançait le téléchargement en boucle.
   const nowIso = useMemo(() => `${new Date().toISOString().slice(0, 10)}T23:59:59Z`, [])
@@ -342,7 +349,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
     setOsmBusy(true); setOsmMsg(null); setOsm(null)
     // `v` : la réponse est mise en cache 24 h côté navigateur ; incrémenter ce jeton à chaque
     // changement de forme du JSON évite qu'une ancienne réponse mette la superposition en défaut.
-    fetch(`/api/eudr-fournisseurs/satellite/osm?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}&v=3`)
+    fetch(`/api/eudr-fournisseurs/satellite/osm?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}&v=${MAP_V}`)
       .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`); return j })
       .then((j: OsmLayer) => {
         if (!alive) return
@@ -368,7 +375,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
     if (hit) { setOverlay(hit); return }
     let alive = true
     setOverlay(null)
-    fetch(`/api/eudr-fournisseurs/satellite/geometry?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}`)
+    fetch(`/api/eudr-fournisseurs/satellite/geometry?org_id=${orgId}&attachmentId=${sat}${satPlot != null ? `&plot=${satPlot}` : ''}&v=${MAP_V}`)
       .then(r => r.ok ? r.json() : null)
       .then(j => { if (alive && j?.bbox && j?.rings) { geomStore.set(key, j as Overlay); setOverlay(j as Overlay) } })
       .catch(() => { /* la superposition est un confort : on n'alerte pas */ })
