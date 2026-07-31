@@ -77,7 +77,15 @@ function PlotOutlines({ overlay }: { overlay: Overlay }) {
   )
 }
 
-function SatImage({ url, label, overlay }: { url: string; label: string; overlay?: Overlay | null }) {
+/** Zoom/déplacement partagé par les deux vignettes, pour comparer toujours la même zone. */
+interface View { s: number; x: number; y: number }
+const VIEW_RESET: View = { s: 1, x: 0, y: 0 }
+const MAX_ZOOM = 10
+
+function SatImage({ url, label, overlay, view, onView }: {
+  url: string; label: string; overlay?: Overlay | null
+  view: View; onView: (v: View | ((prev: View) => View)) => void
+}) {
   const [st, setSt] = useState<{ loading: boolean; src?: string; error?: string }>({ loading: true })
   // Verrou : une URL donnée n'est téléchargée qu'UNE fois, quels que soient les rendus.
   // Sans ce garde-fou, une URL instable (ex. horodatage recalculé à chaque rendu) relance
@@ -110,13 +118,76 @@ function SatImage({ url, label, overlay }: { url: string; label: string; overlay
     return () => { alive = false; ctrl.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [url])
 
+  // ── Zoom (molette) et déplacement (glisser) ──────────────────────────────
+  const boxRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
+
+  // Recadre pour que l'image couvre toujours le cadre (pas de bande vide).
+  const clamp = (v: View, size: number): View => {
+    const s = Math.min(MAX_ZOOM, Math.max(1, v.s))
+    const limit = size * (s - 1)
+    return { s, x: Math.min(0, Math.max(-limit, v.x)), y: Math.min(0, Math.max(-limit, v.y)) }
+  }
+
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) return
+    // Écouteur natif non passif : indispensable pour empêcher le défilement de la page.
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const r = el.getBoundingClientRect()
+      const cx = e.clientX - r.left, cy = e.clientY - r.top
+      onView(prev => {
+        const s = Math.min(MAX_ZOOM, Math.max(1, prev.s * (e.deltaY < 0 ? 1.25 : 1 / 1.25)))
+        const k = s / prev.s
+        return clamp({ s, x: cx - (cx - prev.x) * k, y: cy - (cy - prev.y) * k }, r.width)
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [onView])
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (view.s <= 1) return
+    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+    dragRef.current = { px: e.clientX, py: e.clientY, x: view.x, y: view.y }
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current
+    if (!d || !boxRef.current) return
+    const size = boxRef.current.getBoundingClientRect().width
+    onView(prev => clamp({ ...prev, x: d.x + (e.clientX - d.px), y: d.y + (e.clientY - d.py) }, size))
+  }
+  const endDrag = () => { dragRef.current = null }
+
   return (
     <figure className="m-0">
-      <div className="relative w-full aspect-square rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center justify-center">
+      <div
+        ref={boxRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        onDoubleClick={() => onView(VIEW_RESET)}
+        style={{ cursor: view.s > 1 ? (dragRef.current ? 'grabbing' : 'grab') : 'zoom-in', touchAction: 'none' }}
+        className="relative w-full aspect-square rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center justify-center">
         {st.loading && <span className="text-xs text-gray-400">Chargement de l’image satellite…</span>}
         {st.error && <span className="text-xs text-red-600 dark:text-red-400 px-3 text-center break-words">❌ {st.error}</span>}
-        {st.src && <img src={st.src} alt={`Sentinel-2 ${label}`} className="w-full h-full object-cover" />}
-        {st.src && overlay && <PlotOutlines overlay={overlay} />}
+        {st.src && (
+          // Image et contours dans le MÊME conteneur transformé : ils restent solidaires.
+          <div
+            className="absolute inset-0 origin-top-left"
+            style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}
+          >
+            <img src={st.src} alt={`Sentinel-2 ${label}`} className="w-full h-full object-cover select-none" draggable={false} />
+            {overlay && <PlotOutlines overlay={overlay} />}
+          </div>
+        )}
+        {st.src && view.s > 1 && (
+          <span className="absolute bottom-1 right-1 text-[10px] px-1.5 py-0.5 rounded bg-black/55 text-white pointer-events-none">
+            ×{view.s.toFixed(1)}
+          </span>
+        )}
       </div>
       <figcaption className="text-xs text-center text-gray-500 dark:text-gray-400 mt-1">{label}</figcaption>
     </figure>
@@ -136,6 +207,10 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   // ⚠️ Borne de fin FIXE (jour courant, calculé une seule fois). Un `new Date()` évalué à
   // chaque rendu changeait l'URL en continu et relançait le téléchargement en boucle.
   const nowIso = useMemo(() => `${new Date().toISOString().slice(0, 10)}T23:59:59Z`, [])
+
+  // Zoom/déplacement PARTAGÉ par les deux vignettes : on compare toujours la même zone.
+  const [view, setView] = useState<View>(VIEW_RESET)
+  useEffect(() => { setView(VIEW_RESET) }, [sat, satPlot]) // nouvelle vue = zoom réinitialisé
 
   // Contours des parcelles à superposer aux images (une requête par document/parcelle).
   const [overlay, setOverlay] = useState<Overlay | null>(null)
@@ -218,6 +293,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                         <p className="text-xs text-gray-500 dark:text-gray-400 m-0">
                           🛰️ Sentinel‑2 (Copernicus), vraie couleur — mosaïque la moins nuageuse. État forestier <strong>2020</strong> (date‑butoir EUDR) vs <strong>aujourd’hui</strong>.
                           {overlay && <> <span className="inline-block w-3 h-2 align-middle rounded-sm" style={{ background: 'rgba(250,204,21,0.25)', border: '1px solid #facc15' }} /> contour des parcelles déclarées.</>}
+                          {' '}<span className="text-gray-400">Molette pour zoomer, glisser pour déplacer — les deux images bougent ensemble (double-clic : réinitialiser).</span>
                         </p>
                         {a?.plots?.length ? (
                           <select className="text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1"
@@ -226,10 +302,15 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                             {a.plots.map((p, i) => <option key={i} value={i}>Parcelle {p.plotId}</option>)}
                           </select>
                         ) : null}
+                        {view.s > 1 && (
+                          <button className="text-xs text-gray-500 hover:underline" onClick={() => setView(VIEW_RESET)}>
+                            Réinitialiser le zoom
+                          </button>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[{ y: '2020', from: '2020-01-01T00:00:00Z', to: '2020-12-31T23:59:59Z' }, { y: 'Récente', from: '2024-06-01T00:00:00Z', to: nowIso }].map(p => (
-                          <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} overlay={overlay} />
+                          <SatImage key={p.y} url={satUrl(att.id, p.from, p.to, satPlot)} label={p.y} overlay={overlay} view={view} onView={setView} />
                         ))}
                       </div>
                     </div>

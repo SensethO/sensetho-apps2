@@ -50,8 +50,23 @@ export function bboxOf(geojson: { features?: Array<{ geometry?: { coordinates?: 
 
 const TRUE_COLOR = '//VERSION=3\nfunction setup(){return{input:["B02","B03","B04"],output:{bands:3}}}\nfunction evaluatePixel(s){return[2.5*s.B04,2.5*s.B03,2.5*s.B02]}'
 
-/** Rend une image Sentinel-2 true-color (PNG) pour une bbox et une période (mosaïque moins nuageuse). */
-export async function fetchSentinelImage(bbox: BBox, from: string, to: string, size = 512): Promise<Buffer> {
+/**
+ * Résolution adaptée à l'étendue : Sentinel-2 capte à 10 m/pixel, inutile de demander
+ * plus fin (on ne ferait qu'alourdir l'image sans gagner de détail). On vise ~10 m/pixel,
+ * borné entre 512 px (confort d'affichage sur les petites parcelles) et 1024 px (poids).
+ */
+function sizeForBbox(bbox: BBox): number {
+  const [minx, miny, maxx] = bbox
+  const meters = (maxx - minx) * 111_320 * Math.cos((miny * Math.PI) / 180)
+  return Math.min(1024, Math.max(512, Math.round(meters / 10)))
+}
+
+/**
+ * Rend une image Sentinel-2 true-color (PNG) pour une bbox et une période (mosaïque moins
+ * nuageuse). Sans `size`, la résolution est choisie selon l'étendue (cf. sizeForBbox).
+ */
+export async function fetchSentinelImage(bbox: BBox, from: string, to: string, size = 0): Promise<Buffer> {
+  if (!size) size = sizeForBbox(bbox)
   const token = await getToken()
   const body = {
     input: {
