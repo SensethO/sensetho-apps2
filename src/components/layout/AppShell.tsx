@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
 import ThemeToggle from '@/components/ui/ThemeToggle'
 import Sidebar from './Sidebar'
+import TwoFactorReminder from '@/components/account/TwoFactorReminder'
 import Footer from './Footer'
 import { useAuth } from '@/hooks/useAuth'
 import { useApps } from '@/hooks/useApps'
@@ -130,6 +131,7 @@ export default function AppShell({ children }: AppShellProps) {
 
         {/* Contenu + Footer */}
         <main className="flex-1 overflow-y-auto p-6">
+          <TwoFactorReminder />
           {children}
         </main>
         <Footer />
