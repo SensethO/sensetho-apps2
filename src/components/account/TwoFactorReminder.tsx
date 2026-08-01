@@ -25,13 +25,13 @@ export default function TwoFactorReminder() {
 
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      if (!session) { console.info('[2fa] pas de session lisible'); return }
 
       // La seule condition qui compte : aucun facteur vérifié. Si la liste est
       // illisible, on n'affiche rien — mieux vaut se taire que crier à tort.
       const { data, error } = await supabase.auth.mfa.listFactors()
-      if (error) return
-      if ((data?.totp ?? []).some(f => f.status === 'verified')) return
+      if (error) { console.info('[2fa] listFactors en echec', error.message); return }
+      if ((data?.totp ?? []).some(f => f.status === 'verified')) { console.info('[2fa] deja protege'); return }
 
       // Un compte sans mot de passe, connecté uniquement par Microsoft, n'a rien
       // à protéger ici. Mais si les identités ne sont pas lisibles, on affiche :
@@ -42,6 +42,14 @@ export default function TwoFactorReminder() {
         && !identites.some(i => i.provider === 'email')
       if (seulementMicrosoft) return
 
+      // Trace temporaire : le bandeau ne s'affichait pas et le diagnostic à
+      // l'aveugle tournait en rond. À retirer une fois le comportement confirmé.
+      console.info('[2fa] decision', {
+        session: !!session,
+        facteurs: (data?.totp ?? []).length,
+        identites: Array.isArray(identites) ? identites.map(i => i.provider) : 'absentes',
+        affiche: true,
+      })
       if (vivant) setVisible(true)
     })()
     return () => { vivant = false }
