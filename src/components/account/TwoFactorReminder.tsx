@@ -24,18 +24,25 @@ export default function TwoFactorReminder() {
       } catch { /* mode privé : on affiche */ }
 
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
 
-      // Un compte sans mot de passe (connexion Microsoft seule) n'a rien à
-      // protéger ici : son organisation assure déjà la vérification forte.
-      const parMotDePasse = (user.identities ?? []).some(i => i.provider === 'email')
-      if (!parMotDePasse) return
-
+      // La seule condition qui compte : aucun facteur vérifié. Si la liste est
+      // illisible, on n'affiche rien — mieux vaut se taire que crier à tort.
       const { data, error } = await supabase.auth.mfa.listFactors()
       if (error) return
-      const actif = (data?.totp ?? []).some(f => f.status === 'verified')
-      if (!actif && vivant) setVisible(true)
+      if ((data?.totp ?? []).some(f => f.status === 'verified')) return
+
+      // Un compte sans mot de passe, connecté uniquement par Microsoft, n'a rien
+      // à protéger ici. Mais si les identités ne sont pas lisibles, on affiche :
+      // une relance superflue se referme d'un clic, une relance escamotée laisse
+      // un compte non protégé sans que personne ne s'en aperçoive.
+      const identites = session.user?.identities
+      const seulementMicrosoft = Array.isArray(identites) && identites.length > 0
+        && !identites.some(i => i.provider === 'email')
+      if (seulementMicrosoft) return
+
+      if (vivant) setVisible(true)
     })()
     return () => { vivant = false }
   }, [])
