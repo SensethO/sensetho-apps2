@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useTheme } from '@/components/providers/ThemeProvider'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
+import TwoFactorPanel from '@/components/account/TwoFactorPanel'
 import type { Profile, Theme } from '@/types'
 
 type Tab = 'info' | 'password' | 'appearance' | '2fa'
@@ -249,22 +250,7 @@ export default function AccountSettings({ profile, forced = false }: { profile: 
         )}
 
         {/* ── 2FA ── */}
-        {tab === '2fa' && (
-          <div className="flex flex-col items-center justify-center py-12 gap-4">
-            <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center">
-              <Icon name="shieldCheck" size={28} className="text-gray-400 dark:text-slate-500" />
-            </div>
-            <div className="text-center">
-              <p className="font-semibold text-gray-900 dark:text-slate-100">Double authentification</p>
-              <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-                Cette fonctionnalité sera disponible dans une prochaine mise à jour.
-              </p>
-            </div>
-            <span className="px-3 py-1 bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 text-xs rounded-full">
-              Prochainement
-            </span>
-          </div>
-        )}
+        {tab === '2fa' && <TwoFactorPanel />}
       </div>
     </div>
   )

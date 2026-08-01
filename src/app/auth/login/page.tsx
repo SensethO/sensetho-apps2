@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
 
-type View = 'login' | 'forgot'
+type View = 'login' | 'forgot' | 'mfa'
 
 /** Motifs de refus renvoyés par /auth/callback, traduits pour l'utilisateur. */
 const MESSAGES_SSO: Record<string, string> = {
@@ -35,6 +35,12 @@ export default function LoginPage() {
 
   // Microsoft 365
   const [msLoading, setMsLoading] = useState(false)
+
+  // Double authentification
+  const [mfaFactorId, setMfaFactorId] = useState('')
+  const [mfaCode, setMfaCode] = useState('')
+  const [mfaError, setMfaError] = useState('')
+  const [mfaChecking, setMfaChecking] = useState(false)
 
   // Un refus survenu côté serveur revient par l'URL : on l'affiche au même
   // endroit que les erreurs de saisie, pour que l'utilisateur ait une seule
@@ -82,6 +88,44 @@ export default function LoginPage() {
         ? 'Service momentanément indisponible — vos identifiants n’ont pas pu être vérifiés. Réessayez dans un instant.'
         : 'Email ou mot de passe incorrect.')
       setLoginLoading(false)
+      return
+    }
+
+    // Le mot de passe seul n'ouvre qu'une session de niveau aal1. Si un facteur
+    // est enrôlé, Supabase exige un second facteur pour atteindre aal2 : sans
+    // cette étape, activer la double authentification ne protégerait rien.
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (aal && aal.nextLevel === 'aal2' && aal.nextLevel !== aal.currentLevel) {
+      const { data: fac } = await supabase.auth.mfa.listFactors()
+      const totp = (fac?.totp ?? []).find(f => f.status === 'verified')
+      if (totp) {
+        setMfaFactorId(totp.id)
+        setView('mfa')
+        setLoginLoading(false)
+        return
+      }
+    }
+
+    router.push('/dashboard')
+    router.refresh()
+  }
+
+  async function handleMfa(e: React.FormEvent) {
+    e.preventDefault()
+    setMfaChecking(true); setMfaError('')
+    const supabase = createClient()
+    const { data: ch, error: e1 } = await supabase.auth.mfa.challenge({ factorId: mfaFactorId })
+    if (e1 || !ch) {
+      setMfaChecking(false)
+      setMfaError('Service momentanément indisponible. Réessayez dans un instant.')
+      return
+    }
+    const { error: e2 } = await supabase.auth.mfa.verify({
+      factorId: mfaFactorId, challengeId: ch.id, code: mfaCode.trim(),
+    })
+    if (e2) {
+      setMfaChecking(false)
+      setMfaError('Code refusé. Vérifiez l’heure de votre téléphone, puis saisissez le code affiché.')
       return
     }
     router.push('/dashboard')
@@ -186,6 +230,26 @@ export default function LoginPage() {
                   </Link>
                 </div>
               </div>
+            </>
+          )}
+
+          {/* ── Second facteur ── */}
+          {view === 'mfa' && (
+            <>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-1">Vérification</h1>
+              <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
+                Saisissez le code affiché par votre application d’authentification.
+              </p>
+              <form onSubmit={handleMfa} className="space-y-4">
+                <input value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="000000"
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg text-center text-lg tracking-[0.4em] font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                {mfaError && <p className="text-sm text-red-600">{mfaError}</p>}
+                <button type="submit" disabled={mfaChecking || mfaCode.length < 6}
+                  className="w-full bg-gray-900 dark:bg-slate-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50 transition-colors">
+                  {mfaChecking ? 'Vérification…' : 'Valider'}
+                </button>
+              </form>
             </>
           )}
 
