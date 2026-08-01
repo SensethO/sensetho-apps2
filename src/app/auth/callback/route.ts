@@ -8,17 +8,38 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/dashboard'
 
+  // Microsoft renvoie ses refus en paramètres, sans code. Les ignorer faisait
+  // revenir l'utilisateur comme si de rien n'était : consentement donné, aucun
+  // rattachement, aucune explication. Le motif est propagé tel quel.
+  const refusFournisseur = searchParams.get('error_description') ?? searchParams.get('error')
+  if (refusFournisseur) {
+    return NextResponse.redirect(`${origin}${destinationErreur(next, refusFournisseur)}`)
+  }
+
   if (code) {
     const supabase = await createClient()
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
-      const refus = await refuserSiTenantNonAutorise(supabase, data)
-      if (refus) return NextResponse.redirect(`${origin}${refus}`)
-      return NextResponse.redirect(`${origin}${next}`)
+    if (error) {
+      return NextResponse.redirect(`${origin}${destinationErreur(next, error.message)}`)
     }
+    const refus = await refuserSiTenantNonAutorise(supabase, data)
+    if (refus) return NextResponse.redirect(`${origin}${refus}`)
+    return NextResponse.redirect(`${origin}${next}`)
   }
 
   return NextResponse.redirect(`${origin}/auth/login?error=callback`)
+}
+
+/**
+ * Où renvoyer un échec. Un rattachement lancé depuis le compte doit revenir au
+ * compte : le renvoyer vers la page de connexion, alors que la session est
+ * toujours valide, produisait un aller-retour muet vers le tableau de bord.
+ */
+function destinationErreur(next: string, motif: string): string {
+  const m = encodeURIComponent(motif.slice(0, 300))
+  return next.startsWith('/account')
+    ? `/account?lien=echec&motif=${m}`
+    : `/auth/login?error=callback&motif=${m}`
 }
 
 type Client = Awaited<ReturnType<typeof createClient>>

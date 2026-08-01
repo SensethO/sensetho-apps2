@@ -32,6 +32,23 @@ export default function IdentitiesPanel() {
 
   useEffect(() => { void recharger() }, [recharger])
 
+  // Un échec de rattachement revient par l'URL. Sans cet affichage, l'utilisateur
+  // consent chez Microsoft, revient ici, et rien ne lui indique que rien n'a eu
+  // lieu — le cas s'est produit avec un mauvais compte Microsoft préconnecté.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    if (p.get('lien') !== 'echec') return
+    const motif = p.get('motif')
+    setErreur(
+      'Le rattachement n’a pas abouti'
+      + (motif ? ` : ${motif}` : '')
+      + '. Vérifiez que vous utilisez bien le compte Microsoft correspondant à votre adresse —'
+      + ' si un autre compte est déjà connecté dans le navigateur, Microsoft le réutilise sans le demander.',
+    )
+    // On nettoie l'URL pour que le message ne réapparaisse pas à chaque retour.
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [])
+
   const azure = identites.find(i => i.provider === 'azure')
 
   async function lier() {
