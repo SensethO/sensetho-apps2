@@ -33,7 +33,7 @@ interface Portrait {
   methode?: 'manuel' | 'ia' | null; prompt?: Record<string, string> | null; ia?: AiSuggestion | null
 }
 interface ImageCible { espece_id?: string; note?: string }
-interface Campagne { id: string; owner_id: string; annee: number; nom: string | null; statut: 'collecte' | 'restitution'; image_cible: ImageCible | null; socle: Socle | null; date_cloture_prevue: string | null }
+interface Campagne { id: string; owner_id: string; annee: number; nom: string | null; statut: 'collecte' | 'restitution'; image_cible: ImageCible | null; socle: Socle | null; date_cloture_prevue: string | null; responsable_id: string | null; responsable_valide_le: string | null }
 interface Socle { etres?: string[]; son_service?: boolean }
 interface Participant { id: string; user_id?: string | null; nom?: string | null; poste: string | null; service: string | null; regles_acceptees?: boolean; cellule_id?: string | null; is_externe?: boolean }
 interface EtreDecl { id: string; kind: 'poste' | 'partie_prenante'; label: string; cote: 'marche' | 'cite' | 'groupe' | null }
@@ -62,6 +62,7 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
 
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [campagne, setCampagne] = useState<Campagne | null>(null)
   const [participant, setParticipant] = useState<Participant | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
@@ -82,6 +83,10 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
     const { data: u } = await supabase.auth.getUser()
     const uid = u.user?.id ?? null
     setUserId(uid)
+    if (uid) {
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', uid).maybeSingle()
+      setIsAdmin(prof?.role === 'admin')
+    }
     const { data: camp } = await supabase
       .from('le_miroir_campagnes').select('*').eq('org_id', orgId).eq('annee', year).limit(1).maybeSingle()
     if (!camp) { setCampagne(null); setLoading(false); return }
@@ -157,7 +162,9 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
     )
   }
 
-  const isOwner = campagne.owner_id === userId
+  // Le pilotage est réservé au responsable VALIDÉ par un administrateur.
+  // Créer une campagne ne confère pas ce droit (verrou aussi posé en base).
+  const isOwner = (Boolean(campagne.responsable_id) && campagne.responsable_id === userId) || isAdmin
   const enCollecte = campagne.statut !== 'restitution'
 
   if (!participant || !participant.regles_acceptees) {
@@ -385,10 +392,18 @@ export default function LeMiroirApp({ ctx }: { ctx: RseContext }) {
         </div>
       )}
 
+      {!isOwner && campagne.owner_id === userId && (
+        <div className="rounded-xl border p-3 mb-4 text-sm" style={{ ...card, color: 'var(--text-muted)' }}>
+          🛡️ <b style={{ color: 'var(--text)' }}>Pilotage en attente de validation.</b> Vous avez créé cette campagne,
+          mais l&apos;organisation du dossier (cellules, socle, liens d&apos;invitation, clôture) est réservée au
+          <b> responsable du projet</b> — un administrateur du site doit vous désigner comme tel. Vous pouvez déjà
+          peindre et, à la restitution, consulter le miroir.
+        </div>
+      )}
       {isOwner && showPilotage && (
         <PilotagePanel campagne={campagne} etres={etres} etresDecl={etresDecl} participants={participants}
           portraits={portraits} cellules={cellules} socle={campagne.socle} supabase={supabase}
-          onChange={loadAll} myAutoDone={myAutoEntreprise} />
+          onChange={loadAll} myAutoDone={myAutoEntreprise} isAdmin={isAdmin} />
       )}
 
       {tab === 'peindre' && (enCollecte
@@ -478,19 +493,20 @@ const regardsSur = (portraits: Portrait[], key: string) =>
 
 function PilotagePanel({
   campagne, etres, etresDecl, participants, portraits, cellules, socle,
-  supabase, onChange, myAutoDone,
+  supabase, onChange, myAutoDone, isAdmin,
 }: {
   campagne: Campagne; etres: Etre[]; etresDecl: EtreDecl[]
   participants: Participant[]; portraits: Portrait[]; cellules: Cellule[]
   socle: { etres?: string[]; son_service?: boolean } | null
-  supabase: SupabaseClient; onChange: () => void; myAutoDone: boolean
+  supabase: SupabaseClient; onChange: () => void; myAutoDone: boolean; isAdmin: boolean
 }) {
-  const [vue, setVue] = useState<'ensemble' | 'cellules' | 'cascade' | 'liens'>('ensemble')
+  const [vue, setVue] = useState<'ensemble' | 'cellules' | 'cascade' | 'liens' | 'responsable'>('ensemble')
   const onglets = [
     { k: 'ensemble', l: '📊 Vue d’ensemble' },
     { k: 'cellules', l: '👥 Cellules & participants' },
     { k: 'cascade', l: '🧬 Cascade & socle' },
     { k: 'liens', l: '🔗 Liens d’invitation' },
+    ...(isAdmin ? [{ k: 'responsable', l: '🛡️ Responsable (admin)' }] as const : []),
   ] as const
 
   return (
@@ -505,6 +521,7 @@ function PilotagePanel({
       {vue === 'ensemble' && <VueEnsemble campagne={campagne} etres={etres} participants={participants} portraits={portraits} cellules={cellules} socle={socle} myAutoDone={myAutoDone} supabase={supabase} onChange={onChange} />}
       {vue === 'cellules' && <VueCellules campagneId={campagne.id} cellules={cellules} participants={participants} portraits={portraits} supabase={supabase} onChange={onChange} />}
       {vue === 'cascade' && <VueCascade campagne={campagne} etres={etres} etresDecl={etresDecl} portraits={portraits} socle={socle} supabase={supabase} onChange={onChange} />}
+      {vue === 'responsable' && isAdmin && <VueResponsable campagne={campagne} supabase={supabase} onChange={onChange} />}
       {vue === 'liens' && (
         <div className="space-y-4">
           <VueLiens campagneId={campagne.id} cellules={cellules} participants={participants} />
@@ -809,6 +826,83 @@ function VueCascade({ campagne, etres, etresDecl, portraits, socle, supabase, on
           })}
           {!etresDecl.length && <Vide>Aucun poste ni partie prenante déclarés.</Vide>}
         </ul>
+      </div>
+    </div>
+  )
+}
+
+
+// ── 5. Responsable de campagne (administrateurs seulement) ───────────────────
+
+/**
+ * Désignation du responsable du projet. Réservée aux administrateurs du site :
+ * créer une campagne ne donne aucun droit de pilotage. Le verrou est doublé en
+ * base par un déclencheur — une tentative depuis l'API échoue aussi.
+ */
+function VueResponsable({ campagne, supabase, onChange }: {
+  campagne: Campagne; supabase: SupabaseClient; onChange: () => void
+}) {
+  const [comptes, setComptes] = useState<{ id: string; email: string | null; full_name: string | null }[]>([])
+  const [choix, setChoix] = useState(campagne.responsable_id ?? '')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    supabase.from('profiles').select('id, email, full_name').order('email').limit(200)
+      .then(({ data }) => setComptes(data ?? []))
+  }, [supabase])
+
+  const actuel = comptes.find((c) => c.id === campagne.responsable_id)
+
+  async function valider() {
+    setBusy(true); setMsg(null)
+    const { error } = await supabase.from('le_miroir_campagnes')
+      .update({ responsable_id: choix || null }).eq('id', campagne.id)
+    setBusy(false)
+    setMsg(error ? `Refusé : ${error.message}` : '✓ Responsable validé.')
+    if (!error) onChange()
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        Le <b>responsable du projet</b> est le seul, avec les administrateurs, à voir et modifier le Pilotage
+        (cellules, socle, liens d&apos;invitation, envois, clôture de la collecte). Créer une campagne ne confère
+        pas ce droit : <b>seul un administrateur du site peut valider un utilisateur comme responsable</b>.
+      </div>
+
+      <div className="rounded-xl border p-3" style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)' }}>
+        <div className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Responsable actuel</div>
+        {campagne.responsable_id ? (
+          <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            <b style={{ color: 'var(--text)' }}>{actuel?.full_name || actuel?.email || campagne.responsable_id}</b>
+            {campagne.responsable_valide_le && (
+              <span className="text-xs"> · validé le {new Date(campagne.responsable_valide_le).toLocaleDateString('fr-FR')}</span>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm" style={{ color: '#a85b3b' }}>
+            Aucun responsable validé — personne ne peut piloter cette campagne (hors administrateurs).
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm mb-1" style={{ color: 'var(--text)' }}>Désigner un responsable</label>
+        <div className="flex flex-wrap gap-2">
+          <select value={choix} onChange={(e) => setChoix(e.target.value)}
+            className="flex-1 min-w-[240px] px-3 py-2 rounded-lg border bg-transparent text-sm" style={card}>
+            <option value="">— aucun (retirer le droit de pilotage) —</option>
+            {comptes.map((c) => (
+              <option key={c.id} value={c.id}>{c.full_name ? `${c.full_name} — ${c.email}` : c.email}</option>
+            ))}
+          </select>
+          <button disabled={busy || choix === (campagne.responsable_id ?? '')} onClick={valider}
+            className="px-4 py-2 rounded-lg text-white text-sm disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>
+            {busy ? '…' : 'Valider comme responsable'}
+          </button>
+        </div>
+        {msg && <div className="text-sm mt-2" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#a85b3b' }}>{msg}</div>}
       </div>
     </div>
   )

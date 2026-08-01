@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendEmail } from '@/lib/msGraph'
+import { peutPiloter } from '@/lib/leMiroirAcces'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -80,11 +81,10 @@ export async function POST(req: NextRequest, { params }: { params: { campagneId:
 
     const admin = createAdminClient()
     const { data: camp } = await admin.from('le_miroir_campagnes')
-      .select('id, org_id, annee, statut, owner_id').eq('id', params.campagneId).single()
+      .select('id, org_id, annee, statut, responsable_id').eq('id', params.campagneId).single()
     if (!camp) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    if (camp.owner_id !== user.id) {
-      const { data: prof } = await admin.from('profiles').select('role').eq('id', user.id).single()
-      if (prof?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!(await peutPiloter(user.id, params.campagneId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     if (camp.statut !== 'collecte') {
       return NextResponse.json({ error: 'La collecte est close : aucun envoi.' }, { status: 409 })
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest, { params }: { params: { campagneId:
     const [{ data: org }, { data: cellules }, { data: prof }] = await Promise.all([
       admin.from('organisations').select('denomination').eq('id', camp.org_id).maybeSingle(),
       admin.from('le_miroir_cellules').select('id, nom').eq('campagne_id', camp.id),
-      admin.from('profiles').select('full_name').eq('id', camp.owner_id).maybeSingle(),
+      admin.from('profiles').select('full_name').eq('id', camp.responsable_id).maybeSingle(),
     ])
     const organisation = org?.denomination ?? "l'organisation"
     const base = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin

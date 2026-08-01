@@ -12,23 +12,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { peutPiloter } from '@/lib/leMiroirAcces'
 
 export const dynamic = 'force-dynamic'
-
-async function assertOwner(userId: string, campagneId: string) {
-  const admin = createAdminClient()
-  const { data } = await admin.from('le_miroir_campagnes').select('owner_id').eq('id', campagneId).single()
-  if (data?.owner_id === userId) return true
-  const { data: prof } = await admin.from('profiles').select('role').eq('id', userId).single()
-  return prof?.role === 'admin'
-}
 
 export async function GET(req: NextRequest, { params }: { params: { campagneId: string } }) {
   try {
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!(await assertOwner(user.id, params.campagneId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!(await peutPiloter(user.id, params.campagneId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const admin = createAdminClient()
     const { data } = await admin
@@ -47,7 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: { campagneId:
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!(await assertOwner(user.id, params.campagneId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!(await peutPiloter(user.id, params.campagneId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const body = await req.json()
     const kind: 'interne' | 'externe' = body.kind === 'externe' ? 'externe' : 'interne'
@@ -95,7 +88,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { campagneI
     const supabase = createUserClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!(await assertOwner(user.id, params.campagneId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!(await peutPiloter(user.id, params.campagneId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const id = new URL(req.url).searchParams.get('invitation_id')
     if (!id) return NextResponse.json({ error: 'invitation_id manquant' }, { status: 400 })
