@@ -1,12 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
 
 type View = 'login' | 'forgot'
+
+/** Motifs de refus renvoyés par /auth/callback, traduits pour l'utilisateur. */
+const MESSAGES_SSO: Record<string, string> = {
+  callback: 'La connexion Microsoft n’a pas abouti. Réessayez.',
+  sso_indisponible: 'Service momentanément indisponible — votre organisation n’a pas pu être vérifiée. Réessayez dans un instant.',
+  sso_tenant_inconnu: 'Impossible d’identifier votre organisation Microsoft. Contactez votre administrateur.',
+  sso_tenant_refuse: 'Votre organisation Microsoft n’est pas autorisée à accéder à cette plateforme. Contactez votre administrateur pour qu’il la déclare.',
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,6 +32,37 @@ export default function LoginPage() {
   const [forgotError, setForgotError] = useState('')
   const [forgotSending, setForgotSending] = useState(false)
   const [forgotSent, setForgotSent] = useState(false)
+
+  // Microsoft 365
+  const [msLoading, setMsLoading] = useState(false)
+
+  // Un refus survenu côté serveur revient par l'URL : on l'affiche au même
+  // endroit que les erreurs de saisie, pour que l'utilisateur ait une seule
+  // zone à lire. Lecture directe de l'URL plutôt que useSearchParams, qui
+  // imposerait d'envelopper la page dans une frontière Suspense.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('error')
+    if (code) setLoginError(MESSAGES_SSO[code] ?? 'La connexion n’a pas abouti.')
+  }, [])
+
+  async function handleMicrosoft() {
+    setMsLoading(true); setLoginError('')
+    const supabase = createClient()
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: {
+        // offline_access est nécessaire pour que Microsoft délivre un jeton de
+        // rafraîchissement ; email et profile alimentent le profil créé.
+        scopes: 'openid profile email offline_access',
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+    // En cas de succès, le navigateur part chez Microsoft : on ne repasse pas ici.
+    if (error) {
+      setLoginError('Impossible de joindre Microsoft. Réessayez dans un instant.')
+      setMsLoading(false)
+    }
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -90,6 +129,26 @@ export default function LoginPage() {
             <>
               <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-1">Connexion</h1>
               <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">Accédez à votre espace Sensetho</p>
+
+              {/* Le SSO est présenté en premier : c'est la voie recommandée, et les
+                  comptes existants s'y rattachent automatiquement par leur adresse. */}
+              <button type="button" onClick={handleMicrosoft} disabled={msLoading}
+                className="w-full flex items-center justify-center gap-2.5 border border-gray-300 dark:border-slate-600 rounded-lg py-2 text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors">
+                <svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true">
+                  <rect x="1" y="1" width="10" height="10" fill="#f25022" />
+                  <rect x="12" y="1" width="10" height="10" fill="#7fba00" />
+                  <rect x="1" y="12" width="10" height="10" fill="#00a4ef" />
+                  <rect x="12" y="12" width="10" height="10" fill="#ffb900" />
+                </svg>
+                {msLoading ? 'Redirection vers Microsoft…' : 'Se connecter avec Microsoft'}
+              </button>
+
+              <div className="flex items-center gap-3 my-5">
+                <span className="flex-1 border-t border-gray-100 dark:border-slate-700" />
+                <span className="text-xs text-gray-400 dark:text-slate-500">ou</span>
+                <span className="flex-1 border-t border-gray-100 dark:border-slate-700" />
+              </div>
+
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Email</label>
