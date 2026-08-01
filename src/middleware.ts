@@ -26,8 +26,45 @@ const PUBLIC_ROUTES = [
 const AUTH_PAGES = ['/auth/login', '/auth/register', '/auth/forgot-password']
 const ADMIN_ROUTES = ['/admin']
 
+// ── Coupe-circuit : rate limit par IP (fenêtre glissante, en mémoire) ───────────
+// Garde-fou contre les boucles de rafraîchissement emballées (incident quotas
+// Vercel/Supabase du 30/07/2026). Best-effort par isolate : plafonne un flot
+// soutenu venant d'une même IP AVANT tout appel Supabase/fonction, ce qui coupe
+// la source principale du coût (invocations + événements Observability).
+const RL_WINDOW_MS = 60_000
+const RL_MAX_REQUESTS = 300 // ~5 req/s soutenu/IP : généreux (zéro gêne pour un usage humain normal) mais borne les dégâts d'une boucle emballée. Ajustable.
+const rlHits = new Map<string, number[]>()
+
+function getClientIp(request: NextRequest): string {
+  const xff = request.headers.get('x-forwarded-for')
+  if (xff) return xff.split(',')[0]!.trim()
+  return request.headers.get('x-real-ip') ?? 'unknown'
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const recent = (rlHits.get(ip) ?? []).filter(t => now - t < RL_WINDOW_MS)
+  recent.push(now)
+  rlHits.set(ip, recent)
+  if (rlHits.size > 5_000) {
+    for (const [key, times] of rlHits) {
+      if (!times.some(t => now - t < RL_WINDOW_MS)) rlHits.delete(key)
+    }
+  }
+  return recent.length > RL_MAX_REQUESTS
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  // Coupe-circuit : au-delà du seuil, on renvoie 429 immédiatement (aucun appel en aval).
+  if (pathname.startsWith('/api/') && isRateLimited(getClientIp(request))) {
+    return new NextResponse(
+      JSON.stringify({ error: 'Trop de requêtes — merci de ralentir (rate limit).' }),
+      { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' } },
+    )
+  }
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(

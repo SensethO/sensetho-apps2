@@ -1,3 +1,12 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"]
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "rules": {
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "CallExpression[callee.name='setInterval']",
+        "message": "Rafraichissement reseau : utiliser le hook usePolling (plancher 8s + arret si onglet cache) plutot que setInterval brut — cf. incident quotas Vercel/Supabase du 30/07/2026. Pour une animation purement UI (sans appel reseau), desactiver cette ligne : // eslint-disable-next-line no-restricted-syntax"
+      }
+    ]
+  }
 }
