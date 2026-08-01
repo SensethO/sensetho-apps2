@@ -6,6 +6,7 @@ import { useTheme } from '@/components/providers/ThemeProvider'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/ui/Icon'
 import TwoFactorPanel from '@/components/account/TwoFactorPanel'
+import IdentitiesPanel from '@/components/account/IdentitiesPanel'
 import type { Profile, Theme } from '@/types'
 
 type Tab = 'info' | 'password' | 'appearance' | '2fa'
@@ -176,6 +177,10 @@ export default function AccountSettings({ profile, forced = false }: { profile: 
         {/* ── Sécurité ── */}
         {tab === 'password' && (
           <div className="space-y-4 max-w-md">
+            <IdentitiesPanel />
+            <div className="border-t border-gray-100 dark:border-slate-700 pt-4">
+              <p className="font-semibold text-gray-900 dark:text-slate-100 mb-3">Mot de passe</p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Nouveau mot de passe</label>
               <div className="relative">
