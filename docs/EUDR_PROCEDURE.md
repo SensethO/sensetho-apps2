@@ -1,9 +1,26 @@
 # Procédure de diligence raisonnée EUDR — Trading & Services
 
-Version 2 — 6 août 2026. Consolidation de l'analyse réglementaire du 1er août et
-de la note de professionnalisation « procedure_eudr_trading_services.docx ».
-Destinée à devenir la procédure opposable au sens de l'article 12 du règlement
-(UE) 2023/1115.
+**Version 3 — 6 août 2026.** Procédure opposable au sens de l'article 12 du
+règlement (UE) 2023/1115.
+
+## Historique des versions
+
+L'article 12(2) impose un réexamen au moins annuel du système de diligence
+raisonnée. Une procédure dont on ne sait pas ce qui a changé, ni quand, ni
+pourquoi, ne se défend pas devant une autorité.
+
+| Version | Date | Évolutions |
+|---|---|---|
+| 1 | 1er août 2026 | Analyse réglementaire initiale. Dates d'application et classement des pays vérifiés. Corrections au processus envisagé : calendrier, régime du Kenya, traçabilité du lot physique, point d'arrêt, échantillonnage par le risque. |
+| 2 | 6 août 2026 | Fusion avec la note de professionnalisation interne : gouvernance, accueil fournisseur, cartographie de la chaîne, grilles pays, règles de blocage applicatives, modèles documentaires. |
+| 3 | 6 août 2026 | Rôles rectifiés par le métier et garde-fou sur la décision d'achat. Raisonnement sur la comparaison à deux dates corrigé. Ajout de l'intégrité des tiers : criblage, code de conduite fournisseur, dispositif d'alerte. |
+
+**Prochain réexamen obligatoire : au plus tard le 6 août 2027**, et à chaque
+évolution du référentiel pays, du périmètre produit ou de la chaîne
+d'approvisionnement.
+
+Livrable Word associé : `Procedure_EUDR_Trading_Services_v3.docx`, dans
+« Conformité métier ».
 
 ---
 
