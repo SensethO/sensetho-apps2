@@ -142,10 +142,29 @@ Confiée à un prestataire spécialisé disposant d'une méthodologie documenté
 capable de relier chaque conclusion à la parcelle, à la période analysée, aux
 sources d'imagerie et au résultat retenu.
 
-Comparer une image de 2020 à une image récente ne suffit pas : une déforestation
-survenue en 2022 puis replantée resterait invisible. Il faut une série annuelle
-ou un jeu d'alertes daté — l'indicateur de perturbation post-2020 de Whisp,
-intégré à l'application, remplit cet office pour le tri.
+**Pourquoi deux dates ne suffisent pas.** Une forêt ne repousse pas en deux ans,
+et ce n'est pas ce que la comparaison rate.
+
+Le règlement interroge un **événement**, non un état : y a-t-il eu conversion
+après le 31 décembre 2020 ? Or une parcelle défrichée en 2022 puis plantée en
+cacao sous ombrage présente dès 2026 un couvert arboré dense — bananiers
+plantain les premières saisons, puis arbres d'ombrage. Comparer 2020 à
+aujourd'hui montre des arbres aux deux dates et conclut à tort à l'absence de
+changement.
+
+Le critère juridique n'est d'ailleurs pas le couvert mais **l'usage**. L'article
+2(4) exclut de la définition de forêt les terres à usage agricole prédominant et
+range expressément les systèmes agroforestiers parmi les plantations agricoles :
+une cacaoyère sous ombrage n'est jamais une forêt, quelle que soit sa canopée.
+Un dispositif qui raisonne en verdure plutôt qu'en usage des sols passera à côté.
+
+Deux angles morts s'y ajoutent : la dégradation par coupe sélective, qui modifie
+peu les deux extrémités, et la couverture nuageuse, fréquente en Afrique de
+l'Ouest sur une image unique.
+
+La couverture doit donc être annuelle ou reposer sur un jeu d'alertes daté —
+l'indicateur de perturbation post-2020 de Whisp, intégré à l'application,
+remplit cet office pour le tri.
 
 ### 5.3 Légalité dans le pays de production
 
