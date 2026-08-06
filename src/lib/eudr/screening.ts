@@ -70,7 +70,33 @@ const EMPRISES: Record<string, [number, number, number, number]> = {
   BR: [-73.99, -33.75, -34.79, 5.27],  // Brésil
 }
 
+/**
+ * Le pays est saisi en clair dans la fiche fournisseur — « Cote d'Ivoire », et
+ * non « CI ». Sans cette table, la recherche d'emprise échouait silencieusement
+ * et le contrôle de localisation ne s'exécutait jamais.
+ */
+const CODES_PAYS: Record<string, string> = {
+  'cotedivoire': 'CI', 'cotedlvoire': 'CI', 'ivorycoast': 'CI', 'ci': 'CI',
+  'ghana': 'GH', 'gh': 'GH',
+  'nigeria': 'NG', 'ng': 'NG',
+  'kenya': 'KE', 'ke': 'KE',
+  'cameroun': 'CM', 'cameroon': 'CM', 'cm': 'CM',
+  'equateur': 'EC', 'ecuador': 'EC', 'ec': 'EC',
+  'perou': 'PE', 'peru': 'PE', 'pe': 'PE',
+  'bresil': 'BR', 'brazil': 'BR', 'br': 'BR',
+}
+
+/** Normalise un pays saisi librement vers son code ISO, ou null. */
+function codePays(saisie: string | undefined): string | null {
+  if (!saisie) return null
+  const cle = saisie.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z]/g, '')
+  return CODES_PAYS[cle] ?? null
+}
+
 const SEUIL_POLYGONE_HA = 4      // au-delà, le polygone est obligatoire (art. 9)
+// Plancher de recouvrement : en deçà, contiguïté ou imprécision de numérisation.
+const SEUIL_RECOUVREMENT_HA = 0.01
 const DECIMALES_MINIMUM = 6      // précision exigée (art. 9)
 const R_TERRE_M = 6_378_137
 
@@ -159,14 +185,35 @@ function pointDansAnneau(x: number, y: number, anneau: Anneau): boolean {
   return dedans
 }
 
-/** Deux anneaux se recouvrent-ils ? Croisement d'arêtes, ou inclusion. */
-function anneauxSeRecouvrent(a: Anneau, b: Anneau): boolean {
-  for (let i = 0; i < a.length - 1; i++) {
-    for (let j = 0; j < b.length - 1; j++) {
-      if (segmentsSeCroisent(a[i], a[i + 1], b[j], b[j + 1])) return true
+/**
+ * Surface commune à deux anneaux, en hectares, par échantillonnage régulier.
+ *
+ * ⚠️ Ne jamais conclure au recouvrement depuis l'appartenance d'un sommet à
+ * l'autre anneau : deux parcelles voisines partagent une limite, et un sommet
+ * posé dessus fait basculer le lancer de rayon. Mesuré sur un fichier réel, ce
+ * raccourci déclarait un recouvrement entre deux parcelles dont l'intersection
+ * valait 0,0000 ha. La contiguïté est la norme en cacao — un test qui la
+ * confond avec la superposition rejette des fichiers valides.
+ */
+function surfaceCommuneHa(a: Anneau, b: Anneau): number {
+  const [ax0, ay0, ax1, ay1] = bboxDe(a)
+  const [bx0, by0, bx1, by1] = bboxDe(b)
+  const x0 = Math.max(ax0, bx0), y0 = Math.max(ay0, by0)
+  const x1 = Math.min(ax1, bx1), y1 = Math.min(ay1, by1)
+  if (x1 <= x0 || y1 <= y0) return 0
+
+  const N = 120 // 14 400 tests par paire candidate : suffisant à l'échelle d'une parcelle
+  let dedans = 0
+  for (let i = 0; i < N; i++) {
+    const x = x0 + ((i + 0.5) / N) * (x1 - x0)
+    for (let j = 0; j < N; j++) {
+      const y = y0 + ((j + 0.5) / N) * (y1 - y0)
+      if (pointDansAnneau(x, y, a) && pointDansAnneau(x, y, b)) dedans++
     }
   }
-  return pointDansAnneau(a[0][0], a[0][1], b) || pointDansAnneau(b[0][0], b[0][1], a)
+  if (!dedans) return 0
+  const haParDegreCarre = (111_320 ** 2 * Math.cos((y0 * Math.PI) / 180)) / 10_000
+  return (dedans / (N * N)) * (x1 - x0) * (y1 - y0) * haParDegreCarre
 }
 
 /** Empreinte d'un anneau, pour détecter les polygones identiques. */
@@ -287,7 +334,8 @@ export function trierGeojson(brut: unknown, options: OptionsTri = {}): RapportTr
   const horsPays: number[] = [], pointTropGrand: number[] = [], minuscules: number[] = []
   const enormes: number[] = [], ecartSurface: number[] = []
 
-  const emprise = options.paysDeclare ? EMPRISES[options.paysDeclare.toUpperCase()] : undefined
+  const iso = codePays(options.paysDeclare)
+  const emprise = iso ? EMPRISES[iso] : undefined
   let decimalesMax = 0
 
   for (const p of parcelles) {
@@ -361,7 +409,7 @@ export function trierGeojson(brut: unknown, options: OptionsTri = {}): RapportTr
   if (autoIntersect.length) ajouter('AUTO_INTERSECTION', 'bloquant', 'Le contour se croise lui-même : TRACES rejettera la géométrie.', autoIntersect)
   if (dupliquesSommets.length) ajouter('SOMMETS_DUPLIQUES', 'alerte', 'Sommets consécutifs identiques.', dupliquesSommets)
   if (avecTrous.length) ajouter('TROUS', 'alerte', 'Anneaux intérieurs : à justifier, ou à retirer avant dépôt.', avecTrous)
-  if (horsPays.length) ajouter('HORS_PAYS', 'bloquant', `Parcelles hors de l’emprise de ${options.paysDeclare}. Coordonnées inversées ou pays erroné.`, horsPays)
+  if (horsPays.length) ajouter('HORS_PAYS', 'bloquant', `Parcelles hors de l’emprise de ${options.paysDeclare} (${iso}). Coordonnées inversées ou pays erroné.`, horsPays)
   if (pointTropGrand.length) ajouter('POLYGONE_REQUIS', 'bloquant', `Point déclaré pour une surface supérieure à ${SEUIL_POLYGONE_HA} ha : l’article 9 impose un polygone.`, pointTropGrand)
   if (minuscules.length) ajouter('SURFACE_MINUSCULE', 'alerte', 'Surface inférieure à 0,01 ha : saisie probablement erronée.', minuscules)
   if (enormes.length) ajouter('SURFACE_IMPLAUSIBLE', 'alerte', `Surface supérieure à ${surfaceMax} ha pour une exploitation familiale.`, enormes)
@@ -369,6 +417,7 @@ export function trierGeojson(brut: unknown, options: OptionsTri = {}): RapportTr
 
   // — Contrôles croisés entre parcelles
   const recouvrements: string[] = []
+  const recouvrementsIdx: number[] = []
   const doublons = new Map<string, number[]>()
   for (const p of parcelles) {
     for (const a of p.anneaux) {
@@ -383,22 +432,30 @@ export function trierGeojson(brut: unknown, options: OptionsTri = {}): RapportTr
     }
   }
 
-  // Pré-filtre par boîte englobante : à moins de 1000 parcelles, le coût reste négligeable.
+  // Pré-filtre par boîte englobante : à moins de 1000 parcelles, le coût reste
+  // négligeable, et seules les paires retenues sont mesurées finement.
   for (let i = 0; i < parcelles.length; i++) {
     for (let j = i + 1; j < parcelles.length; j++) {
       const a = parcelles[i], b = parcelles[j]
       if (!a.anneaux.length || !b.anneaux.length) continue
       if (!seChevauchent(a.bbox, b.bbox)) continue
-      if (a.anneaux.some(ra => b.anneaux.some(rb => anneauxSeRecouvrent(ra, rb)))) {
-        recouvrements.push(`${a.index}/${b.index}`)
+
+      let commune = 0
+      for (const ra of a.anneaux) for (const rb of b.anneaux) commune += surfaceCommuneHa(ra, rb)
+      // Tolérance : au-dessous, on est dans la contiguïté ou l'imprécision de
+      // numérisation, pas dans la double déclaration d'une même terre.
+      const seuil = Math.max(SEUIL_RECOUVREMENT_HA, 0.01 * Math.min(a.aireHa, b.aireHa))
+      if (commune > seuil) {
+        recouvrements.push(`${a.index + 1}/${b.index + 1} (${commune.toFixed(3)} ha)`)
+        recouvrementsIdx.push(a.index, b.index)
       }
     }
   }
   if (recouvrements.length) {
     ajouter('RECOUVREMENT', 'bloquant',
-      'Parcelles qui se recouvrent : une même terre est déclarée deux fois.',
-      [...new Set(recouvrements.flatMap(r => r.split('/').map(Number)))],
-      recouvrements.slice(0, 20).join(', '))
+      'Parcelles qui se superposent : une même terre est déclarée deux fois.',
+      [...new Set(recouvrementsIdx)],
+      `Surfaces communes mesurées — ${recouvrements.slice(0, 20).join(' ; ')}`)
   }
 
   const surfaceTotaleHa = parcelles.reduce((s, p) => s + p.aireHa, 0)
