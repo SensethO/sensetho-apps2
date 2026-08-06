@@ -17,6 +17,36 @@ opposable au sens de l'article 12 du règlement (UE) 2023/1115.
 | Côte d'Ivoire, Ghana, Nigeria | **risque standard** — diligence complète, aucune simplification | référentiel pays du 22/05/2025 |
 | Kenya | **risque faible** — diligence simplifiée | idem |
 
+### Statut de Trading & Services : entreprise moyenne
+
+Une entreprise moyenne **est une PME** au sens de l'EUDR, qui renvoie à
+l'article 3 de la directive 2013/34/UE. Le seuil de la grande entreprise est
+franchi dès que deux des trois valeurs suivantes sont dépassées : **25 M€ de
+total de bilan, 50 M€ de chiffre d'affaires net, 250 salariés**.
+
+Il en découle un régime asymétrique qu'il faut avoir en tête :
+
+| | |
+|---|---|
+| Échéance d'application | **30 décembre 2026** — la plus précoce, comme les grandes entreprises |
+| Responsable conformité au niveau de la direction (art. 11(3)) | **non requis** |
+| Fonction d'audit indépendante (art. 11(3)) | **non requise** |
+| Rapport public annuel sur la diligence raisonnée (art. 12(3)) | **non requis** |
+| Système de diligence raisonnée formalisé (art. 12(1)) | **requis** |
+| Réexamen au moins annuel du système (art. 12(2)) | **requis** |
+| Articles 9, 10 et 11 pour les pays à risque standard | **requis intégralement** |
+
+Autrement dit : l'échéance est celle des grandes entreprises, les obligations de
+gouvernance sont celles des PME. Trois exigences que j'avais signalées comme
+obligatoires dans la version précédente de ce document ne le sont donc pas —
+elles restent de bonnes pratiques, à décider librement.
+
+⚠️ **Point de vigilance** : « moyenne » au sens courant ne coïncide pas
+forcément avec la définition comptable. Le franchissement de deux seuils sur
+trois fait basculer l'entreprise en grande entreprise et réactive les trois
+obligations ci-dessus. À faire confirmer par l'expert-comptable sur les derniers
+comptes clos.
+
 Le paquet de simplification du 4 mai 2026 n'a pas modifié le corps du règlement.
 L'acte délégué du 13 juillet 2026 a retouché l'annexe I : ajout du café soluble
 (conformité au 30/12/2027), exclusion du cuir et de quelques articles en
@@ -104,10 +134,12 @@ le classement change.
 ### 3.5 Le système de diligence raisonnée lui-même
 
 L'article 12 impose un système formalisé, **réexaminé au moins une fois par an**.
-S'y ajoute, pour les entreprises qui ne sont pas des PME, la désignation d'un
-responsable de la conformité et une fonction d'audit indépendante (art. 11(3)).
 La procédure décrit des activités ; il manque le document qui les gouverne, son
-propriétaire, et la preuve de son réexamen annuel.
+propriétaire nommé, et la preuve de son réexamen annuel.
+
+T&S étant une PME, le responsable conformité au niveau de la direction et la
+fonction d'audit indépendante de l'article 11(3) ne sont pas exigibles. Rien
+n'interdit de s'en doter, mais ce serait un choix, pas une contrainte.
 
 ### 3.6 Deux dates ne suffisent pas à couvrir 2020-aujourd'hui
 
@@ -157,9 +189,11 @@ démontrer, pas à promettre.
 
 ## 4. Séquence proposée
 
+Échéance retenue : **30 décembre 2026**. Il reste cinq mois au 1er août 2026.
+
 | Étape | Échéance | Livrable |
 |---|---|---|
-| Détermination de la catégorie de taille de T&S | immédiat | conditionne le 30/12/2026 ou le 30/06/2027 |
+| Confirmation comptable du statut PME | immédiat | fait basculer ou non vers les obligations art. 11(3) et 12(3) |
 | Système de diligence raisonnée formalisé (art. 12) | T+1 mois | document, propriétaire, revue annuelle |
 | Tri interne outillé | T+1 mois | contrôles du 3.7 dans l'application |
 | Contrat cadre avec l'expert déforestation | T+2 mois | périmètre, délais, format de preuve |
@@ -173,7 +207,7 @@ démontrer, pas à promettre.
 
 ## 5. Points ouverts
 
-- Catégorie de taille de Trading & Services au sens de l'article 38.
+- Confirmation comptable du statut PME sur les derniers comptes clos.
 - Volume et nombre de parcelles concernés par campagne.
 - Statut exact dans la chaîne : opérateur, mandataire, ou commerçant en aval —
   les obligations diffèrent.
