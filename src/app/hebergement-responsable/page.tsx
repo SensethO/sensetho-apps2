@@ -63,7 +63,7 @@ export default function HebergementResponsablePage() {
       {/* En-tête */}
       <header className="border-b border-gray-100 dark:border-gray-800">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="font-semibold" style={{ color: '#0e3d4d' }}>
+          <Link href="/" className="font-semibold text-[#0e3d4d] dark:text-teal-300">
             ← Sens&rsquo;ethO Apps
           </Link>
           <Link href="/catalogue" className="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
@@ -75,7 +75,7 @@ export default function HebergementResponsablePage() {
       {/* Hero */}
       <section className="py-16 text-center px-4">
         <div className="text-5xl mb-4">🌱</div>
-        <h1 className="text-3xl sm:text-4xl font-bold mb-4" style={{ color: '#0e3d4d' }}>
+        <h1 className="text-3xl sm:text-4xl font-bold mb-4 text-[#0e3d4d] dark:text-teal-300">
           Hébergement responsable
         </h1>
         <p className="mx-auto max-w-2xl text-gray-600 dark:text-gray-300">
@@ -94,13 +94,13 @@ export default function HebergementResponsablePage() {
               className="rounded-2xl border p-6"
               style={{ borderColor: 'rgba(14,61,77,0.15)', backgroundColor: 'rgba(14,61,77,0.03)' }}
             >
-              <h2 className="font-semibold text-lg mb-3 flex items-center gap-2" style={{ color: '#0e3d4d' }}>
+              <h2 className="font-semibold text-lg mb-3 flex items-center gap-2 text-[#0e3d4d] dark:text-teal-300">
                 <span className="text-2xl">{s.icon}</span> {s.titre}
               </h2>
               <ul className="space-y-2">
                 {s.points.map((p) => (
                   <li key={p} className="flex gap-2 text-sm text-gray-600 dark:text-gray-300">
-                    <span className="mt-0.5 flex-shrink-0" style={{ color: '#0e3d4d' }}>✓</span>
+                    <span className="mt-0.5 flex-shrink-0 text-[#0e3d4d] dark:text-teal-400">✓</span>
                     <span>{p}</span>
                   </li>
                 ))}
