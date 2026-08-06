@@ -156,6 +156,14 @@ export default function PolitiqueConfidentialitePage() {
               <p className="font-semibold text-gray-900 dark:text-white text-sm mb-1">📧 Microsoft Graph (emails)</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">Envoi de notifications email transactionnelles (confirmations, alertes administrateur).</p>
             </div>
+            <div className="rounded-xl border border-gray-100 dark:border-gray-800 p-4 bg-gray-50 dark:bg-gray-800/40">
+              <p className="font-semibold text-gray-900 dark:text-white text-sm mb-1">🤖 Anthropic (IA Claude)</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Fonctions d&apos;analyse à la demande (certificats d&apos;analyse, ventilation comptable de libellés bancaires). Les contenus transitent le temps de l&apos;appel, ne sont pas conservés et ne servent pas à entraîner des modèles.</p>
+            </div>
+            <div className="rounded-xl border border-gray-100 dark:border-gray-800 p-4 bg-gray-50 dark:bg-gray-800/40">
+              <p className="font-semibold text-gray-900 dark:text-white text-sm mb-1">🏦 Qonto (banque en ligne)</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Uniquement si vous connectez votre compte : lecture des transactions via l&apos;API Qonto avec les identifiants de votre organisation, stockés chiffrés (AES-256-GCM). Aucun ordre de paiement n&apos;est émis.</p>
+            </div>
           </div>
           <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
             Aucune donnée n&apos;est vendue à des tiers. Les transferts hors UE (Vercel) s&apos;effectuent
