@@ -9,7 +9,9 @@ const SITE = {
 }
 
 export default function PolitiqueConfidentialitePage() {
-  const today = new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' })
+  // Vraie date de révision (mise à jour à chaque évolution du document, jamais dynamique :
+  // une date « toujours du jour » masquerait les révisions réelles aux lecteurs).
+  const DERNIERE_REVISION = '6 août 2026' // sous-traitants Anthropic (IA) + Qonto (banque)
 
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 py-12">
@@ -277,7 +279,7 @@ export default function PolitiqueConfidentialitePage() {
         </section>
 
         <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-1">
-          <p className="text-xs text-gray-400">Dernière mise à jour : {today}</p>
+          <p className="text-xs text-gray-400">Dernière mise à jour : {DERNIERE_REVISION}</p>
           <p className="text-xs text-gray-400">
             Contact DPO :{' '}
             <a href={`mailto:${SITE.dpo_email}`} className="text-indigo-500 hover:underline">{SITE.dpo_email}</a>

@@ -17,6 +17,7 @@ const PUBLIC_ROUTES = [
   '/auth/signout',
   '/auth/callback',
   '/hebergement-responsable', // page publique : engagements d'hébergement
+  '/engagements-rse',         // page publique : engagements RSE de Sens'ethO
   '/enquete',           // page publique questionnaire parties prenantes
   '/api/pp-survey/',    // API publique données enquête
   '/api/pp-track/',     // tracking email (pixel + clic)

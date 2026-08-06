@@ -305,6 +305,13 @@ export default async function LandingPage() {
                   </div>
                 ))}
               </div>
+              <Link
+                href="/engagements-rse"
+                className="inline-block mt-6 text-sm font-semibold underline underline-offset-4 hover:opacity-70 transition-opacity"
+                style={{ color: '#0e3d4d' }}
+              >
+                Lire nos engagements en détail →
+              </Link>
             </div>
             <div className="grid grid-cols-2 gap-4">
               {[

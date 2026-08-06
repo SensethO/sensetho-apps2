@@ -8,6 +8,7 @@ import EudrTracesPanel from '@/components/apps/EudrTracesPanel'
 import EudrDocumentsModal from '@/components/apps/EudrDocumentsModal'
 import EudrCoaPanel from '@/components/apps/EudrCoaPanel'
 import EudrDeforestationPanel from '@/components/apps/EudrDeforestationPanel'
+import EudrScreeningPanel from '@/components/apps/EudrScreeningPanel'
 import EudrCrmPanel from '@/components/apps/EudrCrmPanel'
 import FollowUpJournal, { type JFollowUp } from '@/components/apps/FollowUpJournal'
 
@@ -83,7 +84,7 @@ interface Contract {
   notes: string | null
 }
 
-type TabKey = 'dashboard' | 'buyers' | 'suppliers' | 'contracts' | 'crm' | 'coa' | 'deforestation' | 'traces'
+type TabKey = 'dashboard' | 'buyers' | 'suppliers' | 'contracts' | 'crm' | 'coa' | 'screening' | 'deforestation' | 'traces'
 type Entity = 'buyers' | 'suppliers' | 'contracts'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -433,6 +434,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
     { key: 'contracts', label: '📄 Contrats' },
     { key: 'crm', label: '🤝 Relation (CRM)' },
     { key: 'coa', label: '🧪 Analyse COA' },
+    { key: 'screening', label: '🔎 Tri géodonnées' },
     { key: 'deforestation', label: '🌳 Risque déforestation' },
     { key: 'traces', label: '🇪🇺 EUDR / TRACES' },
   ]
@@ -504,6 +506,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
           )}
           {tab === 'crm' && <EudrCrmPanel orgId={orgId} canWrite={!ctx.isShared} suppliers={suppliers} buyers={buyers} onChanged={reload} />}
           {tab === 'coa' && <EudrCoaPanel orgId={orgId} canManage={!ctx.isShared} suppliers={suppliers} contracts={contracts} />}
+          {tab === 'screening' && <EudrScreeningPanel orgId={orgId} canWrite={!ctx.isShared} />}
           {tab === 'deforestation' && <EudrDeforestationPanel orgId={orgId} canWrite={!ctx.isShared} />}
           {tab === 'traces' && <EudrTracesPanel orgId={orgId} canManage={!ctx.isShared} suppliers={suppliers} contracts={contracts} />}
         </>
