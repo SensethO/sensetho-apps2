@@ -16,6 +16,7 @@ const PUBLIC_ROUTES = [
   '/auth/forgot-password',
   '/auth/signout',
   '/auth/callback',
+  '/hebergement-responsable', // page publique : engagements d'hébergement
   '/enquete',           // page publique questionnaire parties prenantes
   '/api/pp-survey/',    // API publique données enquête
   '/api/pp-track/',     // tracking email (pixel + clic)

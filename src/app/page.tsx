@@ -308,11 +308,23 @@ export default async function LandingPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               {[
-                { icon: '🔒', label: 'Données souveraines', desc: 'Hébergées en Europe, serveurs à énergie renouvelable' },
+                { icon: '🌱', label: 'Hébergement responsable', desc: 'Serveurs à Paris, vos documents restent dans votre SharePoint — voir nos engagements', href: '/hebergement-responsable' },
                 { icon: '🏢', label: 'Multi-organisations', desc: 'Cabinets, groupes, réseaux — un seul compte' },
                 { icon: '📤', label: 'Export & partage', desc: 'PDF, Excel et SharePoint en un clic' },
                 { icon: '💶', label: 'Accessible aux TPE/PME', desc: 'Coûts réduits au maximum, en autonomie' },
               ].map((item) => (
+                item.href ? (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className="rounded-2xl p-5 border block transition-shadow hover:shadow-md"
+                    style={{ borderColor: 'rgba(14,61,77,0.15)', backgroundColor: 'rgba(14,61,77,0.03)' }}
+                  >
+                    <div className="text-2xl mb-2">{item.icon}</div>
+                    <div className="font-semibold text-sm mb-1" style={{ color: '#0e3d4d' }}>{item.label} →</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{item.desc}</div>
+                  </Link>
+                ) : (
                 <div
                   key={item.label}
                   className="rounded-2xl p-5 border"
@@ -322,6 +334,7 @@ export default async function LandingPage() {
                   <div className="font-semibold text-sm mb-1" style={{ color: '#0e3d4d' }}>{item.label}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">{item.desc}</div>
                 </div>
+                )
               ))}
             </div>
           </div>
