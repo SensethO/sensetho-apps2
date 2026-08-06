@@ -423,10 +423,10 @@ export default async function LandingPage() {
               <div>
                 <h3 className="font-bold text-lg" style={{ color: '#0e3d4d' }}>Hébergement responsable</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
-                  Nos données sont hébergées en Europe chez Vercel et Supabase. Datacenters certifiés ISO 14001 et engagés sur la neutralité carbone.
+                  Vos données sont hébergées à Paris chez Vercel et Supabase, vos documents restent dans votre SharePoint. Datacenters certifiés ISO 14001 et engagés sur la décarbonation.
                 </p>
                 <div className="flex flex-wrap gap-2 mt-3">
-                  {['🇪🇺 Données en Europe', 'ISO 14001', 'Carbon Neutral', 'RGPD'].map(badge => (
+                  {['🇫🇷 Données en France', 'ISO 14001', 'Carbon Negative 2030', 'RGPD'].map(badge => (
                     <span
                       key={badge}
                       className="text-xs font-medium px-2.5 py-1 rounded-full border"
@@ -438,15 +438,13 @@ export default async function LandingPage() {
                 </div>
               </div>
             </div>
-            <a
-              href="https://www.sensetho.com"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href="/hebergement-responsable"
               className="flex-shrink-0 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all hover:opacity-80 border"
               style={{ borderColor: 'rgba(14,61,77,0.25)', color: '#0e3d4d', backgroundColor: 'rgba(14,61,77,0.05)' }}
             >
               En savoir plus →
-            </a>
+            </Link>
           </div>
         </div>
       </section>
