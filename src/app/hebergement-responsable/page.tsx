@@ -13,10 +13,10 @@ export const metadata: Metadata = {
 const SECTIONS = [
   {
     icon: '📍',
-    titre: 'Vos données sont hébergées en Europe',
+    titre: 'Vos données sont hébergées en France',
     points: [
       'Les pages et fonctions de la plateforme s\'exécutent chez Vercel dans la région Paris (cdg1).',
-      'La base de données PostgreSQL est opérée par Supabase dans l\'Union européenne.',
+      'La base de données PostgreSQL est opérée par Supabase à Paris (région AWS eu-west-3).',
       'Vos documents (factures, justificatifs, annexes, certificats) ne sont jamais stockés chez nous : ils restent dans le SharePoint Microsoft 365 de votre organisation, sous votre contrat et votre gouvernance.',
     ],
   },
@@ -109,7 +109,7 @@ export default function HebergementResponsablePage() {
           ))}
 
           <p className="text-xs text-gray-400 dark:text-gray-500 text-center pt-4">
-            Nos fournisseurs : Vercel (hébergement applicatif, région Paris) · Supabase (base de données PostgreSQL) ·
+            Nos fournisseurs : Vercel (hébergement applicatif, région Paris) · Supabase (base de données PostgreSQL, Paris) ·
             Microsoft 365 (documents, dans votre tenant) · Anthropic (IA, sans conservation).
             Des questions sur nos choix d&rsquo;hébergement ? Écrivez-nous via la page{' '}
             <Link href="/catalogue" className="underline hover:text-gray-600">catalogue</Link> ou consultez la{' '}
