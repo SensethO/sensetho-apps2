@@ -90,12 +90,27 @@ Une personne nommée porte le dispositif et son réexamen annuel. Elle n'a pas
 besoin d'être membre de la direction, l'article 11(3) ne s'appliquant pas.
 
 Une règle de séparation est en revanche indispensable, et elle ne coûte rien :
-**le représentant local audite, conseille et suit les plans d'action ; il ne
-décide jamais d'un achat ou d'un blocage.** La décision revient au siège, sur
-pièces. Sans cette séparation, la posture d'accompagnement — qui est la valeur
-de l'approche retenue — finira par éroder la capacité à dire non.
+**le représentant local vérifie les documents, conduit les audits terrain et
+suit les plans d'action ; il ne décide jamais d'un achat ou d'un blocage.**
 
-Fonctions associées : Achats, Qualité, RSE, Direction, représentation locale.
+| Acteur | Responsabilités | Ne fait pas |
+|---|---|---|
+| Achats et Direction | Décision d'achat, décision de blocage, relation fournisseur, volumes, contrats | Instruction technique du dossier |
+| Conformité — siège | Système de diligence, instruction, avis de conformité, dépôt de la DDS, réexamen annuel, 5 visites inopinées par an | Décision d'achat ou de blocage |
+| Représentant local | Vérification documentaire, 12 audits terrain par an, accompagnement, suivi des plans d'action | Décision d'achat ou de blocage |
+| Prestataire déforestation | Analyse probatoire par parcelle, méthodologie documentée | Reprise de responsabilité réglementaire |
+| Application interne | Tri automatique, journalisation, blocages techniques, export | Preuve de conformité |
+
+⚠️ **Garde-fou sur la décision.** Confier à la fonction commerciale le pouvoir
+d'arbitrer un refus de conformité crée un conflit d'intérêts que tout auditeur
+relèvera : les Achats ont un intérêt direct à continuer d'acheter. La
+participation de la Direction atténue ce risque sans le supprimer.
+
+Dispositif retenu : la conformité émet un **avis écrit** sur chaque dossier ; un
+avis défavorable ne peut être écarté que par une décision de la Direction,
+**motivée par écrit, signée, versée au dossier et conservée cinq ans**. Cela
+préserve l'organisation choisie tout en laissant une trace opposable de qui a
+décidé quoi.
 
 ---
 
@@ -246,14 +261,19 @@ renforcée, suspension, exclusion de parcelles, refus du fournisseur.
 
 ## 9. Audits terrain
 
-Douze audits annuels par les représentants locaux, cinq visites inopinées par le
-siège. Le volume est bon ; **la règle de sélection doit être pilotée par le
-risque et non par le calendrier** :
+| | Audits locaux — 12 par an | Visites du siège — 5 parcelles, 1 fois par an |
+|---|---|---|
+| Logique | **Pilotée par le risque** | **Tirage au sort** |
+| Cherche à | Couvrir les risques identifiés | Détecter ce que la notation ne voit pas |
+| Sélection | 100 % des parcelles à risque élevé ou critique, puis pourcentage du volume acheté, puis tirage documenté pour le solde | Tirage aléatoire sur tout le portefeuille, fournisseurs jugés sûrs compris |
+| Annonce | Préparé avec les parties prenantes | Sans préavis |
 
-- 100 % des parcelles classées à risque élevé ou critique ;
-- un pourcentage du volume acheté, et non un nombre de parcelles ;
-- tirage aléatoire documenté pour le reste ;
-- fréquence renforcée sur tout fournisseur déjà sous plan d'action.
+Les deux ne cherchent pas la même chose, et c'est ce qui fait leur
+complémentarité. Une sélection uniquement pilotée par le risque ne contrôle
+jamais ce que le système croit sûr : si la notation se trompe, l'erreur ne se
+découvre pas. Le tirage au sort annuel du siège couvre précisément cet angle
+mort. À l'inverse, tirer au sort les douze audits locaux gaspillerait
+l'essentiel de l'effort.
 
 Ces audits valident **le système du fournisseur**, pas ses parcelles une à une.
 L'assurance parcellaire vient du satellite et des documents. Les deux ne se
