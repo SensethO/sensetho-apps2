@@ -31,6 +31,7 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
   const [occupe, setOccupe] = useState<string | null>(null)
   const [ouvert, setOuvert] = useState<string | null>(null)
   const [erreur, setErreur] = useState('')
+  const [verse, setVerse] = useState<Record<string, string>>({})
 
   const charger = useCallback(async () => {
     const res = await fetch(`/api/eudr-fournisseurs/screening?org_id=${orgId}`)
@@ -54,6 +55,24 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
     if (!res.ok) { setErreur(j.error ?? `Erreur ${res.status}`); return }
     setTris(t => ({ ...t, [doc.id]: j.tri }))
     setOuvert(doc.id)
+  }
+
+  /** Verse les parcelles du fichier au référentiel, socle de la traçabilité. */
+  async function verser(doc: Doc) {
+    setOccupe(doc.id); setErreur('')
+    const res = await fetch('/api/eudr-fournisseurs/plots', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_id: orgId, attachmentId: doc.id }),
+    })
+    const j = await res.json().catch(() => ({}))
+    setOccupe(null)
+    if (!res.ok) { setErreur(j.error ?? `Erreur ${res.status}`); return }
+    const alerte = (j.doublonsInterFournisseurs ?? []).length
+    setVerse(v => ({
+      ...v,
+      [doc.id]: `${j.versees} parcelle(s) versée(s), ${j.surfaceHa} ha`
+        + (alerte ? ` — ⚠️ ${alerte} contour(s) déclaré(s) par plusieurs fournisseurs` : ''),
+    }))
   }
 
   /** Message prêt à envoyer au fournisseur, listant ce qui doit être corrigé. */
@@ -113,6 +132,9 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
                   ) : (
                     <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Jamais trié</p>
                   )}
+                  {verse[doc.id] && (
+                    <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">{verse[doc.id]}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {tri && (
@@ -128,6 +150,14 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
                     <button className="text-xs text-gray-500 hover:underline"
                       onClick={() => setOuvert(ouvert === doc.id ? null : doc.id)}>
                       {ouvert === doc.id ? 'Masquer' : 'Détail'}
+                    </button>
+                  )}
+                  {canWrite && tri?.exploitable && (
+                    <button
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                      onClick={() => verser(doc)} disabled={occupe === doc.id}
+                      title="Enregistre les parcelles au référentiel : identité stable, surfaces, détection des contours déclarés deux fois">
+                      Verser au référentiel
                     </button>
                   )}
                   {canWrite && (

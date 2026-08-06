@@ -26,6 +26,25 @@ export interface OptionsTri {
   surfaceMaxPlausibleHa?: number
 }
 
+/** Données d'une parcelle destinées au référentiel, hors géométrie complète. */
+export interface FicheParcelle {
+  featureIndex: number
+  plotRef: string | null
+  producerName: string | null
+  commodity: string | null
+  country: string | null
+  geometryType: string
+  declaredAreaHa: number | null
+  computedAreaHa: number
+  centroidLon: number | null
+  centroidLat: number | null
+  bbox: [number, number, number, number] | null
+  /** Empreinte du contour : détecte un contour identique entre deux fichiers. */
+  geomHash: string | null
+  surveyDate: string | null
+  surveySource: string | null
+}
+
 export interface RapportTri {
   lisible: boolean
   nbParcelles: number
@@ -33,6 +52,8 @@ export interface RapportTri {
   constats: Constat[]
   /** Vrai si aucun constat bloquant : le fichier peut partir en expertise. */
   exploitable: boolean
+  /** Une fiche par parcelle, prête à verser au référentiel. */
+  fiches: FicheParcelle[]
 }
 
 // Emprises grossières des pays d'approvisionnement. Elles ne remplacent pas un
@@ -165,9 +186,11 @@ function extraire(features: unknown[]): Parcelle[] {
       if (typeof x !== 'number' || typeof y !== 'number') return vide
       return { index, type: 'Point', anneaux: [], trous: 0, point: [x, y], aireHa: 0, bbox: [x, y, x, y] }
     }
+    // GeoJSON : un Polygon porte des anneaux, un MultiPolygon porte des polygones.
+    // On ramène les deux à une liste de polygones, chacun étant une liste d'anneaux.
     const polys: Anneau[][] = type === 'Polygon'
       ? [g.coordinates as Anneau[]]
-      : type === 'MultiPolygon' ? (g.coordinates as Anneau[][][]).map(p => p) : []
+      : type === 'MultiPolygon' ? (g.coordinates as Anneau[][]) : []
     if (!polys.length) return vide
 
     const anneaux = polys.map(p => p[0]).filter(Array.isArray)
@@ -178,6 +201,52 @@ function extraire(features: unknown[]): Parcelle[] {
       bbox: bboxDe(anneaux.flat()),
     }
   })
+}
+
+/** Première valeur non vide parmi une liste de clés, insensible à la casse. */
+function propriete(props: Record<string, unknown>, cles: string[]): string | null {
+  const index = new Map(Object.keys(props).map(k => [k.toLowerCase().replace(/[\s_-]/g, ''), k]))
+  for (const cle of cles) {
+    const reel = index.get(cle.toLowerCase().replace(/[\s_-]/g, ''))
+    const v = reel ? props[reel] : undefined
+    if (v != null && String(v).trim() !== '') return String(v).trim()
+  }
+  return null
+}
+
+/**
+ * Fiche destinée au référentiel. La géométrie complète n'y figure pas : le
+ * fichier source reste sur SharePoint et fait foi. Seules les valeurs dérivées
+ * nécessaires aux contrôles sont retenues.
+ */
+function ficheDe(p: Parcelle, feature: unknown, options: OptionsTri): FicheParcelle {
+  const props = ((feature as { properties?: Record<string, unknown> })?.properties ?? {}) as Record<string, unknown>
+  const sommets = p.point ? [p.point as number[]] : p.anneaux.flat()
+  const centroide = sommets.length
+    ? sommets.reduce((a, [x, y]) => [a[0] + x / sommets.length, a[1] + y / sommets.length], [0, 0])
+    : null
+  const declaree = options.surfacesDeclarees?.[p.index]
+    ?? (propriete(props, ['area', 'superficie', 'surface', 'areaha', 'surfaceha']) !== null
+      ? Number(propriete(props, ['area', 'superficie', 'surface', 'areaha', 'surfaceha'])) || null
+      : null)
+
+  return {
+    featureIndex: p.index,
+    plotRef: propriete(props, ['plotid', 'plotref', 'id', 'parcelle', 'refparcelle', 'code']),
+    producerName: propriete(props, ['producer', 'producteur', 'farmer', 'exploitant', 'name', 'nom']),
+    commodity: propriete(props, ['commodity', 'culture', 'crop', 'produit']),
+    country: propriete(props, ['country', 'pays', 'countrycode']) ?? options.paysDeclare ?? null,
+    geometryType: p.type,
+    declaredAreaHa: declaree,
+    computedAreaHa: +p.aireHa.toFixed(4),
+    centroidLon: centroide ? +centroide[0].toFixed(6) : null,
+    centroidLat: centroide ? +centroide[1].toFixed(6) : null,
+    bbox: p.anneaux.length || p.point ? p.bbox : null,
+    // Empreinte du premier anneau : suffit à repérer un contour recopié.
+    geomHash: p.anneaux.length ? empreinte(p.anneaux[0]).slice(0, 200) : null,
+    surveyDate: propriete(props, ['surveydate', 'datereleve', 'date', 'collectiondate']),
+    surveySource: propriete(props, ['surveysource', 'sourcereleve', 'source', 'method', 'methode']),
+  }
 }
 
 /**
@@ -193,14 +262,14 @@ export function trierGeojson(brut: unknown, options: OptionsTri = {}): RapportTr
   const fc = brut as { type?: string; features?: unknown[]; crs?: { properties?: { name?: string } } } | null
   if (!fc || typeof fc !== 'object' || !Array.isArray(fc.features)) {
     ajouter('FICHIER_ILLISIBLE', 'bloquant', 'Le fichier n’est pas une collection GeoJSON exploitable.')
-    return { lisible: false, nbParcelles: 0, surfaceTotaleHa: 0, constats, exploitable: false }
+    return { lisible: false, nbParcelles: 0, surfaceTotaleHa: 0, constats, exploitable: false, fiches: [] }
   }
   if (fc.type !== 'FeatureCollection') {
     ajouter('TYPE_INATTENDU', 'alerte', `Type racine « ${fc.type ?? 'absent'} » au lieu de FeatureCollection.`)
   }
   if (!fc.features.length) {
     ajouter('AUCUNE_PARCELLE', 'bloquant', 'Le fichier ne contient aucune parcelle.')
-    return { lisible: true, nbParcelles: 0, surfaceTotaleHa: 0, constats, exploitable: false }
+    return { lisible: true, nbParcelles: 0, surfaceTotaleHa: 0, constats, exploitable: false, fiches: [] }
   }
 
   // Un CRS déclaré autre que WGS84 fausserait toutes les surfaces.
@@ -333,11 +402,14 @@ export function trierGeojson(brut: unknown, options: OptionsTri = {}): RapportTr
   }
 
   const surfaceTotaleHa = parcelles.reduce((s, p) => s + p.aireHa, 0)
+  const fiches = parcelles.map((p, i) => ficheDe(p, (fc.features as unknown[])[i], options))
+
   return {
     lisible: true,
     nbParcelles: parcelles.length,
     surfaceTotaleHa: +surfaceTotaleHa.toFixed(4),
     constats,
     exploitable: !constats.some(c => c.gravite === 'bloquant'),
+    fiches,
   }
 }
