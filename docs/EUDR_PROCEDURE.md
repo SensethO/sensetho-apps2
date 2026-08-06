@@ -304,7 +304,9 @@ juridique.
 
 ---
 
-## 10. Corruption
+## 10. Intégrité des tiers et prévention de la corruption
+
+### 10.1 Conduite sur le terrain
 
 Règle écrite, sans exception : aucun paiement de facilitation, quelle que soit
 la pratique locale. Remontée immédiate au siège. Consignation dans un registre
@@ -313,6 +315,57 @@ de vigilance corruption et conflits d'intérêts.
 Pour une société française, la loi Sapin II s'applique en parallèle. Un paiement
 destiné à obtenir l'authentification d'un document serait à la fois une
 infraction Sapin II et un défaut de légalité au sens de l'article 2(40).
+
+### 10.2 Criblage des tiers
+
+Une règle de conduite dit comment se comporter face à une sollicitation. Elle ne
+dit rien de la question préalable : **à qui achetons-nous ?** Sapin II impose une
+évaluation des tiers, et l'article 2(40) range la lutte anticorruption dans la
+légalité. Le criblage est exigible aux deux titres.
+
+| Vérification | Portée | Fréquence |
+|---|---|---|
+| Listes de sanctions | UE, ONU, OFAC — entité et dirigeants | Entrée en relation, puis annuelle |
+| Personnes politiquement exposées | Dirigeants et bénéficiaires effectifs | Entrée en relation, puis annuelle |
+| Presse défavorable | Recherche documentée | Entrée en relation, puis annuelle |
+| Bénéficiaires effectifs | Chaîne de détention jusqu'aux personnes physiques | Entrée en relation, puis si changement |
+| Dirigeants et mandataires | Identité et fonctions | Entrée en relation, puis si changement |
+| Existence légale | Registre du commerce du pays | Entrée en relation, puis annuelle |
+
+**Dimensionner l'outil au portefeuille.** Les grands négociants utilisent des
+plateformes à plusieurs dizaines de milliers d'euros par an, justifiées par des
+milliers de tiers. Pour dix-huit fournisseurs, ce serait disproportionné. Une
+base ouverte de sanctions et de personnes politiquement exposées, interrogée par
+API depuis l'application, couvre l'essentiel pour un coût marginal ; les
+registres du commerce nationaux et une recherche de presse documentée
+complètent. Le représentant local vérifie l'existence légale sur place.
+
+Ce qui compte devant un contrôle n'est pas la marque de l'outil mais la preuve
+que la vérification a eu lieu, à quelle date, sur quelles listes, et ce qu'elle a
+donné. Chaque criblage est horodaté et conservé cinq ans. Une correspondance
+positive déclenche une revue documentée avant toute décision d'achat.
+
+### 10.3 Code de conduite fournisseur
+
+Document distinct du contrat commercial, adressé pour signature. Il énonce les
+exigences sur la déforestation, la légalité foncière, les droits du travail,
+l'interdiction du travail des enfants, la lutte contre la corruption, et le
+droit d'audit de Trading & Services.
+
+Indicateur de pilotage : le taux de signature **en pourcentage du tonnage
+acheté**, non en nombre de fournisseurs. Un refus de signer fait l'objet d'une
+décision explicite, motivée et journalisée.
+
+### 10.4 Dispositif d'alerte
+
+Canal ouvert aux salariés, représentants locaux, fournisseurs, producteurs et
+tiers, pour signaler corruption, atteinte aux droits humains, travail d'enfants
+ou incident de déforestation. Signalement possiblement anonyme, auteur protégé
+contre toute rétorsion, traitement journalisé.
+
+Sapin II l'impose au-delà de cinquante salariés. Au-delà de l'obligation, c'est
+le seul canal par lequel une information défavorable peut remonter en dehors des
+circuits que vous contrôlez déjà.
 
 ---
 
