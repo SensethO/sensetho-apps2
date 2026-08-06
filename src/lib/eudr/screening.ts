@@ -1,0 +1,343 @@
+// Tri automatique des fichiers de géolocalisation EUDR.
+//
+// Ce module ne prouve rien. Il écarte vite les fichiers inexploitables et
+// signale les incohérences qui justifient une demande de révision au
+// fournisseur, avant d'engager les frais d'une expertise satellite externe.
+// La preuve de non-déforestation reste du ressort de l'expert ; les constats
+// produits ici sont des indices de qualité documentaire.
+
+export type Gravite = 'bloquant' | 'alerte' | 'information'
+
+export interface Constat {
+  code: string
+  gravite: Gravite
+  libelle: string
+  /** Index des parcelles concernées dans le fichier, vide si le constat porte sur l'ensemble. */
+  parcelles: number[]
+  detail?: string
+}
+
+export interface OptionsTri {
+  /** Code pays ISO 3166-1 alpha-2 déclaré pour le lot. */
+  paysDeclare?: string
+  /** Surfaces déclarées par le fournisseur, en hectares, dans l'ordre des parcelles. */
+  surfacesDeclarees?: (number | null)[]
+  /** Surface maximale plausible pour une exploitation familiale, en hectares. */
+  surfaceMaxPlausibleHa?: number
+}
+
+export interface RapportTri {
+  lisible: boolean
+  nbParcelles: number
+  surfaceTotaleHa: number
+  constats: Constat[]
+  /** Vrai si aucun constat bloquant : le fichier peut partir en expertise. */
+  exploitable: boolean
+}
+
+// Emprises grossières des pays d'approvisionnement. Elles ne remplacent pas un
+// test point-dans-polygone : elles attrapent l'erreur grossière — coordonnées
+// inversées, signe manquant, parcelle sur un autre continent.
+const EMPRISES: Record<string, [number, number, number, number]> = {
+  CI: [-8.60, 4.35, -2.49, 10.74],   // Côte d'Ivoire
+  GH: [-3.26, 4.74, 1.20, 11.17],    // Ghana
+  NG: [2.67, 4.27, 14.68, 13.89],    // Nigeria
+  KE: [33.91, -4.68, 41.91, 5.51],   // Kenya
+  CM: [8.49, 1.65, 16.19, 13.08],    // Cameroun
+  EC: [-81.08, -5.01, -75.19, 1.44], // Équateur
+  PE: [-81.33, -18.35, -68.65, -0.04], // Pérou
+  BR: [-73.99, -33.75, -34.79, 5.27],  // Brésil
+}
+
+const SEUIL_POLYGONE_HA = 4      // au-delà, le polygone est obligatoire (art. 9)
+const DECIMALES_MINIMUM = 6      // précision exigée (art. 9)
+const R_TERRE_M = 6_378_137
+
+type Anneau = number[][]
+interface Parcelle {
+  index: number
+  type: 'Polygon' | 'MultiPolygon' | 'Point' | 'autre'
+  anneaux: Anneau[]        // anneaux extérieurs uniquement
+  trous: number            // nombre d'anneaux intérieurs
+  point?: [number, number]
+  aireHa: number
+  bbox: [number, number, number, number]
+}
+
+/** Aire géodésique d'un anneau, en hectares (excès sphérique). */
+function aireAnneauHa(anneau: Anneau): number {
+  if (anneau.length < 4) return 0
+  const rad = (d: number) => (d * Math.PI) / 180
+  let somme = 0
+  for (let i = 0; i < anneau.length - 1; i++) {
+    const [x1, y1] = anneau[i]
+    const [x2, y2] = anneau[i + 1]
+    somme += (rad(x2) - rad(x1)) * (2 + Math.sin(rad(y1)) + Math.sin(rad(y2)))
+  }
+  return Math.abs((somme * R_TERRE_M * R_TERRE_M) / 2) / 10_000
+}
+
+function bboxDe(points: number[][]): [number, number, number, number] {
+  let minx = 180, miny = 90, maxx = -180, maxy = -90
+  for (const [x, y] of points) {
+    if (x < minx) minx = x; if (x > maxx) maxx = x
+    if (y < miny) miny = y; if (y > maxy) maxy = y
+  }
+  return [minx, miny, maxx, maxy]
+}
+
+const seChevauchent = (a: [number, number, number, number], b: [number, number, number, number]) =>
+  a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
+
+/**
+ * Nombre de décimales de la partie fractionnaire.
+ *
+ * ⚠️ Ne jamais tester cette valeur coordonnée par coordonnée pour juger de la
+ * précision : JavaScript supprime les zéros de fin, si bien qu'une coordonnée
+ * légitime à -6,731700 redevient -6,7317 et paraît tronquée. Le contrôle se
+ * fait sur le maximum observé dans tout le fichier — des données réellement
+ * arrondies au millième n'auront nulle part plus de trois décimales, alors
+ * qu'un relevé GPS en produira six ou davantage sur la quasi-totalité des
+ * points.
+ */
+function decimales(n: number): number {
+  const s = String(n)
+  const i = s.indexOf('.')
+  return i < 0 ? 0 : Math.min(s.length - i - 1, 15)
+}
+
+/** Deux segments se croisent-ils ailleurs qu'à leurs extrémités ? */
+function segmentsSeCroisent(p1: number[], p2: number[], p3: number[], p4: number[]): boolean {
+  const d = (a: number[], b: number[], c: number[]) =>
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+  const d1 = d(p3, p4, p1), d2 = d(p3, p4, p2), d3 = d(p1, p2, p3), d4 = d(p1, p2, p4)
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+}
+
+function anneauSAutoIntersecte(anneau: Anneau): boolean {
+  const n = anneau.length - 1
+  // Au-delà de quelques centaines de sommets le test quadratique coûte cher ;
+  // les fichiers EUDR sont simplifiés bien en deçà.
+  if (n > 600) return false
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue // segments adjacents par fermeture
+      if (segmentsSeCroisent(anneau[i], anneau[i + 1], anneau[j], anneau[j + 1])) return true
+    }
+  }
+  return false
+}
+
+/** Un point est-il dans un anneau ? (lancer de rayon) */
+function pointDansAnneau(x: number, y: number, anneau: Anneau): boolean {
+  let dedans = false
+  for (let i = 0, j = anneau.length - 1; i < anneau.length; j = i++) {
+    const [xi, yi] = anneau[i], [xj, yj] = anneau[j]
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dedans = !dedans
+  }
+  return dedans
+}
+
+/** Deux anneaux se recouvrent-ils ? Croisement d'arêtes, ou inclusion. */
+function anneauxSeRecouvrent(a: Anneau, b: Anneau): boolean {
+  for (let i = 0; i < a.length - 1; i++) {
+    for (let j = 0; j < b.length - 1; j++) {
+      if (segmentsSeCroisent(a[i], a[i + 1], b[j], b[j + 1])) return true
+    }
+  }
+  return pointDansAnneau(a[0][0], a[0][1], b) || pointDansAnneau(b[0][0], b[0][1], a)
+}
+
+/** Empreinte d'un anneau, pour détecter les polygones identiques. */
+function empreinte(anneau: Anneau): string {
+  return anneau.map(([x, y]) => `${x.toFixed(5)},${y.toFixed(5)}`).sort().join(';')
+}
+
+function extraire(features: unknown[]): Parcelle[] {
+  return features.map((f, index) => {
+    const g = (f as { geometry?: { type?: string; coordinates?: unknown } })?.geometry
+    const type = g?.type
+    const vide: Parcelle = { index, type: 'autre', anneaux: [], trous: 0, aireHa: 0, bbox: [0, 0, 0, 0] }
+    if (!g || !Array.isArray(g.coordinates)) return vide
+
+    if (type === 'Point') {
+      const [x, y] = g.coordinates as number[]
+      if (typeof x !== 'number' || typeof y !== 'number') return vide
+      return { index, type: 'Point', anneaux: [], trous: 0, point: [x, y], aireHa: 0, bbox: [x, y, x, y] }
+    }
+    const polys: Anneau[][] = type === 'Polygon'
+      ? [g.coordinates as Anneau[]]
+      : type === 'MultiPolygon' ? (g.coordinates as Anneau[][][]).map(p => p) : []
+    if (!polys.length) return vide
+
+    const anneaux = polys.map(p => p[0]).filter(Array.isArray)
+    const trous = polys.reduce((n, p) => n + Math.max(0, p.length - 1), 0)
+    const aireHa = anneaux.reduce((s, a) => s + aireAnneauHa(a), 0)
+    return {
+      index, type: type as 'Polygon' | 'MultiPolygon', anneaux, trous, aireHa,
+      bbox: bboxDe(anneaux.flat()),
+    }
+  })
+}
+
+/**
+ * Passe l'ensemble des contrôles automatiques sur un fichier de géolocalisation.
+ * Le fichier est réputé exploitable en l'absence de constat bloquant.
+ */
+export function trierGeojson(brut: unknown, options: OptionsTri = {}): RapportTri {
+  const constats: Constat[] = []
+  const ajouter = (code: string, gravite: Gravite, libelle: string, parcelles: number[] = [], detail?: string) =>
+    constats.push({ code, gravite, libelle, parcelles, detail })
+
+  // — Structure du fichier
+  const fc = brut as { type?: string; features?: unknown[]; crs?: { properties?: { name?: string } } } | null
+  if (!fc || typeof fc !== 'object' || !Array.isArray(fc.features)) {
+    ajouter('FICHIER_ILLISIBLE', 'bloquant', 'Le fichier n’est pas une collection GeoJSON exploitable.')
+    return { lisible: false, nbParcelles: 0, surfaceTotaleHa: 0, constats, exploitable: false }
+  }
+  if (fc.type !== 'FeatureCollection') {
+    ajouter('TYPE_INATTENDU', 'alerte', `Type racine « ${fc.type ?? 'absent'} » au lieu de FeatureCollection.`)
+  }
+  if (!fc.features.length) {
+    ajouter('AUCUNE_PARCELLE', 'bloquant', 'Le fichier ne contient aucune parcelle.')
+    return { lisible: true, nbParcelles: 0, surfaceTotaleHa: 0, constats, exploitable: false }
+  }
+
+  // Un CRS déclaré autre que WGS84 fausserait toutes les surfaces.
+  const crs = fc.crs?.properties?.name
+  if (crs && !/CRS84|4326/i.test(crs)) {
+    ajouter('CRS_NON_WGS84', 'bloquant', `Système de coordonnées déclaré « ${crs} » au lieu de WGS84 (EPSG:4326).`)
+  }
+
+  const parcelles = extraire(fc.features)
+  const surfaceMax = options.surfaceMaxPlausibleHa ?? 100
+
+  // — Contrôles parcelle par parcelle
+  const sansGeometrie: number[] = [], precisionFaible: number[] = [], pointsImprecis: number[] = [], nonFermes: number[] = []
+  const autoIntersect: number[] = [], dupliquesSommets: number[] = [], avecTrous: number[] = []
+  const horsPays: number[] = [], pointTropGrand: number[] = [], minuscules: number[] = []
+  const enormes: number[] = [], ecartSurface: number[] = []
+
+  const emprise = options.paysDeclare ? EMPRISES[options.paysDeclare.toUpperCase()] : undefined
+  let decimalesMax = 0
+
+  for (const p of parcelles) {
+    if (p.type === 'autre' || (!p.anneaux.length && !p.point)) { sansGeometrie.push(p.index); continue }
+
+    const sommets = p.point ? [p.point as number[]] : p.anneaux.flat()
+
+    // Maximum par parcelle, jamais par coordonnée : un relevé à six décimales
+    // produit forcément un sommet dont la sixième n'est pas nulle, alors qu'une
+    // coordonnée isolée peut légitimement finir par des zéros.
+    let maxParcelle = 0
+    for (const [x, y] of sommets) {
+      maxParcelle = Math.max(maxParcelle, decimales(x), decimales(y))
+    }
+    decimalesMax = Math.max(decimalesMax, maxParcelle)
+    // Le raisonnement ci-dessus tient sur un polygone — dix coordonnées ou plus,
+    // la probabilité qu'elles finissent toutes par un zéro est nulle. Sur un
+    // point unique elle vaut 1 %, ce qui produirait des rejets injustifiés :
+    // les points sont donc jugés plus loin, sur la précision globale du fichier.
+    if (maxParcelle < DECIMALES_MINIMUM) {
+      if (p.type === 'Point') pointsImprecis.push(p.index)
+      else precisionFaible.push(p.index)
+    }
+    if (sommets.some(([x, y]) => Math.abs(x) > 180 || Math.abs(y) > 90)) {
+      ajouter('COORDONNEES_INVALIDES', 'bloquant', 'Coordonnées hors des bornes terrestres.', [p.index])
+    }
+    if (emprise && sommets.some(([x, y]) =>
+      x < emprise[0] || x > emprise[2] || y < emprise[1] || y > emprise[3])) {
+      horsPays.push(p.index)
+    }
+
+    for (const a of p.anneaux) {
+      const [x0, y0] = a[0], [xn, yn] = a[a.length - 1]
+      if (x0 !== xn || y0 !== yn) { nonFermes.push(p.index); break }
+    }
+    if (p.anneaux.some(a => a.some((s, i) => i > 0 && s[0] === a[i - 1][0] && s[1] === a[i - 1][1]))) {
+      dupliquesSommets.push(p.index)
+    }
+    if (p.anneaux.some(anneauSAutoIntersecte)) autoIntersect.push(p.index)
+    if (p.trous > 0) avecTrous.push(p.index)
+
+    const declaree = options.surfacesDeclarees?.[p.index] ?? null
+    if (p.type === 'Point' && declaree != null && declaree > SEUIL_POLYGONE_HA) {
+      pointTropGrand.push(p.index)
+    }
+    if (p.aireHa > 0 && p.aireHa < 0.01) minuscules.push(p.index)
+    if (p.aireHa > surfaceMax) enormes.push(p.index)
+    if (declaree != null && declaree > 0 && p.aireHa > 0) {
+      const ecart = Math.abs(p.aireHa - declaree) / declaree
+      if (ecart > 0.20) ecartSurface.push(p.index)
+    }
+  }
+
+  if (sansGeometrie.length) ajouter('GEOMETRIE_ABSENTE', 'bloquant', 'Parcelles sans géométrie exploitable.', sansGeometrie)
+  // Un point n'est mis en cause que si tout le fichier est grossier : si des
+  // polygones voisins portent six décimales, la source est fiable et le point
+  // se termine simplement par des zéros.
+  if (pointsImprecis.length && decimalesMax < DECIMALES_MINIMUM) {
+    precisionFaible.push(...pointsImprecis)
+  }
+  if (precisionFaible.length) {
+    const pire = Math.min(...precisionFaible.map(i => {
+      const s = parcelles[i].point ? [parcelles[i].point as number[]] : parcelles[i].anneaux.flat()
+      return Math.max(...s.flatMap(([x, y]) => [decimales(x), decimales(y)]))
+    }))
+    ajouter('PRECISION_INSUFFISANTE', 'bloquant',
+      `Coordonnées arrondies : ${DECIMALES_MINIMUM} décimales exigées par l’article 9.`,
+      precisionFaible, `Au pire ${pire} décimales, soit environ ${Math.round(111_000 / 10 ** pire)} m d’incertitude au sol.`)
+  }
+  if (nonFermes.length) ajouter('ANNEAU_NON_FERME', 'bloquant', 'Contour non refermé sur son point de départ.', nonFermes)
+  if (autoIntersect.length) ajouter('AUTO_INTERSECTION', 'bloquant', 'Le contour se croise lui-même : TRACES rejettera la géométrie.', autoIntersect)
+  if (dupliquesSommets.length) ajouter('SOMMETS_DUPLIQUES', 'alerte', 'Sommets consécutifs identiques.', dupliquesSommets)
+  if (avecTrous.length) ajouter('TROUS', 'alerte', 'Anneaux intérieurs : à justifier, ou à retirer avant dépôt.', avecTrous)
+  if (horsPays.length) ajouter('HORS_PAYS', 'bloquant', `Parcelles hors de l’emprise de ${options.paysDeclare}. Coordonnées inversées ou pays erroné.`, horsPays)
+  if (pointTropGrand.length) ajouter('POLYGONE_REQUIS', 'bloquant', `Point déclaré pour une surface supérieure à ${SEUIL_POLYGONE_HA} ha : l’article 9 impose un polygone.`, pointTropGrand)
+  if (minuscules.length) ajouter('SURFACE_MINUSCULE', 'alerte', 'Surface inférieure à 0,01 ha : saisie probablement erronée.', minuscules)
+  if (enormes.length) ajouter('SURFACE_IMPLAUSIBLE', 'alerte', `Surface supérieure à ${surfaceMax} ha pour une exploitation familiale.`, enormes)
+  if (ecartSurface.length) ajouter('ECART_SURFACE', 'alerte', 'Écart supérieur à 20 % entre surface calculée et surface déclarée.', ecartSurface)
+
+  // — Contrôles croisés entre parcelles
+  const recouvrements: string[] = []
+  const doublons = new Map<string, number[]>()
+  for (const p of parcelles) {
+    for (const a of p.anneaux) {
+      const e = empreinte(a)
+      doublons.set(e, [...(doublons.get(e) ?? []), p.index])
+    }
+  }
+  for (const [, idx] of doublons) {
+    if (new Set(idx).size > 1) {
+      ajouter('POLYGONE_DUPLIQUE', 'bloquant',
+        'Contour strictement identique déclaré sur plusieurs parcelles.', [...new Set(idx)])
+    }
+  }
+
+  // Pré-filtre par boîte englobante : à moins de 1000 parcelles, le coût reste négligeable.
+  for (let i = 0; i < parcelles.length; i++) {
+    for (let j = i + 1; j < parcelles.length; j++) {
+      const a = parcelles[i], b = parcelles[j]
+      if (!a.anneaux.length || !b.anneaux.length) continue
+      if (!seChevauchent(a.bbox, b.bbox)) continue
+      if (a.anneaux.some(ra => b.anneaux.some(rb => anneauxSeRecouvrent(ra, rb)))) {
+        recouvrements.push(`${a.index}/${b.index}`)
+      }
+    }
+  }
+  if (recouvrements.length) {
+    ajouter('RECOUVREMENT', 'bloquant',
+      'Parcelles qui se recouvrent : une même terre est déclarée deux fois.',
+      [...new Set(recouvrements.flatMap(r => r.split('/').map(Number)))],
+      recouvrements.slice(0, 20).join(', '))
+  }
+
+  const surfaceTotaleHa = parcelles.reduce((s, p) => s + p.aireHa, 0)
+  return {
+    lisible: true,
+    nbParcelles: parcelles.length,
+    surfaceTotaleHa: +surfaceTotaleHa.toFixed(4),
+    constats,
+    exploitable: !constats.some(c => c.gravite === 'bloquant'),
+  }
+}
