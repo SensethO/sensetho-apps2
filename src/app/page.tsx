@@ -5,6 +5,10 @@ import { getSiteSettings } from '@/lib/settings'
 
 export const dynamic = 'force-dynamic'
 
+export const metadata = {
+  alternates: { canonical: '/' },
+}
+
 const PUBLIC_APPS = [
   // ── Le regard (la démarche commence ici) ─────────────────────
   {

@@ -3,6 +3,7 @@ import './globals.css'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://apps.sensetho.com'),
   title: "Sens'ethO Apps — Se voir agir, retrouver du sens",
   description: "La plateforme d'applications Sens'ethO : observez ce que votre organisation fait vraiment, formulez sa raison d'être, tenez vos engagements — diagnostics, dialogue, mesure et preuve (ISO 26000, CSRD/ESRS, VSME), et applications métier.",
   icons: {
