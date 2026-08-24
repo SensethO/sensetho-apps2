@@ -325,6 +325,17 @@ export function trierGeojson(brut: unknown, options: OptionsTri = {}): RapportTr
     ajouter('CRS_NON_WGS84', 'bloquant', `Système de coordonnées déclaré « ${crs} » au lieu de WGS84 (EPSG:4326).`)
   }
 
+  // Note de traçabilité embarquée par notre correction automatique : on la ré-émet
+  // en constat « information » à chaque tri, pour qu'elle reste visible sur le dossier.
+  const corr = (fc as { sensetho_correction?: { pourquoi?: string; comment?: string; avertissements?: string[]; date?: string } }).sensetho_correction
+  if (corr && typeof corr === 'object') {
+    const date = corr.date ? new Date(corr.date).toLocaleString('fr-FR') : ''
+    ajouter('CORRECTION_SYSTEME', 'information',
+      `Fichier modifié automatiquement par le système Sens'ethO${date ? ` le ${date}` : ''}.`,
+      [],
+      [corr.pourquoi ? `Pourquoi : ${corr.pourquoi}` : '', corr.comment ? `Comment : ${corr.comment}` : '', ...(corr.avertissements ?? [])].filter(Boolean).join(' '))
+  }
+
   const parcelles = extraire(fc.features)
   const surfaceMax = options.surfaceMaxPlausibleHa ?? 100
 

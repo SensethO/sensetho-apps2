@@ -24,6 +24,10 @@ const PASTILLE: Record<Gravite, string> = {
   information: 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300',
 }
 
+// Anomalies que la correction automatique sait résoudre (géométrie réparable).
+const CODES_REPARABLES = ['TROUS', 'SOMMETS_DUPLIQUES', 'ANNEAU_NON_FERME', 'AUTO_INTERSECTION']
+const aReparable = (tri: Tri) => tri.constats.some(c => CODES_REPARABLES.includes(c.code))
+
 export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string; canWrite: boolean }) {
   const [docs, setDocs] = useState<Doc[]>([])
   const [tris, setTris] = useState<Record<string, Tri>>({})
@@ -32,6 +36,7 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
   const [ouvert, setOuvert] = useState<string | null>(null)
   const [erreur, setErreur] = useState('')
   const [verse, setVerse] = useState<Record<string, string>>({})
+  const [corrige, setCorrige] = useState<Record<string, string>>({})
 
   const charger = useCallback(async () => {
     const res = await fetch(`/api/eudr-fournisseurs/screening?org_id=${orgId}`)
@@ -73,6 +78,25 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
       [doc.id]: `${j.versees} parcelle(s) versée(s), ${j.surfaceHa} ha`
         + (alerte ? ` — ⚠️ ${alerte} contour(s) déclaré(s) par plusieurs fournisseurs` : ''),
     }))
+  }
+
+  /** Corrige automatiquement les erreurs réparables et dépose une version corrigée. */
+  async function corriger(doc: Doc) {
+    setOccupe(doc.id); setErreur('')
+    const res = await fetch('/api/eudr-fournisseurs/screening/correct', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_id: orgId, attachmentId: doc.id }),
+    })
+    const j = await res.json().catch(() => ({}))
+    setOccupe(null)
+    if (!res.ok) { setErreur(j.error ?? `Erreur ${res.status}`); return }
+    const restants = j.constatsRestants ?? 0
+    setCorrige(c => ({
+      ...c,
+      [doc.id]: `Fichier corrigé déposé (${j.name}) — ${(j.codesResolus ?? []).length} type(s) d’erreur résolu(s)`
+        + (j.exploitable ? ', désormais exploitable.' : ` ; ${restants} anomalie(s) rédhibitoire(s) restent à corriger par le fournisseur.`),
+    }))
+    await charger() // le fichier corrigé (avec sa note) apparaît dans la liste
   }
 
   /** Message prêt à envoyer au fournisseur, listant ce qui doit être corrigé. */
@@ -135,6 +159,18 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
                   {verse[doc.id] && (
                     <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">{verse[doc.id]}</p>
                   )}
+                  {corrige[doc.id] && (
+                    <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">✅ {corrige[doc.id]}</p>
+                  )}
+                  {(() => {
+                    const n = tri?.constats.find(c => c.code === 'CORRECTION_SYSTEME')
+                    return n ? (
+                      <div className="mt-1.5 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-900/20 px-2.5 py-1.5">
+                        <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">🛠️ {n.libelle}</p>
+                        {n.detail && <p className="text-[11px] text-amber-800/90 dark:text-amber-200/90 whitespace-pre-wrap mt-0.5">{n.detail}</p>}
+                      </div>
+                    ) : null
+                  })()}
                 </div>
                 <div className="flex items-center gap-2">
                   {tri && (
@@ -150,6 +186,14 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
                     <button className="text-xs text-gray-500 hover:underline"
                       onClick={() => setOuvert(ouvert === doc.id ? null : doc.id)}>
                       {ouvert === doc.id ? 'Masquer' : 'Détail'}
+                    </button>
+                  )}
+                  {canWrite && tri && aReparable(tri) && (
+                    <button
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-amber-400 dark:border-amber-500/60 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-50"
+                      onClick={() => corriger(doc)} disabled={occupe === doc.id}
+                      title="Corrige automatiquement les erreurs de géométrie réparables (trous, contour non refermé, auto-intersection, sommets dupliqués) et dépose une version corrigée, accompagnée d’une note indiquant ce qui a été modifié et pourquoi. Le fichier d’origine est conservé.">
+                      {occupe === doc.id ? 'Correction…' : '🛠️ Corriger le fichier'}
                     </button>
                   )}
                   {canWrite && tri?.exploitable && (
@@ -177,7 +221,7 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
                       ✓ Aucun constat. Le fichier peut partir en expertise.
                     </p>
                   )}
-                  {tri.constats.map((c, i) => (
+                  {tri.constats.filter(c => c.code !== 'CORRECTION_SYSTEME').map((c, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 mt-0.5 ${PASTILLE[c.gravite]}`}>
                         {c.gravite}

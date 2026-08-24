@@ -171,3 +171,57 @@ export function sanitizeGeojson(input: unknown, opts: { simplify?: boolean } = {
   report.areaAfterHa = +report.areaAfterHa.toFixed(3)
   return { geojson: { type: 'FeatureCollection', features: out }, report }
 }
+
+// ── Correction automatique : codes de constats que le nettoyage sait résoudre ──
+// Seules les anomalies de géométrie « réparables » sont corrigées ; la précision
+// insuffisante, les coordonnées hors bornes, le hors-pays, le point pour > 4 ha,
+// le recouvrement ou le doublon exact NE le sont pas — ils appellent le fournisseur.
+export const CODES_REPARABLES = ['TROUS', 'SOMMETS_DUPLIQUES', 'ANNEAU_NON_FERME', 'AUTO_INTERSECTION'] as const
+const LIBELLE_REPARABLE: Record<string, string> = {
+  TROUS: 'anneaux intérieurs (trous)',
+  SOMMETS_DUPLIQUES: 'sommets consécutifs dupliqués',
+  ANNEAU_NON_FERME: 'contour non refermé',
+  AUTO_INTERSECTION: 'contour qui se croise lui-même',
+}
+
+/** Note de traçabilité : ce fichier a été modifié par notre système, pourquoi et comment. */
+export interface CorrectionNote {
+  systeme: string
+  date: string           // ISO
+  fichierOrigine: string
+  pourquoi: string       // les erreurs qui ont motivé la correction
+  comment: string        // les opérations appliquées
+  avertissements: string[]
+}
+
+/** Construit la note « pourquoi / comment » à partir du rapport de nettoyage et des codes résolus. */
+export function construireNoteCorrection(report: SanitizeReport, codesResolus: string[], fichierOrigine: string): CorrectionNote {
+  const pourquoi = codesResolus.length
+    ? 'Anomalies de qualité documentaire détectées au tri automatique : ' +
+      codesResolus.map(c => LIBELLE_REPARABLE[c] ?? c).join(', ') + '.'
+    : 'Normalisation de la géométrie pour acceptation par le système TRACES.'
+
+  const ops: string[] = []
+  if (report.holesRemoved) ops.push(`${report.holesRemoved} anneau(x) intérieur(s) retiré(s)`)
+  ops.push('contours refermés et sommets dupliqués supprimés')
+  if (report.coordinatesRounded) ops.push('coordonnées arrondies à 6 décimales (~0,11 m)')
+  if (report.simplified && report.pointsAfter < report.pointsBefore) ops.push(`anneaux denses simplifiés (${report.pointsBefore} → ${report.pointsAfter} sommets)`)
+  const comment = ops.join(' ; ') + `. Surface avant ${report.areaBeforeHa} ha → après ${report.areaAfterHa} ha.`
+
+  const avertissements: string[] = report.holeAlerts.map(
+    h => `Parcelle « ${h.name} » : le retrait d’un trou réintègre ${h.addedHa} ha (${h.pct} %) à la surface.`
+  )
+  avertissements.push('Correction limitée à la géométrie / qualité documentaire : elle ne préjuge pas de l’absence de déforestation, qui relève du prestataire spécialisé. Le fichier d’origine est conservé.')
+
+  return { systeme: "Sens'ethO", date: new Date().toISOString(), fichierOrigine, pourquoi, comment, avertissements }
+}
+
+/** Rend la note lisible sur une ligne (pour un champ texte / une infobulle). */
+export function noteCorrectionEnTexte(n: CorrectionNote): string {
+  return [
+    `Fichier modifié automatiquement par le système ${n.systeme} le ${new Date(n.date).toLocaleString('fr-FR')}.`,
+    `Pourquoi : ${n.pourquoi}`,
+    `Comment : ${n.comment}`,
+    ...n.avertissements.map(a => `• ${a}`),
+  ].join('\n')
+}
