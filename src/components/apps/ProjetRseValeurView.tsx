@@ -87,8 +87,18 @@ function patchJson<T>(url: string, body: unknown): Promise<T> {
 // ── Cible du menu « Rattacher à… » ────────────────────────────────────────────
 
 type AttachTarget =
-  | { type: 'projet'; id: string; nom: string }
-  | { type: 'programme'; id: string; nom: string }
+  | { type: 'projet'; id: string; nom: string; current: string }
+  | { type: 'programme'; id: string; nom: string; current: string }
+
+/** Encode le rattachement actuel pour présélectionner la modale. */
+function currentOfProjet(p: { programme_id?: string | null; portefeuille_id?: string | null }): string {
+  if (p.programme_id) return `pg:${p.programme_id}`
+  if (p.portefeuille_id) return `pf:${p.portefeuille_id}`
+  return ''
+}
+function currentOfProgramme(pg: { portefeuille_id?: string | null }): string {
+  return pg.portefeuille_id ? `pf:${pg.portefeuille_id}` : ''
+}
 
 type CreateKind = 'portefeuille' | 'programme' | 'operation'
 
@@ -253,8 +263,8 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
                   {programmesDe(pf.id).map(pg => (
                     <ProgrammeBloc key={pg.id} programme={pg} projets={projetsDuProgramme(pg.id)}
                       readOnly={readOnly} onOpenProjet={onOpenProjet}
-                      onAttach={() => setAttachTarget({ type: 'programme', id: pg.id, nom: pg.nom })}
-                      onAttachProjet={p => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom })}
+                      onAttach={() => setAttachTarget({ type: 'programme', id: pg.id, nom: pg.nom, current: currentOfProgramme(pg) })}
+                      onAttachProjet={p => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom, current: currentOfProjet(p) })}
                       onDelete={() => supprimer('programme', pg.id, pg.nom)} />
                   ))}
                   {/* Projets rattachés directement au portefeuille */}
@@ -267,7 +277,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
                         {projetsDirects(pf.id).map(p => (
                           <ProjetChip key={p.id} projet={p} readOnly={readOnly}
                             onOpen={() => onOpenProjet(p.id)}
-                            onAttach={() => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom })} />
+                            onAttach={() => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom, current: currentOfProjet(p) })} />
                         ))}
                       </div>
                     </div>
@@ -288,8 +298,8 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
                 {programmesAutonomes.map(pg => (
                   <ProgrammeBloc key={pg.id} programme={pg} projets={projetsDuProgramme(pg.id)}
                     readOnly={readOnly} onOpenProjet={onOpenProjet}
-                    onAttach={() => setAttachTarget({ type: 'programme', id: pg.id, nom: pg.nom })}
-                    onAttachProjet={p => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom })}
+                    onAttach={() => setAttachTarget({ type: 'programme', id: pg.id, nom: pg.nom, current: currentOfProgramme(pg) })}
+                    onAttachProjet={p => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom, current: currentOfProjet(p) })}
                     onDelete={() => supprimer('programme', pg.id, pg.nom)} />
                 ))}
                 {projetsAutonomes.length > 0 && (
@@ -301,7 +311,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
                       {projetsAutonomes.map(p => (
                         <ProjetChip key={p.id} projet={p} readOnly={readOnly}
                           onOpen={() => onOpenProjet(p.id)}
-                          onAttach={() => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom })} />
+                          onAttach={() => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom, current: currentOfProjet(p) })} />
                       ))}
                     </div>
                   </div>
@@ -422,8 +432,8 @@ function ProgrammeBloc({ programme, projets, readOnly, onOpenProjet, onAttach, o
           </span>
           {!readOnly && (
             <>
-              <button onClick={onAttach} title="Rattacher à…"
-                className="text-[10px] font-medium text-violet-700 dark:text-violet-300 hover:underline">↪</button>
+              <button onClick={onAttach} title="Déplacer vers un autre portefeuille"
+                className="text-[11px] font-medium px-1.5 py-0.5 rounded border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors">↪ Déplacer</button>
               <button onClick={onDelete} title="Supprimer le programme"
                 className="text-xs opacity-50 hover:opacity-100 transition-opacity">🗑</button>
             </>
@@ -445,8 +455,8 @@ function ProgrammeBloc({ programme, projets, readOnly, onOpenProjet, onAttach, o
                 {PHASE_LABELS[p.phase] ?? p.phase}
               </span>
               {!readOnly && (
-                <button onClick={() => onAttachProjet(p)} title="Rattacher à…"
-                  className="shrink-0 text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline">↪</button>
+                <button onClick={() => onAttachProjet(p)} title="Déplacer vers un autre portefeuille ou programme"
+                  className="shrink-0 text-[11px] px-1 rounded border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">↪</button>
               )}
             </li>
           ))}
@@ -474,8 +484,8 @@ function ProjetChip({ projet, readOnly, onOpen, onAttach }: {
         {PHASE_LABELS[projet.phase] ?? projet.phase}
       </span>
       {!readOnly && (
-        <button onClick={onAttach} title="Rattacher à…"
-          className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline">↪</button>
+        <button onClick={onAttach} title="Déplacer vers un autre portefeuille ou programme"
+          className="text-[11px] px-1 rounded border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">↪</button>
       )}
     </span>
   )
@@ -596,7 +606,7 @@ function AttachModal({ target, portefeuilles, programmes, onClose, onDone, onErr
   onError: (m: string) => void
 }) {
   // Valeur encodée : '' = autonome ; 'pf:<id>' = portefeuille ; 'pg:<id>' = programme
-  const [valeur, setValeur] = useState('')
+  const [valeur, setValeur] = useState(target.current)
   const [saving, setSaving] = useState(false)
 
   const apply = async () => {
@@ -626,7 +636,7 @@ function AttachModal({ target, portefeuilles, programmes, onClose, onDone, onErr
         style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}
         onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold text-indigo-700 dark:text-indigo-300">
-          Rattacher « {target.nom} » à…
+          Déplacer « {target.nom} » vers…
         </h3>
         <select
           className="w-full px-3 py-2 text-sm rounded-lg border bg-transparent text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -655,7 +665,7 @@ function AttachModal({ target, portefeuilles, programmes, onClose, onDone, onErr
           </button>
           <button onClick={apply} disabled={saving}
             className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-50">
-            {saving ? 'Enregistrement…' : 'Rattacher'}
+            {saving ? 'Enregistrement…' : 'Déplacer'}
           </button>
         </div>
       </div>
