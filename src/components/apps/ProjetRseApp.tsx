@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import { PROJET_RSE_MODULES } from '@/lib/projetRseModules'
+import ProjetRseValeurView from '@/components/apps/ProjetRseValeurView'
 
 // ── Types (contrat API) ───────────────────────────────────────────────────────
 
@@ -86,6 +87,7 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Projet | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [vue, setVue] = useState<'projets' | 'valeur'>('projets')
 
   // ── Chargement des projets ──
   const loadProjets = useCallback(async (): Promise<Projet[]> => {
@@ -148,8 +150,32 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
         <ProjetDetail projet={selected} organisationId={orgId} readOnly={readOnly}
           onProjetChanged={() => refreshSelected(selected.id)} onError={setError} />
       ) : (
-        <ProjetsList projets={projets} loaded={loaded} readOnly={readOnly}
-          onOpen={setSelected} onCreate={() => setShowCreate(true)} />
+        <>
+          {/* Sélecteur de vue (liste uniquement) */}
+          <div className="inline-flex rounded-lg border p-0.5" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+            {([
+              { id: 'projets' as const, label: '📁 Projets' },
+              { id: 'valeur' as const, label: '🏛️ Création de valeur' },
+            ]).map(v => (
+              <button key={v.id} onClick={() => setVue(v.id)}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${vue === v.id
+                  ? 'bg-indigo-600 text-white font-semibold'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'}`}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+          {vue === 'projets' ? (
+            <ProjetsList projets={projets} loaded={loaded} readOnly={readOnly}
+              onOpen={setSelected} onCreate={() => setShowCreate(true)} />
+          ) : (
+            <ProjetRseValeurView organisationId={orgId} readOnly={readOnly}
+              onOpenProjet={(projetId) => {
+                const p = projets.find(x => x.id === projetId)
+                if (p) setSelected(p)
+              }} />
+          )}
+        </>
       )}
 
       {showCreate && !readOnly && (
