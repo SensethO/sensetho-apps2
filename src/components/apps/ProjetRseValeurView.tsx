@@ -177,7 +177,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
       )}
 
       {/* Bandeau stratégie + flux d'information */}
-      <div className="rounded-xl border p-4" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+      <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🎯</span>
@@ -231,7 +231,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
             {portefeuilles.map(pf => (
               <div key={pf.id}
                 className="rounded-xl border-2 p-4 space-y-3 border-indigo-300 dark:border-indigo-700"
-                style={{ background: 'var(--card-bg)' }}>
+                style={{ background: 'var(--bg-card)' }}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <h4 className="text-sm font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
@@ -293,7 +293,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
 
             {/* Programmes autonomes + projets autonomes */}
             {(programmesAutonomes.length > 0 || projetsAutonomes.length > 0) && (
-              <div className="rounded-xl border-2 border-dashed p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+              <div className="rounded-xl border-2 border-dashed p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                 <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300">Hors portefeuille</h4>
                 {programmesAutonomes.map(pg => (
                   <ProgrammeBloc key={pg.id} programme={pg} projets={projetsDuProgramme(pg.id)}
@@ -321,7 +321,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
           </div>
 
           {/* Barre Opérations */}
-          <div className="rounded-xl border-2 p-4 space-y-2 border-teal-300 dark:border-teal-700" style={{ background: 'var(--card-bg)' }}>
+          <div className="rounded-xl border-2 p-4 space-y-2 border-teal-300 dark:border-teal-700" style={{ background: 'var(--bg-card)' }}>
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-sm font-bold text-teal-700 dark:text-teal-300 flex items-center gap-1.5">
                 <span aria-hidden>⚙️</span> Opérations
@@ -538,7 +538,7 @@ function CreateEntiteModal({ kind, organisationId, portefeuilles, projets, onClo
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-xl border shadow-xl p-5 space-y-4"
-        style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
         onClick={e => e.stopPropagation()}>
         <h3 className={`text-base font-bold ${meta.couleur}`}>{meta.titre}</h3>
         <div className="space-y-3">
@@ -633,7 +633,7 @@ function AttachModal({ target, portefeuilles, programmes, onClose, onDone, onErr
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-xl border shadow-xl p-5 space-y-4"
-        style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
         onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold text-indigo-700 dark:text-indigo-300">
           Déplacer « {target.nom} » vers…

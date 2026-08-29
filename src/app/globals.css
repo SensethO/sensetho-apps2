@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 :root {
+  /* Les contrôles natifs (menus des <select>, scrollbars, date pickers) suivent
+     le thème — sans quoi le menu déroulant reste blanc en mode sombre et les
+     options héritant de text-white deviennent invisibles (bug du 2026-08-07). */
+  color-scheme: light;
   --bg: #f3f4f6;
   --bg-card: #ffffff;
   --bg-sidebar: #ffffff;
@@ -16,6 +20,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --bg: #0f172a;
   --bg-card: #1e293b;
   --bg-sidebar: #1a2744;
