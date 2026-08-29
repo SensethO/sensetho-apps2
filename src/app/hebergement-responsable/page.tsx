@@ -8,7 +8,7 @@ const PAGE_WEIGHT = {
   measuredOn: '29 août 2026',
   htmlKb: 12,
   assetsKb: 170,
-  imageKb: 7,
+  imageKb: 5,
   get totalKb() { return this.htmlKb + this.assetsKb + this.imageKb },
 }
 
