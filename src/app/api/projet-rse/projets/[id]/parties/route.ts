@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 
 const CHAMPS = [
   'nom', 'organisation', 'categorie', 'role', 'pouvoir', 'interet',
-  'attitude', 'attentes', 'verbatims', 'strategie', 'statut_suivi',
+  'attitude', 'attentes', 'verbatims', 'strategie', 'statut_suivi', 'legitimite', 'urgence', 'engagement_actuel', 'engagement_souhaite',
 ] as const
 
 /** Stratégie d'engagement déduite du quadrant pouvoir × intérêt (seuil > 3).

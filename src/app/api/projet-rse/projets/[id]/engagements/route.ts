@@ -6,7 +6,7 @@ import { requireProjet } from '@/lib/projet-rse/auth'
 export const dynamic = 'force-dynamic'
 
 const CHAMPS = [
-  'partie_id', 'action', 'responsable', 'canal', 'frequence', 'echeance', 'statut',
+  'partie_id', 'action', 'responsable', 'canal', 'frequence', 'echeance', 'statut', 'mode',
 ] as const
 
 /** GET ?partie_id= (optionnel) → { engagements } */

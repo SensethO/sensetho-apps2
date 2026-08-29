@@ -16,6 +16,8 @@ type Categorie = 'verte' | 'orange' | 'bleue'
 type Attitude = 'alliee' | 'ouverte' | 'neutre' | 'vigilante' | 'opposee'
 type StatutSuivi = 'a_engager' | 'engagee' | 'a_risque' | 'ok'
 type StatutEngagement = 'a_faire' | 'en_cours' | 'fait'
+type NiveauEngagement = 'peu_conscient' | 'resistant' | 'neutre' | 'solidaire' | 'leader'
+type ModeCom = 'push' | 'pull' | 'interactive'
 
 interface Partie {
   id: string
@@ -25,6 +27,10 @@ interface Partie {
   role: string | null
   pouvoir: number
   interet: number
+  legitimite: number
+  urgence: number
+  engagement_actuel: NiveauEngagement
+  engagement_souhaite: NiveauEngagement
   attitude: Attitude
   attentes: string | null
   verbatims: string | null
@@ -41,6 +47,7 @@ interface Engagement {
   frequence: string | null
   echeance: string | null
   statut: StatutEngagement
+  mode: ModeCom | null
 }
 
 interface PpSession {
@@ -80,6 +87,74 @@ const STATUTS_ENGAGEMENT: Record<StatutEngagement, { label: string; badge: strin
   fait: { label: 'Fait ✓', badge: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300', next: 'a_faire' },
 }
 
+// ── Cours MdGP : cycle, salience, engagement, modes de communication ─────────
+
+// Cycle d'engagement en 6 étapes (processus continu)
+const CYCLE_STEPS: { label: string; tip: string }[] = [
+  { label: 'Identifier', tip: 'Recenser toutes les personnes et entités touchées par le projet ou capables de l’influencer.' },
+  { label: 'Comprendre', tip: 'Saisir leurs attentes, leurs besoins et leur perception du projet.' },
+  { label: 'Analyser', tip: 'Évaluer leur pouvoir, leur légitimité, leur urgence, leur intérêt et leur attitude.' },
+  { label: 'Hiérarchiser', tip: 'Prioriser l’effort d’engagement : il est inversement proportionnel à la prépondérance.' },
+  { label: 'Impliquer', tip: 'Mettre en œuvre le plan d’engagement avec le bon mode de communication.' },
+  { label: 'Suivre', tip: 'Mesurer l’évolution de l’engagement et réévaluer en continu, à chaque phase.' },
+]
+
+// Matrice d'évaluation de l'engagement : 5 niveaux (C = actuel, D = désiré)
+const NIVEAUX_ENGAGEMENT: { value: NiveauEngagement; label: string }[] = [
+  { value: 'peu_conscient', label: 'Peu conscient' },
+  { value: 'resistant', label: 'Résistant' },
+  { value: 'neutre', label: 'Neutre' },
+  { value: 'solidaire', label: 'Solidaire' },
+  { value: 'leader', label: 'Leader' },
+]
+function niveauIndex(v: NiveauEngagement): number {
+  const i = NIVEAUX_ENGAGEMENT.findIndex(n => n.value === v)
+  return i >= 0 ? i : 0
+}
+
+// Modes de communication (PMBOK)
+const MODES_COM: { value: ModeCom; label: string; def: string }[] = [
+  { value: 'push', label: 'Push', def: 'Push : communication à sens unique, envoyée vers la partie prenante (notes, rapports, courriels) — à utiliser délibérément.' },
+  { value: 'pull', label: 'Pull', def: 'Pull : l’information est mise à disposition et la partie prenante vient la chercher (intranet, tableau de bord, base documentaire).' },
+  { value: 'interactive', label: 'Interactif', def: 'Interactif : échange bidirectionnel — réunions, appels, démonstrations — avec boucles de rétroaction rapides.' },
+]
+const MODES_TOOLTIP = MODES_COM.map(m => m.def).join('\n')
+
+// Modèle de salience (Mitchell, Agle & Wood, 1997) :
+// attribut « présent » si sa note est > 3 ; 7 groupes + hors périmètre.
+type SalienceKey = 'definitifs' | 'dominants' | 'dangereux' | 'dependants' | 'dormants' | 'discretionnaires' | 'demandeurs' | 'hors'
+
+const SALIENCE: Record<SalienceKey, { label: string; attrs: string; strategie: string; rang: number; fill: string; badge: string }> = {
+  definitifs: { label: 'Définitifs', attrs: 'Pouvoir + Légitimité + Urgence', strategie: 'Engager / collaborer étroitement', rang: 7, fill: '#8b5cf6', badge: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300' },
+  dominants: { label: 'Dominants', attrs: 'Pouvoir + Légitimité', strategie: 'Maintenir satisfait', rang: 6, fill: '#6366f1', badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300' },
+  dangereux: { label: 'Dangereux', attrs: 'Pouvoir + Urgence', strategie: 'Maintenir satisfait', rang: 5, fill: '#dc2626', badge: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' },
+  dependants: { label: 'Dépendants', attrs: 'Légitimité + Urgence', strategie: 'Maintenir informé', rang: 4, fill: '#0d9488', badge: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300' },
+  dormants: { label: 'Dormants', attrs: 'Pouvoir seul', strategie: 'Prendre en compte / veiller', rang: 3, fill: '#818cf8', badge: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300' },
+  discretionnaires: { label: 'Discrétionnaires', attrs: 'Légitimité seule', strategie: 'Prendre en compte / veiller', rang: 2, fill: '#2dd4bf', badge: 'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-300' },
+  demandeurs: { label: 'Demandeurs', attrs: 'Urgence seule', strategie: 'Prendre en compte / veiller', rang: 1, fill: '#f59e0b', badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
+  hors: { label: 'Hors périmètre', attrs: 'Aucun attribut > 3', strategie: 'À surveiller', rang: 0, fill: '#9ca3af', badge: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
+}
+
+function salienceOf(pouvoir: number, legitimite: number, urgence: number): SalienceKey {
+  const P = pouvoir > 3, L = legitimite > 3, U = urgence > 3
+  if (P && L && U) return 'definitifs'
+  if (P && L) return 'dominants'
+  if (P && U) return 'dangereux'
+  if (L && U) return 'dependants'
+  if (P) return 'dormants'
+  if (L) return 'discretionnaires'
+  if (U) return 'demandeurs'
+  return 'hors'
+}
+
+const LETTRE_OU_CHIFFRE = /[0-9A-Za-zÀ-ÖØ-öø-ÿ]/
+function initialesDe(nom: string): string {
+  const ini = nom.trim().split(/\s+/)
+    .map(m => { const c = m.split('').find(ch => LETTRE_OU_CHIFFRE.test(ch)); return c ?? '' })
+    .join('').toUpperCase()
+  return ini.slice(0, 3) || '?'
+}
+
 function catOf(v: Categorie) { return CATEGORIES.find(c => c.value === v) ?? CATEGORIES[0] }
 function attOf(v: Attitude) { return ATTITUDES.find(a => a.value === v) ?? ATTITUDES[2] }
 function suiviOf(v: StatutSuivi) { return STATUTS_SUIVI.find(s => s.value === v) ?? STATUTS_SUIVI[0] }
@@ -108,6 +183,10 @@ interface PartieForm {
   role: string
   pouvoir: number
   interet: number
+  legitimite: number
+  urgence: number
+  engagement_actuel: NiveauEngagement
+  engagement_souhaite: NiveauEngagement
   attitude: Attitude
   attentes: string
   verbatims: string
@@ -117,6 +196,7 @@ interface PartieForm {
 
 const EMPTY_FORM: PartieForm = {
   nom: '', organisation: '', categorie: 'verte', role: '', pouvoir: 3, interet: 3,
+  legitimite: 3, urgence: 1, engagement_actuel: 'peu_conscient', engagement_souhaite: 'solidaire',
   attitude: 'neutre', attentes: '', verbatims: '', strategie: '', statut_suivi: 'a_engager',
 }
 
@@ -126,6 +206,7 @@ const PRESET_TERRE: PartieForm = {
   categorie: 'bleue',
   role: 'Partie prenante silencieuse — écosystèmes, climat, ressources',
   pouvoir: 5, interet: 5,
+  legitimite: 5, urgence: 4,
   attentes: 'Préservation des ressources, limitation des émissions et des déchets, respect des limites planétaires.',
   strategie: 'Engager pleinement',
   attitude: 'neutre',
@@ -137,17 +218,33 @@ const PRESET_SOCIETE: PartieForm = {
   categorie: 'bleue',
   role: 'Partie prenante silencieuse — communautés, générations futures',
   pouvoir: 4, interet: 4,
+  legitimite: 5, urgence: 2,
   attentes: 'Retombées sociales positives, transparence, équité, absence d’externalités négatives pour les communautés.',
   strategie: 'Engager pleinement',
   attitude: 'neutre',
 }
 
+function formFromPartie(p: Partie): PartieForm {
+  return {
+    id: p.id, nom: p.nom, organisation: p.organisation ?? '', categorie: p.categorie,
+    role: p.role ?? '', pouvoir: p.pouvoir, interet: p.interet,
+    legitimite: p.legitimite ?? 3, urgence: p.urgence ?? 1,
+    engagement_actuel: p.engagement_actuel ?? 'peu_conscient',
+    engagement_souhaite: p.engagement_souhaite ?? 'solidaire',
+    attitude: p.attitude,
+    attentes: p.attentes ?? '', verbatims: p.verbatims ?? '', strategie: p.strategie ?? '',
+    statut_suivi: p.statut_suivi,
+  }
+}
+
 // ── Composant principal ───────────────────────────────────────────────────────
 
-type SubTab = 'registre' | 'matrice' | 'plan'
+type SubTab = 'registre' | 'matrice' | 'salience' | 'engagement' | 'plan'
 const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: 'registre', label: '📇 Registre' },
   { key: 'matrice', label: '🧭 Matrice Pouvoir × Intérêt' },
+  { key: 'salience', label: '🎯 Salience' },
+  { key: 'engagement', label: '📶 Engagement' },
   { key: 'plan', label: '🤝 Plan d’engagement' },
 ]
 
@@ -223,6 +320,10 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
         role: form.role.trim() || null,
         pouvoir: form.pouvoir,
         interet: form.interet,
+        legitimite: form.legitimite,
+        urgence: form.urgence,
+        engagement_actuel: form.engagement_actuel,
+        engagement_souhaite: form.engagement_souhaite,
         attitude: form.attitude,
         attentes: form.attentes.trim() || null,
         verbatims: form.verbatims.trim() || null,
@@ -303,8 +404,8 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
   }, [base, loadParties, rememberPhase])
 
   // ── Mutations engagements ──
-  const [newEng, setNewEng] = useState<{ partie_id: string; action: string; responsable: string; canal: string; frequence: string; echeance: string }>(
-    { partie_id: '', action: '', responsable: '', canal: '', frequence: '', echeance: '' })
+  const [newEng, setNewEng] = useState<{ partie_id: string; action: string; responsable: string; canal: string; frequence: string; echeance: string; mode: string }>(
+    { partie_id: '', action: '', responsable: '', canal: '', frequence: '', echeance: '', mode: '' })
   const [savingEng, setSavingEng] = useState(false)
 
   const addEngagement = useCallback(async () => {
@@ -323,11 +424,12 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
           frequence: newEng.frequence.trim() || null,
           echeance: newEng.echeance || null,
           statut: 'a_faire',
+          mode: newEng.mode || null,
         }),
       })
       const j = await res.json()
       if (!res.ok) throw new Error((j as { error?: string }).error ?? 'Erreur d’ajout de l’action')
-      setNewEng({ partie_id: '', action: '', responsable: '', canal: '', frequence: '', echeance: '' })
+      setNewEng({ partie_id: '', action: '', responsable: '', canal: '', frequence: '', echeance: '', mode: '' })
       await loadEngagements()
     } catch (e) { setError(String((e as Error).message ?? e)) }
     finally { setSavingEng(false) }
@@ -345,6 +447,21 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
         throw new Error((j as { error?: string }).error ?? 'Erreur de mise à jour du statut')
+      }
+    } catch (e) { setError(String((e as Error).message ?? e)); await loadEngagements() }
+  }, [base, loadEngagements])
+
+  const setEngagementMode = useCallback(async (id: string, mode: ModeCom | null) => {
+    setEngagements(prev => prev.map(e => (e.id === id ? { ...e, mode } : e)))
+    try {
+      const res = await fetch(`${base}/engagements`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, mode }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error((j as { error?: string }).error ?? 'Erreur de mise à jour du mode')
       }
     } catch (e) { setError(String((e as Error).message ?? e)); await loadEngagements() }
   }, [base, loadEngagements])
@@ -379,6 +496,22 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
         </div>
       )}
 
+      {/* Bandeau du cycle d'engagement en 6 étapes (processus continu) */}
+      <div className="rounded-xl border p-3" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {CYCLE_STEPS.map((s, i) => (
+            <div key={s.label} className="flex items-center gap-1 shrink-0">
+              <span title={s.tip} className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 cursor-help">
+                <span className="flex items-center justify-center w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] font-bold">{i + 1}</span>
+                {s.label}
+              </span>
+              {i < CYCLE_STEPS.length - 1 && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>→</span>}
+            </div>
+          ))}
+          <span title="Après « Suivre », on repart sur « Identifier » : l’engagement des parties prenantes n’est jamais terminé." className="shrink-0 ml-1 text-xs cursor-help" style={{ color: 'var(--text-muted)' }}>↺ processus continu</span>
+        </div>
+      </div>
+
       {/* Sous-onglets */}
       <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
         {SUB_TABS.map(t => (
@@ -396,12 +529,7 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
           parties={parties} loaded={loaded} readOnly={readOnly}
           onNew={() => setForm({ ...EMPTY_FORM })}
           onPreset={(preset) => setForm({ ...preset })}
-          onEdit={(p) => setForm({
-            id: p.id, nom: p.nom, organisation: p.organisation ?? '', categorie: p.categorie,
-            role: p.role ?? '', pouvoir: p.pouvoir, interet: p.interet, attitude: p.attitude,
-            attentes: p.attentes ?? '', verbatims: p.verbatims ?? '', strategie: p.strategie ?? '',
-            statut_suivi: p.statut_suivi,
-          })}
+          onEdit={(p) => setForm(formFromPartie(p))}
           onDelete={deletePartie}
           onImport={openImport}
         />
@@ -411,12 +539,22 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
         <MatriceTab parties={parties} readOnly={readOnly} onMove={(id, pouvoir, interet) => patchPartie(id, { pouvoir, interet })} />
       )}
 
+      {tab === 'salience' && (
+        <SalienceTab parties={parties} loaded={loaded} onOpen={(p) => setForm(formFromPartie(p))} />
+      )}
+
+      {tab === 'engagement' && (
+        <EngagementTab parties={parties} loaded={loaded} readOnly={readOnly}
+          onSet={(id, champs) => patchPartie(id, champs)} />
+      )}
+
       {tab === 'plan' && (
         <PlanTab
           parties={parties} engagements={engagements} readOnly={readOnly}
           filterPartie={filterPartie} setFilterPartie={setFilterPartie}
           newEng={newEng} setNewEng={setNewEng} savingEng={savingEng}
           onAdd={addEngagement} onCycle={cycleEngagement} onDelete={deleteEngagement}
+          onMode={setEngagementMode}
           partieById={partieById}
         />
       )}
@@ -626,6 +764,38 @@ function FicheModal({ form, setForm, saving, onSave, onClose }: {
             <input type="range" min={1} max={5} step={1} className="w-full accent-indigo-600" value={form.interet} onChange={e => set({ interet: Number(e.target.value) })} />
           </div>
           <div>
+            <label className={labelCls}>Légitimité : {form.legitimite}/5</label>
+            <input type="range" min={1} max={5} step={1} className="w-full accent-teal-600" value={form.legitimite} onChange={e => set({ legitimite: Number(e.target.value) })} />
+          </div>
+          <div>
+            <label className={labelCls}>Urgence : {form.urgence}/5</label>
+            <input type="range" min={1} max={5} step={1} className="w-full accent-amber-600" value={form.urgence} onChange={e => set({ urgence: Number(e.target.value) })} />
+          </div>
+          {/* Groupe de salience calculé en direct (Mitchell, Agle & Wood) */}
+          {(() => {
+            const s = SALIENCE[salienceOf(form.pouvoir, form.legitimite, form.urgence)]
+            return (
+              <div className="sm:col-span-2 rounded-lg border px-3 py-2 flex flex-wrap items-center gap-2 text-xs" style={{ borderColor: 'var(--border)' }}>
+                <span className="font-semibold text-gray-700 dark:text-gray-300">Salience :</span>
+                <span className={`inline-block px-2 py-0.5 rounded-full font-medium ${s.badge}`}>{s.label}</span>
+                <span style={{ color: 'var(--text-muted)' }}>({s.attrs} — attribut « présent » si &gt; 3)</span>
+                <span className="font-medium text-gray-800 dark:text-gray-200">→ {s.strategie}</span>
+              </div>
+            )
+          })()}
+          <div>
+            <label className={labelCls}>Engagement actuel (C)</label>
+            <select className={inputCls} style={{ borderColor: 'var(--border)' }} value={form.engagement_actuel} onChange={e => set({ engagement_actuel: e.target.value as NiveauEngagement })}>
+              {NIVEAUX_ENGAGEMENT.map(n => <option key={n.value} value={n.value}>{n.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Engagement souhaité (D)</label>
+            <select className={inputCls} style={{ borderColor: 'var(--border)' }} value={form.engagement_souhaite} onChange={e => set({ engagement_souhaite: e.target.value as NiveauEngagement })}>
+              {NIVEAUX_ENGAGEMENT.map(n => <option key={n.value} value={n.value}>{n.label}</option>)}
+            </select>
+          </div>
+          <div>
             <label className={labelCls}>Attitude</label>
             <select className={inputCls} style={{ borderColor: 'var(--border)' }} value={form.attitude} onChange={e => set({ attitude: e.target.value as Attitude })}>
               {ATTITUDES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
@@ -815,18 +985,19 @@ function MatriceTab({ parties, readOnly, onMove }: {
 
 // ── Onglet Plan d'engagement ──────────────────────────────────────────────────
 
-function PlanTab({ parties, engagements, readOnly, filterPartie, setFilterPartie, newEng, setNewEng, savingEng, onAdd, onCycle, onDelete, partieById }: {
+function PlanTab({ parties, engagements, readOnly, filterPartie, setFilterPartie, newEng, setNewEng, savingEng, onAdd, onCycle, onDelete, onMode, partieById }: {
   parties: Partie[]
   engagements: Engagement[]
   readOnly: boolean
   filterPartie: string
   setFilterPartie: (id: string) => void
-  newEng: { partie_id: string; action: string; responsable: string; canal: string; frequence: string; echeance: string }
-  setNewEng: (v: { partie_id: string; action: string; responsable: string; canal: string; frequence: string; echeance: string }) => void
+  newEng: { partie_id: string; action: string; responsable: string; canal: string; frequence: string; echeance: string; mode: string }
+  setNewEng: (v: { partie_id: string; action: string; responsable: string; canal: string; frequence: string; echeance: string; mode: string }) => void
   savingEng: boolean
   onAdd: () => void
   onCycle: (e: Engagement) => void
   onDelete: (id: string) => void
+  onMode: (id: string, mode: ModeCom | null) => void
   partieById: (id: string) => Partie | undefined
 }) {
   const visible = engagements
@@ -864,6 +1035,9 @@ function PlanTab({ parties, engagements, readOnly, filterPartie, setFilterPartie
               <th className="px-3 py-2">Action</th>
               <th className="px-3 py-2">Responsable</th>
               <th className="px-3 py-2">Canal</th>
+              <th className="px-3 py-2">
+                <span title={MODES_TOOLTIP} className="cursor-help underline decoration-dotted underline-offset-2">Mode</span>
+              </th>
               <th className="px-3 py-2">Fréquence</th>
               <th className="px-3 py-2">Échéance</th>
               <th className="px-3 py-2">Statut</th>
@@ -879,6 +1053,17 @@ function PlanTab({ parties, engagements, readOnly, filterPartie, setFilterPartie
                   <td className="px-3 py-2 text-gray-900 dark:text-white">{e.action}</td>
                   <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{e.responsable ?? '—'}</td>
                   <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{e.canal ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    {readOnly ? (
+                      <span style={{ color: 'var(--text-muted)' }}>{MODES_COM.find(m => m.value === e.mode)?.label ?? '—'}</span>
+                    ) : (
+                      <select className={inputCls} style={{ borderColor: 'var(--border)' }} title={MODES_TOOLTIP}
+                        value={e.mode ?? ''} onChange={ev => onMode(e.id, (ev.target.value || null) as ModeCom | null)}>
+                        <option value="">—</option>
+                        {MODES_COM.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                    )}
+                  </td>
                   <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{e.frequence ?? '—'}</td>
                   <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{formatDateFr(e.echeance)}</td>
                   <td className="px-3 py-2">
@@ -897,7 +1082,7 @@ function PlanTab({ parties, engagements, readOnly, filterPartie, setFilterPartie
               )
             })}
             {visible.length === 0 && (
-              <tr><td colSpan={readOnly ? 7 : 8} className="px-3 py-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+              <tr><td colSpan={readOnly ? 8 : 9} className="px-3 py-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                 Aucune action d’engagement pour l’instant.
               </td></tr>
             )}
@@ -928,6 +1113,13 @@ function PlanTab({ parties, engagements, readOnly, filterPartie, setFilterPartie
                     value={newEng.canal} onChange={e => setNewEng({ ...newEng, canal: e.target.value })} />
                 </td>
                 <td className="px-3 py-2">
+                  <select className={inputCls} style={{ borderColor: 'var(--border)' }} title={MODES_TOOLTIP}
+                    value={newEng.mode} onChange={e => setNewEng({ ...newEng, mode: e.target.value })}>
+                    <option value="">Mode…</option>
+                    {MODES_COM.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </td>
+                <td className="px-3 py-2">
                   <input className={`${inputCls} w-24`} style={{ borderColor: 'var(--border)' }} placeholder="Fréquence"
                     value={newEng.frequence} onChange={e => setNewEng({ ...newEng, frequence: e.target.value })} />
                 </td>
@@ -945,6 +1137,287 @@ function PlanTab({ parties, engagements, readOnly, filterPartie, setFilterPartie
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Onglet Salience (Mitchell, Agle & Wood, 1997) ─────────────────────────────
+
+// Géométrie du Venn : trois cercles de rayon égal aux sommets d'un triangle
+// isocèle — Pouvoir en haut à gauche, Légitimité en haut à droite, Urgence en
+// bas au centre. Chaque zone (7 intersections + extérieur) a un point d'ancrage
+// vérifié géométriquement ; les pastilles s'y rangent en petite grille.
+const V = { w: 640, h: 560, r: 155 }
+const VC = {
+  P: { x: 230, y: 205 },
+  L: { x: 410, y: 205 },
+  U: { x: 320, y: 365 },
+}
+const V_ANCHORS: Record<SalienceKey, { x: number; y: number }> = {
+  dormants: { x: 140, y: 140 },
+  discretionnaires: { x: 500, y: 140 },
+  demandeurs: { x: 320, y: 458 },
+  dominants: { x: 320, y: 152 },
+  dangereux: { x: 213, y: 322 },
+  dependants: { x: 427, y: 322 },
+  definitifs: { x: 320, y: 262 },
+  hors: { x: 80, y: 468 },
+}
+// Petits décalages en grille autour de l'ancre (restent dans la zone)
+const V_OFFSETS: [number, number][] = [
+  [0, 0], [28, 0], [-28, 0], [0, 28], [28, 28], [-28, 28], [0, -26], [28, -26], [-28, -26],
+  [56, 0], [-56, 0], [56, 28], [-56, 28],
+]
+
+const SALIENCE_ORDER: SalienceKey[] = ['definitifs', 'dominants', 'dangereux', 'dependants', 'dormants', 'discretionnaires', 'demandeurs', 'hors']
+
+function SalienceTab({ parties, loaded, onOpen }: {
+  parties: Partie[]
+  loaded: boolean
+  onOpen: (p: Partie) => void
+}) {
+  const groupes = new Map<SalienceKey, Partie[]>()
+  for (const k of SALIENCE_ORDER) groupes.set(k, [])
+  for (const p of parties) groupes.get(salienceOf(p.pouvoir, p.legitimite ?? 3, p.urgence ?? 1))!.push(p)
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border p-4" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+        <h3 className="text-sm font-bold text-teal-700 dark:text-teal-300 mb-1">Modèle de salience (Mitchell, Agle &amp; Wood, 1997)</h3>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+          Trois attributs — Pouvoir, Légitimité, Urgence — sont « présents » quand leur note dépasse 3.
+          Leur croisement définit 7 groupes ; <span className="font-medium text-gray-800 dark:text-gray-200">l’effort d’engagement est inversement proportionnel à la prépondérance</span>.
+          Cliquez sur une pastille pour ouvrir la fiche.
+        </p>
+
+        {!loaded ? (
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Chargement…</p>
+        ) : (
+          <svg viewBox={`0 0 ${V.w} ${V.h}`} className="w-full select-none">
+            {/* Zone extérieure */}
+            <rect x={4} y={4} width={V.w - 8} height={V.h - 8} rx={12} fill="#9ca3af" opacity={0.06} />
+            {/* Les 3 cercles ; leurs superpositions teintent naturellement les 7 zones */}
+            <circle cx={VC.P.x} cy={VC.P.y} r={V.r} fill="#6366f1" opacity={0.12} stroke="#6366f1" strokeWidth={1.5} strokeOpacity={0.6} />
+            <circle cx={VC.L.x} cy={VC.L.y} r={V.r} fill="#0d9488" opacity={0.12} stroke="#0d9488" strokeWidth={1.5} strokeOpacity={0.6} />
+            <circle cx={VC.U.x} cy={VC.U.y} r={V.r} fill="#f59e0b" opacity={0.12} stroke="#f59e0b" strokeWidth={1.5} strokeOpacity={0.6} />
+
+            {/* Titres des attributs */}
+            <text x={128} y={40} textAnchor="middle" fontSize={14} fontWeight={700} fill="#6366f1">Pouvoir</text>
+            <text x={512} y={40} textAnchor="middle" fontSize={14} fontWeight={700} fill="#0d9488">Légitimité</text>
+            <text x={320} y={548} textAnchor="middle" fontSize={14} fontWeight={700} fill="#f59e0b">Urgence</text>
+
+            {/* Noms des zones */}
+            <text x={140} y={102} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--text-muted)">Dormants</text>
+            <text x={500} y={102} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--text-muted)">Discrétionnaires</text>
+            <text x={320} y={500} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--text-muted)">Demandeurs</text>
+            <text x={320} y={118} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--text-muted)">Dominants</text>
+            <text x={188} y={288} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--text-muted)">Dangereux</text>
+            <text x={452} y={288} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--text-muted)">Dépendants</text>
+            <text x={320} y={230} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--text-muted)">Définitifs</text>
+            <text x={80} y={432} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--text-muted)">Hors périmètre</text>
+            <text x={80} y={445} textAnchor="middle" fontSize={9} fill="var(--text-muted)">(à surveiller)</text>
+
+            {/* Pastilles des parties prenantes */}
+            {SALIENCE_ORDER.map(k => {
+              const anchor = V_ANCHORS[k]
+              const s = SALIENCE[k]
+              return groupes.get(k)!.map((p, i) => {
+                const [dx, dy] = V_OFFSETS[i % V_OFFSETS.length]
+                const cx = anchor.x + dx, cy = anchor.y + dy
+                return (
+                  <g key={p.id} style={{ cursor: 'pointer' }} onClick={() => onOpen(p)}>
+                    <title>{`${p.nom} — Pouvoir ${p.pouvoir}/5 · Légitimité ${p.legitimite ?? 3}/5 · Urgence ${p.urgence ?? 1}/5 → ${s.label} : ${s.strategie}`}</title>
+                    <circle cx={cx} cy={cy} r={13} fill={s.fill} fillOpacity={0.9} stroke="var(--card-bg)" strokeWidth={2} />
+                    <text x={cx} y={cy + 3.5} textAnchor="middle" fontSize={10} fontWeight={700} fill="#ffffff">{initialesDe(p.nom)}</text>
+                  </g>
+                )
+              })
+            })}
+          </svg>
+        )}
+      </div>
+
+      {/* Légende des 7 groupes et stratégies du cours */}
+      <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+        <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2">Les 7 groupes et leurs stratégies</p>
+        <div className="grid gap-1.5 sm:grid-cols-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+          {SALIENCE_ORDER.map(k => {
+            const s = SALIENCE[k]
+            return (
+              <p key={k} className="flex items-center gap-2">
+                <span className="inline-block w-3 h-3 rounded-full shrink-0" style={{ background: s.fill }} />
+                <span><span className="font-semibold text-gray-800 dark:text-gray-200">{s.label}</span> ({s.attrs}) → {s.strategie}</span>
+              </p>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Récapitulatif trié par prépondérance décroissante */}
+      <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              <th className="px-3 py-2">Groupe</th>
+              <th className="px-3 py-2">Parties prenantes</th>
+              <th className="px-3 py-2">Stratégie du cours</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y" style={{ borderColor: 'var(--border)' }}>
+            {SALIENCE_ORDER.map(k => {
+              const s = SALIENCE[k]
+              const membres = groupes.get(k)!
+              return (
+                <tr key={k}>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.badge}`}>{s.label}</span>
+                  </td>
+                  <td className="px-3 py-2">
+                    {membres.length === 0
+                      ? <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      : membres.map((p, i) => (
+                        <span key={p.id}>
+                          {i > 0 && <span style={{ color: 'var(--text-muted)' }}> · </span>}
+                          <button onClick={() => onOpen(p)} className="text-indigo-600 dark:text-indigo-400 hover:underline">{p.nom}</button>
+                        </span>
+                      ))}
+                  </td>
+                  <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{s.strategie}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Onglet Engagement (matrice d'évaluation de l'engagement) ─────────────────
+
+function EngagementTab({ parties, loaded, readOnly, onSet }: {
+  parties: Partie[]
+  loaded: boolean
+  readOnly: boolean
+  onSet: (id: string, champs: Partial<Partie>) => void
+}) {
+  const [placer, setPlacer] = useState<'C' | 'D'>('C')
+
+  // Écart global : somme des niveaux à gagner (D au-delà de C)
+  let ecartTotal = 0, alignees = 0, regressions = 0
+  for (const p of parties) {
+    const d = niveauIndex(p.engagement_souhaite ?? 'solidaire') - niveauIndex(p.engagement_actuel ?? 'peu_conscient')
+    if (d > 0) ecartTotal += d
+    else if (d === 0) alignees += 1
+    else regressions += 1
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border p-4" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+        <h3 className="text-sm font-bold text-teal-700 dark:text-teal-300 mb-1">Matrice d’évaluation de l’engagement</h3>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+          <span className="font-semibold">C</span> = situation actuelle (cercle plein) · <span className="font-semibold">D</span> = situation désirée (cercle creux).
+          {' '}L’écart entre situation actuelle et désirée dimensionne l’effort d’engagement.
+        </p>
+
+        {/* Bascule du mode de placement + compteur */}
+        <div className="flex flex-wrap items-center gap-3 mb-3">
+          {!readOnly && (
+            <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={() => setPlacer('C')}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${placer === 'C'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                Placer C (actuel)
+              </button>
+              <button onClick={() => setPlacer('D')}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${placer === 'D'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                Placer D (désiré)
+              </button>
+            </div>
+          )}
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Écart global : <span className="font-semibold text-gray-800 dark:text-gray-200">{ecartTotal} niveau{ecartTotal > 1 ? 'x' : ''} à gagner</span>
+            {' '}· {alignees} partie{alignees > 1 ? 's' : ''} à l’objectif{regressions > 0 ? ` · ${regressions} au-delà de l’attendu` : ''}
+          </span>
+        </div>
+
+        {!loaded ? (
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Chargement…</p>
+        ) : parties.length === 0 ? (
+          <div className="rounded-xl border border-dashed p-8 text-center text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+            Ajoutez des parties prenantes dans le registre pour renseigner la matrice.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="min-w-[40rem]">
+              {/* En-tête des 5 niveaux */}
+              <div className="flex items-center border-b pb-1 mb-1" style={{ borderColor: 'var(--border)' }}>
+                <div className="w-44 shrink-0" />
+                <div className="flex-1 grid grid-cols-5">
+                  {NIVEAUX_ENGAGEMENT.map(n => (
+                    <div key={n.value} className="text-center text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{n.label}</div>
+                  ))}
+                </div>
+              </div>
+              {/* Une ligne par partie prenante */}
+              {parties.map(p => {
+                const c = niveauIndex(p.engagement_actuel ?? 'peu_conscient')
+                const d = niveauIndex(p.engagement_souhaite ?? 'solidaire')
+                const couleur = d > c ? '#16a34a' : d === c ? '#d97706' : '#dc2626'
+                const gauche = (Math.min(c, d) + 0.5) / 5 * 100
+                const largeur = Math.abs(d - c) / 5 * 100
+                const versLaDroite = d >= c
+                return (
+                  <div key={p.id} className="flex items-center">
+                    <div className="w-44 shrink-0 py-2 pr-2 text-sm font-medium text-gray-900 dark:text-white truncate" title={p.nom}>{p.nom}</div>
+                    <div className="relative flex-1 grid grid-cols-5">
+                      {/* Flèche C → D */}
+                      {c !== d && (
+                        <div className="absolute top-1/2 -translate-y-1/2 pointer-events-none" style={{ left: `${gauche}%`, width: `${largeur}%` }}>
+                          <div className="h-0.5 w-full" style={{ background: couleur }} />
+                          <div className="absolute top-1/2 -translate-y-1/2" style={versLaDroite
+                            ? { right: -1, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: `6px solid ${couleur}` }
+                            : { left: -1, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderRight: `6px solid ${couleur}` }} />
+                        </div>
+                      )}
+                      {NIVEAUX_ENGAGEMENT.map((n, idx) => (
+                        <button key={n.value} disabled={readOnly}
+                          onClick={() => {
+                            if (readOnly) return
+                            if (placer === 'C') onSet(p.id, { engagement_actuel: n.value })
+                            else onSet(p.id, { engagement_souhaite: n.value })
+                          }}
+                          title={readOnly ? undefined : `${placer === 'C' ? 'Placer la situation actuelle (C)' : 'Placer la situation désirée (D)'} : ${n.label}`}
+                          className={`relative h-10 flex items-center justify-center gap-1 border-b border-dashed transition-colors ${readOnly ? 'cursor-default' : 'hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer'}`}
+                          style={{ borderColor: 'var(--border)' }}>
+                          {idx === c && (
+                            <span className="flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold text-white" style={{ background: couleur, zIndex: 1 }}>C</span>
+                          )}
+                          {idx === d && (
+                            <span className="flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold bg-transparent" style={{ border: `2px solid ${couleur}`, color: couleur, zIndex: 1 }}>D</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Rappel pédagogique */}
+      <div className="rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 px-4 py-3 text-xs text-teal-800 dark:text-teal-300">
+        💡 Flèche <span className="font-semibold">verte</span> : progression souhaitée (D au-delà de C) ·
+        marqueurs <span className="font-semibold">ambre</span> superposés : objectif atteint ·
+        flèche <span className="font-semibold">rouge</span> : l’engagement actuel dépasse le niveau désiré (à réévaluer).
+        L’écart C → D guide le plan d’engagement.
       </div>
     </div>
   )
