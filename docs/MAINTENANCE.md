@@ -113,6 +113,33 @@ Helper central : `src/lib/sharepointMulti.ts` (`spGraphForApp`, `getConfigForApp
 | Analyse COA en erreur | `ANTHROPIC_API_KEY` absente/invalide en prod | Vérifier la variable Vercel |
 | Cron n'envoie pas | `CRON_SECRET` ou gate horaire | Tester `/api/cron/rse-actions-digest?dry=1` |
 
+## 9 bis. Indicateurs publiés sur `/hebergement-responsable`
+
+La page publie des chiffres **mesurés**, avec la méthode affichée sous chacun. Deux natures :
+
+| Indicateur | Source | Entretien |
+|---|---|---|
+| Lignes de données + nombre de tables | Mesure **automatique** : RPC `list_public_tables` via `src/lib/impactMetrics.ts`, cache 24 h (`unstable_cache`) | Aucun — se met à jour seul. Si la mesure échoue, la page n'affiche rien (jamais d'approximation) |
+| Taille du schéma public | RPC `public_schema_size_bytes` (migration `20260829_public_schema_size.sql`) | **À appliquer une fois** via l'API de gestion (§4). Non appliquée = indicateur masqué proprement |
+| Poids transféré de la page d'accueil | Constante `PAGE_WEIGHT` **datée** dans `src/app/hebergement-responsable/page.tsx` | À re-mesurer quand le bundle change sensiblement, puis mettre à jour la date |
+
+Re-mesurer le poids de l'accueil (HTML + JS/CSS + image du premier chargement, compression active) :
+
+```bash
+curl -s -H "Accept-Encoding: gzip, br" -o /dev/null -w "%{size_download}\n" https://apps.sensetho.com/
+```
+
+puis additionner les assets `/_next/static/*.js|css` référencés dans le HTML et la variante d'image servie
+(`/_next/image?url=%2Flogo2.png&w=384&q=75`).
+
+> ⚠️ **Règle éditoriale de la page** : on ne publie un chiffre que si on peut dire comment il est obtenu,
+> et on ne convertit rien en équivalent carbone sans méthode publiée. Ce qui est déclaré par un
+> fournisseur est présenté comme tel, jamais comme une performance mesurée par nous.
+
+**Images** : les fichiers de `public/` doivent rester dimensionnés pour leur usage réel (le logo est affiché
+à 300 px au maximum, le picto à 32 px) et être servis via `next/image` — un `<img>` brut transfère le
+fichier source en entier à chaque chargement.
+
 ## 10. Sauvegardes & sécurité
 - **Base** : sauvegardes gérées par Supabase (vérifier la rétention dans la console).
 - **Fichiers** : sur SharePoint (versioning Microsoft 365).
