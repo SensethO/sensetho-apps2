@@ -1,4 +1,24 @@
 import Link from 'next/link'
+import { getImpactMetrics } from '@/lib/impactMetrics'
+
+// Poids réellement transféré de la page d'accueil, mesuré en production
+// (HTTP avec compression, cache vide) — méthode et date affichées sur la page.
+// À refaire quand le bundle évolue sensiblement : voir docs/MAINTENANCE.md.
+const PAGE_WEIGHT = {
+  measuredOn: '29 août 2026',
+  htmlKb: 12,
+  assetsKb: 170,
+  imageKb: 7,
+  get totalKb() { return this.htmlKb + this.assetsKb + this.imageKb },
+}
+
+// Poids des fichiers sources d'images avant/après optimisation (logo + picto).
+const IMAGE_OPTIM = { beforeKb: 1108, afterKb: 228 }
+
+function formatBytes(n: number) {
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} ko`
+  return `${(n / (1024 * 1024)).toFixed(1)} Mo`.replace('.', ',')
+}
 
 // Portée de sensetho-apps v1 (src/app/hebergement-responsable) le 2026-08-06,
 // adaptée v2 : SharePoint multi-tenant (documents dans le tenant du client),
@@ -88,7 +108,12 @@ const TRANSIT_SERVICES = [
   { logo: '🏦', name: 'Qonto', desc: 'Lecture des transactions bancaires si votre organisation connecte son compte — identifiants chiffrés (AES-256-GCM), aucun ordre de paiement émis.' },
 ]
 
-export default function HebergementResponsablePage() {
+export default async function HebergementResponsablePage() {
+  const metrics = await getImpactMetrics()
+  const dateMesure = metrics
+    ? new Date(metrics.measuredAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null
+
   return (
     <div className="min-h-screen bg-white dark:bg-gray-950">
       <header className="border-b border-gray-100 dark:border-gray-800">
@@ -290,13 +315,95 @@ export default function HebergementResponsablePage() {
         </div>
       </section>
 
+      {/* Ce que nous mesurons aujourd'hui */}
+      <section className="py-12 px-4 bg-white dark:bg-gray-950">
+        <div className="mx-auto max-w-4xl">
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ce que nous mesurons aujourd&apos;hui</h2>
+            <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800 font-medium">
+              Mesuré, pas déclaré
+            </span>
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 leading-relaxed">
+            Ces chiffres viennent de notre propre infrastructure, pas des brochures de nos fournisseurs.
+            La méthode est indiquée sous chaque indicateur pour que vous puissiez les contester.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Volume de données structurées — mesuré en direct */}
+            <div className="p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20">
+              <p className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">
+                {metrics ? metrics.rows.toLocaleString('fr-FR') : '—'}
+              </p>
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mt-1">lignes de données</p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                {metrics
+                  ? <>Réparties sur {metrics.tables} tables. Estimation PostgreSQL (<code>pg_stat</code>), relevée le {dateMesure}.</>
+                  : <>Mesure momentanément indisponible — nous préférons ne rien afficher qu&apos;un chiffre approximatif.</>}
+              </p>
+            </div>
+
+            {/* Taille de la base */}
+            <div className="p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20">
+              <p className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">
+                {metrics?.dbSizeBytes ? formatBytes(metrics.dbSizeBytes) : '—'}
+              </p>
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mt-1">de base de données</p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                {metrics?.dbSizeBytes
+                  ? <>Tables et index inclus (<code>pg_total_relation_size</code>), relevé le {dateMesure}.</>
+                  : <>Indicateur en cours d&apos;instrumentation : nous l&apos;afficherons dès qu&apos;il sera mesuré de façon fiable.</>}
+              </p>
+            </div>
+
+            {/* Fichiers hébergés chez nous */}
+            <div className="p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20">
+              <p className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">0</p>
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mt-1">fichier sur notre infrastructure</p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                Par conception : vos pièces jointes vont du navigateur au SharePoint de votre organisation.
+                Nous n&apos;en stockons ni copie ni cache — le stockage, lui, reste consommateur chez Microsoft.
+              </p>
+            </div>
+
+            {/* Poids de la page */}
+            <div className="p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20">
+              <p className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">≈ {PAGE_WEIGHT.totalKb} ko</p>
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mt-1">transférés à l&apos;accueil</p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                Premier chargement, cache vide, compression activée : {PAGE_WEIGHT.htmlKb} ko de HTML,{' '}
+                {PAGE_WEIGHT.assetsKb} ko de JS/CSS, {PAGE_WEIGHT.imageKb} ko d&apos;image.
+                Mesuré en production le {PAGE_WEIGHT.measuredOn}.
+              </p>
+            </div>
+          </div>
+
+          {/* Action concrète documentée */}
+          <div className="mt-4 p-5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
+            <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">
+              🖼️ Exemple de ce que « réduire les impacts évitables » veut dire concrètement
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              En auditant cette page, nous avons trouvé nos propres angles morts : notre logo pesait{' '}
+              <strong>819 ko</strong> pour un affichage de 300 pixels, notre picto <strong>316 ko</strong> pour
+              une icône de 32 pixels, et la navigation interne servait ces fichiers sans passer par
+              l&apos;optimiseur d&apos;images. Corrigé : {IMAGE_OPTIM.beforeKb} ko de sources ramenés à{' '}
+              {IMAGE_OPTIM.afterKb} ko (−{Math.round(100 * (IMAGE_OPTIM.beforeKb - IMAGE_OPTIM.afterKb) / IMAGE_OPTIM.beforeKb)} %),
+              à qualité visuelle identique aux tailles réellement affichées. Une page « hébergement
+              responsable » qui n&apos;aurait pas trouvé ça n&apos;aurait pas servi à grand-chose.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Ce que nous ne mesurons pas encore */}
       <section className="py-12 px-4 bg-white dark:bg-gray-950">
         <div className="mx-auto max-w-4xl">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Ce que nous ne mesurons pas encore</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 leading-relaxed">
-            Cette page décrit nos choix d&apos;architecture et les engagements déclarés de nos fournisseurs.
-            Elle ne constitue pas une mesure de notre impact réel — et nous préférons le dire.
+            Les volumes ci-dessus sont mesurés. L&apos;impact environnemental qu&apos;ils représentent, lui,
+            ne l&apos;est pas encore — et nous préférons le dire plutôt que de le convertir en équivalent
+            carbone avec un facteur trouvé sur Internet.
           </p>
 
           <div className="p-5 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 mb-6">
@@ -311,13 +418,13 @@ export default function HebergementResponsablePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
-              <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">📏 Ce qu&apos;une vraie mesure exigerait</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">📏 Ce qui manque encore à l&apos;appel</h3>
               <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                Le nombre et la durée des appels serverless, les volumes de données stockées et transférées,
-                la taille des pièces jointes, les sauvegardes et réplications, les appels aux services
-                externes (dont l&apos;IA), les durées de conservation — et les émissions liées à la fabrication
-                des équipements et des datacenters. Nous ne publierons un chiffre que lorsque nous saurons
-                le justifier.
+                Le nombre et la durée des appels serverless, la bande passante consommée, les sauvegardes et
+                réplications, les appels aux services externes (dont l&apos;IA), l&apos;énergie effectivement
+                consommée par nos traitements — et les émissions liées à la fabrication des équipements et
+                des datacenters, souvent majoritaires et presque jamais comptées. Nous ne publierons un
+                chiffre que lorsque nous saurons le justifier.
               </p>
             </div>
             <div className="p-5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
@@ -334,9 +441,11 @@ export default function HebergementResponsablePage() {
           <div className="mt-4 p-5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
             <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">🧭 Nos prochaines étapes</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-              Suivre nos volumes réels (appels, stockage, transferts), estimer l&apos;empreinte attribuable
-              à la plateforme, puis publier ces indicateurs sur cette page au fur et à mesure — en
-              distinguant toujours ce qui est mesuré de ce qui est déclaré par nos fournisseurs.
+              Instrumenter les appels serverless et la bande passante, puis estimer l&apos;empreinte
+              attribuable à la plateforme avec une méthode publiée et critiquable. Chaque indicateur
+              rejoindra le bloc « ce que nous mesurons » au fur et à mesure — la règle ne changera pas :
+              ce qui est mesuré est distingué de ce qui est déclaré par nos fournisseurs, et ce qui est
+              inconnu reste écrit comme inconnu.
             </p>
           </div>
         </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
@@ -56,11 +57,13 @@ export default function Sidebar({ collapsed, categories, ticketCount = 0, quoteC
       {/* Logo */}
       <div className={clsx('flex items-center px-4 mb-6', collapsed && 'justify-center px-2')}>
         {collapsed ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src="/picto.png" alt="Sens'ethO" className="w-8 h-8 flex-shrink-0 object-contain" />
+          <Image src="/picto.png" alt="Sens'ethO" width={32} height={32}
+            className="w-8 h-8 flex-shrink-0 object-contain" />
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src="/logo2.png" alt="Sens'ethO — Éthologue d'entreprise pour apporter du sens" className="w-full h-auto rounded-lg" />
+          // sizes : la sidebar déployée fait 240 px — Next sert une variante à cette
+          // échelle au lieu du fichier source (sobriété : cf. /hebergement-responsable)
+          <Image src="/logo2.png" alt="Sens'ethO — Éthologue d'entreprise pour apporter du sens"
+            width={960} height={272} sizes="240px" className="w-full h-auto rounded-lg" />
         )}
       </div>
 
