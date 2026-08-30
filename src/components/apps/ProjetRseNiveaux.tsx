@@ -186,7 +186,7 @@ export function PanneauSousProgramme({ sousProgramme, organisationId, projets, r
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
       <div className="w-full max-w-3xl rounded-xl border shadow-xl my-8"
-        style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <div className="flex items-start justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border)' }}>
           <div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">

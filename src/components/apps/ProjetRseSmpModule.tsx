@@ -97,7 +97,7 @@ export default function ProjetRseSmpModule({ projetId, organisationId, readOnly 
         </div>
       )}
 
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">
           {programmeId ? 'Plan du programme' : 'Plan du projet'}
         </h3>
@@ -185,7 +185,7 @@ export default function ProjetRseSmpModule({ projetId, organisationId, readOnly 
         if (!miens.length) return null
         return (
           <div key={axe.v} className="rounded-xl border p-3"
-            style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
             <h4 className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{axe.l}</h4>
             <div className="mt-2 overflow-x-auto">
               <table className="min-w-full text-sm">

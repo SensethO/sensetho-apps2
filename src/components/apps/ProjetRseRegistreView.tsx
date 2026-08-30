@@ -200,7 +200,7 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
         </div>
       )}
 
-      <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="font-semibold text-indigo-700 dark:text-indigo-300">Registre des parties prenantes</h3>
         <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
           Une partie prenante est enregistrée <strong>une seule fois</strong> et référencée par les éléments
@@ -404,7 +404,7 @@ function FicheActeur({ acteurId, readOnly, succession, nomDe, onClose, onChanged
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
       <div className="w-full max-w-3xl rounded-xl border shadow-xl my-8"
-        style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <div className="flex items-start justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border)' }}>
           <div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -424,7 +424,7 @@ function FicheActeur({ acteurId, readOnly, succession, nomDe, onClose, onChanged
             <>
               {(succession?.predecesseur_id || succession?.successeur_id || !a.actif) && (
                 <div className="rounded-lg border px-3 py-2 text-sm"
-                  style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+                  style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                   {succession?.predecesseur_id && (
                     <div className="text-gray-800 dark:text-gray-200">
                       Succède à <strong>{nomDe(succession.predecesseur_id) ?? 'un prédécesseur'}</strong>.
@@ -639,7 +639,7 @@ function ModaleSuccession({ acteur, onClose, onFait, onError }: {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-lg rounded-xl border p-5 shadow-xl"
-        style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Remplacer le titulaire
         </h3>
@@ -810,7 +810,7 @@ function ModaleCreation({ organisationId, onClose, onCreated, onError }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-lg rounded-xl border p-5 shadow-xl"
-        style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Inscrire une partie prenante</h3>
         <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           Au registre de l’organisation. Le rattachement aux projets se fait ensuite, élément par élément.

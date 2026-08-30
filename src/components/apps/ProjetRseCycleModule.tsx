@@ -131,7 +131,7 @@ export default function ProjetRseCycleModule({ projetId, organisationId, readOnl
         </div>
       )}
 
-      <div className="inline-flex rounded-lg border p-0.5" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="inline-flex rounded-lg border p-0.5" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         {ONGLETS.map(o => (
           <button key={o.id} onClick={() => setOnglet(o.id)}
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${onglet === o.id
@@ -194,7 +194,7 @@ function OngletLots({ lots, raci, acteurs, readOnly, nomActeur, onAjouter, onSup
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Structure de découpage du travail</h3>
         <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           La descente s’arrête dès qu’un lot peut être confié à une personne nommée, avec une échéance et une
@@ -242,7 +242,7 @@ function OngletLots({ lots, raci, acteurs, readOnly, nomActeur, onAjouter, onSup
       ) : lots.map(l => {
         const miens = raci.filter(r => r.lot_id === l.id)
         return (
-          <div key={l.id} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+          <div key={l.id} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="font-medium text-gray-900 dark:text-white">
@@ -350,7 +350,7 @@ function OngletJalons({ jalons, readOnly, onAjouter, onModifier, onSupprimer }: 
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Un jalon n’est pas une date, c’est une décision</h3>
         <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           Quatre attributs écrits avant l’ouverture : le critère de franchissement, rédigé de façon binaire ;
@@ -411,7 +411,7 @@ function OngletJalons({ jalons, readOnly, onAjouter, onModifier, onSupprimer }: 
       )}
 
       {jalons.map(j => (
-        <div key={j.id} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+        <div key={j.id} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="font-medium text-gray-900 dark:text-white">{j.libelle}</p>
@@ -469,7 +469,7 @@ function OngletRisques({ risques, acteurs, readOnly, nomActeur, onAjouter, onMod
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Registre des risques du projet</h3>
         <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           Criticité = probabilité × impact, de 1 à 25. Deux seuils d’escalade : le niveau, à partir de 12 ;
@@ -610,7 +610,7 @@ function OngletIndicateurs({ indicateurs, acteurs, readOnly, nomActeur, onAjoute
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Le jeu minimal de quatre</h3>
         <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           Quatre indicateurs obligatoires par projet. Trois sont classiques ; le quatrième — l’adoption — est

@@ -176,7 +176,7 @@ export default function ProjetRseP5Module({ projetId, readOnly }: ProjetRseModul
         </div>
       )}
 
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">La règle anti-masquage</h3>
         <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           Un impact très négatif ne se compense pas par un impact positif ailleurs. Cette page n’affiche
@@ -208,7 +208,7 @@ export default function ProjetRseP5Module({ projetId, readOnly }: ProjetRseModul
             <button key={c.cle} onClick={() => setOuvert(ouvert === c.cle ? null : c.cle)}
               className={`rounded-lg border p-3 text-left transition-colors ${ouvert === c.cle
                 ? 'border-indigo-400 dark:border-indigo-600' : ''}`}
-              style={{ borderColor: ouvert === c.cle ? undefined : 'var(--border)', background: 'var(--card-bg)' }}>
+              style={{ borderColor: ouvert === c.cle ? undefined : 'var(--border)', background: 'var(--bg-card)' }}>
               <p className={`text-xs font-bold ${c.couleur}`}>{c.nom.split(' — ')[0]}</p>
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{c.nom.split(' — ')[1]}</p>
               <p className="mt-1.5">
@@ -224,7 +224,7 @@ export default function ProjetRseP5Module({ projetId, readOnly }: ProjetRseModul
 
       {REFERENTIEL.filter(c => c.cle === ouvert).map(c => (
         <div key={c.cle} className="rounded-xl border p-4 space-y-4"
-          style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+          style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
           <h3 className={`text-sm font-bold ${c.couleur}`}>{c.nom}</h3>
           {c.groupes.map(g => (
             <div key={g.nom}>

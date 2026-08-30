@@ -154,7 +154,7 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
       ) : (
         <>
           {/* Sélecteur de vue (liste uniquement) */}
-          <div className="inline-flex rounded-lg border p-0.5" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+          <div className="inline-flex rounded-lg border p-0.5" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
             {([
               { id: 'projets' as const, label: '📁 Projets' },
               { id: 'valeur' as const, label: '🏛️ Création de valeur' },
@@ -227,7 +227,7 @@ function ProjetsList({ projets, loaded, readOnly, onOpen, onCreate }: {
         return (
           <button key={p.id} onClick={() => onOpen(p)}
             className="text-left rounded-xl border p-4 space-y-2 hover:shadow-md transition-shadow"
-            style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
             <div className="flex items-start justify-between gap-2">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">{p.nom}</h3>
               <span className={`shrink-0 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${st.badge}`}>{st.label}</span>
@@ -288,7 +288,7 @@ function CreateModal({ organisationId, onClose, onCreated, onError }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-xl border shadow-xl p-5 space-y-4"
-        style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
         onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold text-indigo-700 dark:text-indigo-300">Nouveau projet RSE</h3>
         <div className="space-y-3">
@@ -365,7 +365,7 @@ function ProjetDetail({ projet, organisationId, readOnly, onProjetChanged, onErr
   return (
     <div className="space-y-5">
       {/* En-tête projet */}
-      <div className="rounded-xl border p-4 space-y-2" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+      <div className="rounded-xl border p-4 space-y-2" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-gray-900 dark:text-white">{projet.nom}</h2>
@@ -385,7 +385,7 @@ function ProjetDetail({ projet, organisationId, readOnly, onProjetChanged, onErr
       </div>
 
       {/* Frise du cycle PRiSM */}
-      <div className="rounded-xl border p-4 space-y-3" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+      <div className="rounded-xl border p-4 space-y-3" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-sm font-bold text-teal-700 dark:text-teal-300">Cycle de vie PRiSM</h3>
           {!readOnly && (
@@ -542,7 +542,7 @@ function RevueModal({ projet, onClose, onDone, onError, isLastPhase }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-xl border shadow-xl p-5 space-y-4"
-        style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
         onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold text-indigo-700 dark:text-indigo-300">
           Revue de fin de phase — {phaseLabel(projet.phase)}

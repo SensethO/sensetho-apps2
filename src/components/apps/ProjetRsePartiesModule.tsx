@@ -510,7 +510,7 @@ export default function ProjetRsePartiesModule({ projetId, organisationId, phase
       )}
 
       {/* Bandeau du cycle d'engagement en 6 étapes (processus continu) */}
-      <div className="rounded-xl border p-3" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+      <div className="rounded-xl border p-3" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-1 overflow-x-auto">
           {CYCLE_STEPS.map((s, i) => (
             <div key={s.label} className="flex items-center gap-1 shrink-0">
@@ -591,7 +591,7 @@ export default function ProjetRsePartiesModule({ projetId, organisationId, phase
       {showImport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowImport(false)}>
           <div className="w-full max-w-lg rounded-xl border shadow-xl p-5 space-y-4"
-            style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}
+            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
             onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold text-indigo-700 dark:text-indigo-300">Importer depuis « Parties Prenantes & Matérialité »</h3>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -702,7 +702,7 @@ function ModaleRattachement({ projetId, organisationId, dejaRattaches, onClose, 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-lg rounded-xl border p-5 shadow-xl"
-        style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Rattacher depuis le registre</h3>
         <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           Le registre est tenu au niveau de l’organisation. Rattacher plutôt que recréer, c’est ce qui
@@ -779,7 +779,7 @@ function RegistreTab({ parties, loaded, readOnly, onNew, onPreset, onEdit, onDel
   return (
     <div className="space-y-4">
       {/* Aide : les catégories du cours */}
-      <div className="rounded-xl border p-4 space-y-2" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+      <div className="rounded-xl border p-4 space-y-2" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <h3 className="text-sm font-bold text-teal-700 dark:text-teal-300">Les trois catégories du cours</h3>
         <div className="grid gap-2 sm:grid-cols-3 text-xs" style={{ color: 'var(--text-muted)' }}>
           <p><span className="font-semibold text-gray-800 dark:text-gray-200">🟢 Opérationnel quotidien</span> — équipe, métiers, fournisseurs directs : ceux qui font le projet au jour le jour.</p>
@@ -885,7 +885,7 @@ function FicheModal({ form, setForm, saving, onSave, onClose }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border shadow-xl p-5 space-y-4"
-        style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
         onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold text-indigo-700 dark:text-indigo-300">
           {form.id ? 'Modifier la partie prenante' : 'Nouvelle partie prenante'}
@@ -1056,7 +1056,7 @@ function MatriceTab({ parties, readOnly, onMove }: {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border p-4" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+      <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <h3 className="text-sm font-bold text-teal-700 dark:text-teal-300 mb-1">Matrice Pouvoir × Intérêt</h3>
         <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
           {readOnly
@@ -1337,7 +1337,7 @@ function SalienceTab({ parties, loaded, onOpen }: {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border p-4" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+      <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <h3 className="text-sm font-bold text-teal-700 dark:text-teal-300 mb-1">Modèle de salience (Mitchell, Agle &amp; Wood, 1997)</h3>
         <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
           Trois attributs — Pouvoir, Légitimité, Urgence — sont « présents » quand leur note dépasse 3.
@@ -1382,7 +1382,7 @@ function SalienceTab({ parties, loaded, onOpen }: {
                 return (
                   <g key={p.id} style={{ cursor: 'pointer' }} onClick={() => onOpen(p)}>
                     <title>{`${p.nom} — Pouvoir ${p.pouvoir}/5 · Légitimité ${p.legitimite ?? 3}/5 · Urgence ${p.urgence ?? 1}/5 → ${s.label} : ${s.strategie}`}</title>
-                    <circle cx={cx} cy={cy} r={13} fill={s.fill} fillOpacity={0.9} stroke="var(--card-bg)" strokeWidth={2} />
+                    <circle cx={cx} cy={cy} r={13} fill={s.fill} fillOpacity={0.9} stroke="var(--bg-card)" strokeWidth={2} />
                     <text x={cx} y={cy + 3.5} textAnchor="middle" fontSize={10} fontWeight={700} fill="#ffffff">{initialesDe(p.nom)}</text>
                   </g>
                 )
@@ -1469,7 +1469,7 @@ function EngagementTab({ parties, loaded, readOnly, onSet }: {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border p-4" style={{ background: 'var(--card-bg)', borderColor: 'var(--border)' }}>
+      <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <h3 className="text-sm font-bold text-teal-700 dark:text-teal-300 mb-1">Matrice d’évaluation de l’engagement</h3>
         <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
           <span className="font-semibold">C</span> = situation actuelle (cercle plein) · <span className="font-semibold">D</span> = situation désirée (cercle creux).

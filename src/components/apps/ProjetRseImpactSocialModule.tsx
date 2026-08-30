@@ -89,7 +89,7 @@ export default function ProjetRseImpactSocialModule({ projetId, readOnly }: Proj
         </div>
       )}
 
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">La théorie du changement</h3>
         <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           Elle se lit du besoin vers l’impact, et se construit dans l’autre sens : partir de l’impact visé et
@@ -103,7 +103,7 @@ export default function ProjetRseImpactSocialModule({ projetId, readOnly }: Proj
         )}
       </div>
 
-      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         {CHAINE.map(c => (
           <div key={c.cle}>
             <label className={labelCls}>{c.titre}</label>
@@ -130,7 +130,7 @@ export default function ProjetRseImpactSocialModule({ projetId, readOnly }: Proj
         </div>
       </div>
 
-      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Retour social sur investissement</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
@@ -181,7 +181,7 @@ export default function ProjetRseImpactSocialModule({ projetId, readOnly }: Proj
         </div>
       </div>
 
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <label className={labelCls}>Boucles d’apprentissage</label>
         <textarea rows={3} className={inputCls} style={{ borderColor: 'var(--border)' }}
           disabled={readOnly} value={String(d.boucles ?? '')}

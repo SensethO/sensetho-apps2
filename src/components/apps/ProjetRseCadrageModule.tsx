@@ -190,7 +190,7 @@ export default function ProjetRseCadrageModule({ projetId, organisationId, readO
         )}
       </div>
 
-      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Ce que le projet produit</h3>
         <Zone cle="finalite" titre="1 · Finalité"
           aide="Le problème traité, en une phrase. Un projet dont la finalité tient en trois phrases n’est pas cadré." />
@@ -201,7 +201,7 @@ export default function ProjetRseCadrageModule({ projetId, organisationId, readO
           aide="Le bénéfice du registre auquel ce projet contribue. Un projet qui ne contribue à aucun est à réexaminer." />
       </div>
 
-      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Qui le porte</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <SelectActeur cle="pilote_acteur_id" titre="5 · Pilote"
@@ -211,7 +211,7 @@ export default function ProjetRseCadrageModule({ projetId, organisationId, readO
         </div>
       </div>
 
-      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Ce qu’il couvre, et ce qu’il ne couvre pas</h3>
         <Zone cle="perimetre_inclus" titre="7 · Périmètre inclus" />
         <Zone cle="perimetre_exclu" titre="7 bis · Périmètre exclu"
@@ -220,7 +220,7 @@ export default function ProjetRseCadrageModule({ projetId, organisationId, readO
           aide="Ce dont le projet dépend, et ce qui dépend de lui." />
       </div>
 
-      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Ce qu’il coûte</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
@@ -248,7 +248,7 @@ export default function ProjetRseCadrageModule({ projetId, organisationId, readO
           aide="La seule part qui demande un arbitrage. La distinguer est le premier argument devant la Direction Financière." />
       </div>
 
-      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Pourquoi le faire, et comment savoir si c’est réussi</h3>
         <Zone cle="justification" titre="10 · Justification" lignes={3} />
         <Zone cle="alternatives" titre="Alternatives examinées"
