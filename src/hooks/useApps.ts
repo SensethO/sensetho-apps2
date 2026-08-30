@@ -32,8 +32,13 @@ export function broadcastAppsUpdate() {
  * @param isAdmin    Statut admin de l'utilisateur courant
  * @param authReady  true dès que useAuth a fini de charger le profil
  *                   → on n'écrase pas le cache avec isAdmin=false pendant le chargement
+ *
+ * ⚠️ `authReady` est OBLIGATOIRE (plus de valeur par défaut depuis le 2026-08-30) :
+ * l'oublier fait charger la liste avec isAdmin=false, donc filtrée par abonnements,
+ * et met cette liste amputée en cache — la barre latérale perd des applications
+ * entières (incident RseAppShell du 2026-08-30). Passer `!authLoading` de useAuth.
  */
-export function useApps(isAdmin: boolean, authReady = true) {
+export function useApps(isAdmin: boolean, authReady: boolean) {
   // Initialiser avec le cache — sidebar visible sans flash
   // Si le cache est pour un admin mais l'utilisateur actuel est non-admin, on
   // affiche quand même le cache et on rechargera une fois authReady=true.

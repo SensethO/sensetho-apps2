@@ -104,8 +104,14 @@ function FirstYearPrompt({ orgName, onConfirm }: { orgName: string; onConfirm: (
 const LAST_RSE_ORG_KEY = 'rse_last_org_id'
 
 export default function RseAppShell({ appSlug, title, requireYear = true, children }: RseAppShellProps) {
-  const { profile, isAdmin, signOut } = useAuth()
-  const { categories } = useApps(isAdmin)
+  const { profile, isAdmin, signOut, loading: authLoading } = useAuth()
+  // ⚠️ authReady est indispensable : sans lui, la liste se charge pendant que l'auth
+  // est encore en cours, donc avec isAdmin=false — useApps applique alors le filtre
+  // « abonnements actifs » et met cette liste amputée dans son cache module-level.
+  // Symptôme observé le 2026-08-30 : dans une app, la barre latérale ne montrait plus
+  // que les apps abonnées (catégorie Business entièrement disparue) — impossible de
+  // naviguer vers une autre application. AppShell et FavoritesBoard le passaient déjà.
+  const { categories } = useApps(isAdmin, !authLoading)
   const { ticketCount, quoteCount } = useAdminNotifications(isAdmin)
   const { organisations, loading, save, saveManual, remove } = useOrganisations()
   const favoriteOrgs = organisations.filter(o => o.is_favorite)
