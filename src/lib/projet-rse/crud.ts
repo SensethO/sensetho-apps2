@@ -10,6 +10,22 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjet } from '@/lib/projet-rse/auth'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
 
+/**
+ * Message lisible lorsque la table n'existe pas encore — c'est-à-dire lorsque
+ * la migration des sous-applications n'a pas été exécutée dans Supabase.
+ * Sans cela l'interface afficherait une erreur Postgres brute, illisible pour
+ * qui n'a pas le contexte.
+ */
+function messageErreur(e: { code?: string; message?: string }): string {
+  const m = (e.message ?? '').toLowerCase()
+  if (e.code === '42P01' || e.code === 'PGRST205' || m.includes('does not exist')
+      || m.includes('could not find the table')) {
+    return 'Cette sous-application attend sa migration : le script '
+         + '20260831_projet_rse_modules.sql n’a pas encore été exécuté dans Supabase.'
+  }
+  return e.message ?? 'Erreur inattendue'
+}
+
 export interface OptionsTable {
   /** Nom de la table Supabase. */
   table: string
@@ -37,7 +53,7 @@ export function routesDeProjet(o: OptionsTable) {
       const { data, error } = await admin
         .from(o.table).select('*').eq('projet_id', params.id)
         .order(tri.colonne, { ascending: tri.croissant !== false })
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
       return NextResponse.json({ [o.cle]: data ?? [] })
     } catch (err) {
       return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -60,7 +76,7 @@ export function routesDeProjet(o: OptionsTable) {
 
       const admin = createAdminClient()
       const { data, error } = await admin.from(o.table).insert(insert).select().single()
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
       return NextResponse.json({ [o.cle.replace(/s$/, '')]: data })
     } catch (err) {
       return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -83,7 +99,7 @@ export function routesDeProjet(o: OptionsTable) {
       const admin = createAdminClient()
       const { data, error } = await admin.from(o.table).update(patch)
         .eq('id', id).eq('projet_id', params.id).select().single()
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
       return NextResponse.json({ [o.cle.replace(/s$/, '')]: data })
     } catch (err) {
       return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -101,7 +117,7 @@ export function routesDeProjet(o: OptionsTable) {
       const admin = createAdminClient()
       const { error } = await admin.from(o.table).delete()
         .eq('id', id).eq('projet_id', params.id)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
       return NextResponse.json({ ok: true })
     } catch (err) {
       return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -124,7 +140,7 @@ export function ficheDeProjet(o: { table: string; champs: readonly string[]; cle
       const admin = createAdminClient()
       const { data, error } = await admin
         .from(o.table).select('*').eq('projet_id', params.id).maybeSingle()
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
       return NextResponse.json({ [o.cle]: data ?? null })
     } catch (err) {
       return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -142,7 +158,7 @@ export function ficheDeProjet(o: { table: string; champs: readonly string[]; cle
       const admin = createAdminClient()
       const { data, error } = await admin
         .from(o.table).upsert(ligne, { onConflict: 'projet_id' }).select().single()
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
       return NextResponse.json({ [o.cle]: data })
     } catch (err) {
       return NextResponse.json({ error: String(err) }, { status: 500 })
