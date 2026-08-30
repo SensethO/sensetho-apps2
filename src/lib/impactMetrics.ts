@@ -14,6 +14,10 @@ export interface ImpactMetrics {
   rows: number
   /** Taille totale du schéma public en octets — null si la fonction SQL n'est pas déployée. */
   dbSizeBytes: number | null
+  /** Pages vues enregistrées sur 30 jours (journal interne, robots exclus). */
+  pageViews30d: number | null
+  /** Pages vues enregistrées depuis la mise en service (robots exclus). */
+  pageViewsTotal: number | null
   /** Horodatage de la mesure (ISO). */
   measuredAt: string
 }
@@ -39,13 +43,31 @@ async function measure(): Promise<ImpactMetrics | null> {
       if (Number.isFinite(n) && n > 0) dbSizeBytes = n
     }
 
-    return { tables: data.length, rows, dbSizeBytes, measuredAt: new Date().toISOString() }
+    // Visites de pages réellement enregistrées par notre propre journal
+    // (app_logs, alimenté par /api/logs) — robots exclus. PostgREST interdisant
+    // les agrégats, on utilise le comptage exact en HEAD : aucune ligne transférée.
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    const [win, all] = await Promise.all([
+      admin.from('app_logs').select('id', { count: 'exact', head: true })
+        .gte('created_at', since).neq('device_type', 'bot'),
+      admin.from('app_logs').select('id', { count: 'exact', head: true })
+        .neq('device_type', 'bot'),
+    ])
+
+    return {
+      tables: data.length,
+      rows,
+      dbSizeBytes,
+      pageViews30d: win.error ? null : (win.count ?? null),
+      pageViewsTotal: all.error ? null : (all.count ?? null),
+      measuredAt: new Date().toISOString(),
+    }
   } catch {
     return null
   }
 }
 
-export const getImpactMetrics = unstable_cache(measure, ['impact-metrics', 'v2-taille'], {
+export const getImpactMetrics = unstable_cache(measure, ['impact-metrics', 'v3-usage'], {
   revalidate: 86_400, // 24 h : la mesure n'a pas besoin d'être plus fraîche que ça
   tags: ['impact-metrics'], // stable : permet un revalidateTag('impact-metrics') quelle que soit la version de clé
 })

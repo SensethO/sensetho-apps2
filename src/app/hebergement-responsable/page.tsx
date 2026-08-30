@@ -329,7 +329,7 @@ export default async function HebergementResponsablePage() {
             La méthode est indiquée sous chaque indicateur pour que vous puissiez les contester.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Volume de données structurées — mesuré en direct */}
             <div className="p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20">
               <p className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">
@@ -374,6 +374,22 @@ export default async function HebergementResponsablePage() {
                 Premier chargement, cache vide, compression activée : {PAGE_WEIGHT.htmlKb} ko de HTML,{' '}
                 {PAGE_WEIGHT.assetsKb} ko de JS/CSS, {PAGE_WEIGHT.imageKb} ko d&apos;image.
                 Mesuré en production le {PAGE_WEIGHT.measuredOn}.
+              </p>
+            </div>
+
+            {/* Usage réel — mesuré par notre propre journal de visites */}
+            <div className="p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20">
+              <p className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">
+                {metrics?.pageViews30d != null ? metrics.pageViews30d.toLocaleString('fr-FR') : '—'}
+              </p>
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mt-1">pages vues sur 30 jours</p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                {metrics?.pageViews30d != null
+                  ? <>Notre propre journal de visites, robots exclus
+                      {metrics.pageViewsTotal != null && <> ({metrics.pageViewsTotal.toLocaleString('fr-FR')} depuis la mise en service)</>}.
+                      Ne comptent ni les appels d&apos;API ni les ressources statiques. Relevé le {dateMesure}.
+                      Oui, c&apos;est peu : la plateforme est jeune, et nous préférons le dire.</>
+                  : <>Mesure momentanément indisponible.</>}
               </p>
             </div>
           </div>
