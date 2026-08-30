@@ -38,6 +38,8 @@ interface SousProgramme {
   code: string
   nom: string
   fonction: string | null
+  description: string | null
+  ordre: number
   nb_projets: number
 }
 
@@ -114,6 +116,8 @@ type CreateKind = 'portefeuille' | 'programme' | 'operation'
 
 // ── Composant principal ───────────────────────────────────────────────────────
 
+import { FilAvancement, PanneauSousProgramme } from './ProjetRseNiveaux'
+
 export default function ProjetRseValeurView({ organisationId, readOnly, onOpenProjet }: {
   organisationId: string
   readOnly: boolean
@@ -128,6 +132,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
   const [error, setError] = useState<string | null>(null)
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
   const [attachTarget, setAttachTarget] = useState<AttachTarget | null>(null)
+  const [spOuvert, setSpOuvert] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -276,6 +281,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
                   {programmesDe(pf.id).map(pg => (
                     <ProgrammeBloc key={pg.id} programme={pg} projets={projetsDuProgramme(pg.id)}
                     sousProgrammes={sousProgrammes.filter(sp => sp.programme_id === pg.id)}
+                    organisationId={organisationId} onOuvrirSousProgramme={setSpOuvert}
                       readOnly={readOnly} onOpenProjet={onOpenProjet}
                       onAttach={() => setAttachTarget({ type: 'programme', id: pg.id, nom: pg.nom, current: currentOfProgramme(pg) })}
                       onAttachProjet={p => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom, current: currentOfProjet(p) })}
@@ -312,6 +318,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
                 {programmesAutonomes.map(pg => (
                   <ProgrammeBloc key={pg.id} programme={pg} projets={projetsDuProgramme(pg.id)}
                     sousProgrammes={sousProgrammes.filter(sp => sp.programme_id === pg.id)}
+                    organisationId={organisationId} onOuvrirSousProgramme={setSpOuvert}
                     readOnly={readOnly} onOpenProjet={onOpenProjet}
                     onAttach={() => setAttachTarget({ type: 'programme', id: pg.id, nom: pg.nom, current: currentOfProgramme(pg) })}
                     onAttachProjet={p => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom, current: currentOfProjet(p) })}
@@ -400,6 +407,15 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
           onCreated={async () => { setCreateKind(null); await reload() }}
           onError={m => { setCreateKind(null); setError(m) }} />
       )}
+      {spOuvert && (() => {
+        const sp = sousProgrammes.find(x => x.id === spOuvert)
+        return sp ? (
+          <PanneauSousProgramme sousProgramme={sp} organisationId={organisationId}
+            projets={projets} readOnly={readOnly}
+            onClose={() => setSpOuvert(null)} onChange={() => { void reload() }} />
+        ) : null
+      })()}
+
       {attachTarget && !readOnly && (
         <AttachModal target={attachTarget} portefeuilles={portefeuilles} programmes={programmes}
           onClose={() => setAttachTarget(null)}
@@ -424,12 +440,14 @@ function FlowArrow({ direction }: { direction: 'down' | 'up' }) {
 
 // ── Bloc programme ────────────────────────────────────────────────────────────
 
-function ProgrammeBloc({ programme, projets, sousProgrammes, readOnly, onOpenProjet, onAttach, onAttachProjet, onDelete }: {
+function ProgrammeBloc({ programme, projets, sousProgrammes, organisationId, readOnly, onOpenProjet, onOuvrirSousProgramme, onAttach, onAttachProjet, onDelete }: {
   programme: Programme
   projets: ProjetLite[]
   sousProgrammes: SousProgramme[]
+  organisationId: string
   readOnly: boolean
   onOpenProjet: (id: string) => void
+  onOuvrirSousProgramme: (id: string) => void
   onAttach: () => void
   onAttachProjet: (p: ProjetLite) => void
   onDelete: () => void
@@ -468,11 +486,12 @@ function ProgrammeBloc({ programme, projets, sousProgrammes, readOnly, onOpenPro
             if (!miens.length) return null
             return (
               <div key={sp.id}>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400"
-                  title={sp.fonction ?? undefined}>
+                <button onClick={() => onOuvrirSousProgramme(sp.id)}
+                  className="text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 hover:underline text-left"
+                  title={sp.fonction ?? 'Ouvrir le sous-programme'}>
                   {sp.code} — {sp.nom}
                   <span className="ml-1 font-normal opacity-70">({miens.length})</span>
-                </p>
+                </button>
                 <ul className="mt-0.5 space-y-1 pl-2 border-l border-violet-200 dark:border-violet-800">
                   {miens.map(p => (
                     <LigneProjet key={p.id} projet={p} readOnly={readOnly}
@@ -504,6 +523,10 @@ function ProgrammeBloc({ programme, projets, sousProgrammes, readOnly, onOpenPro
           })()}
         </div>
       )}
+      <div className="pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
+        <FilAvancement organisationId={organisationId} niveau="programme"
+          cibleId={programme.id} readOnly={readOnly} replie />
+      </div>
     </div>
   )
 }
