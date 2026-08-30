@@ -394,3 +394,34 @@ if (shared) return NextResponse.json({ data: shared, isOwner: false })
 - [ ] Icône de l'app présente dans `Icon.tsx`
 - [ ] App déclarée dans Supabase via l'admin panel (`/admin/categories`)
 - [ ] Abonnement vérifié dans les routes API si app payante
+
+---
+
+## App « Projet RSE » — modèle de données
+
+**Cinq niveaux**, conformes au référentiel de gestion de programme :
+`projet_rse_portefeuilles` → `projet_rse_programmes` → `projet_rse_sous_programmes` → `projet_rse_projets` → lots de travail (dans le WBS, à venir).
+
+Un **sous-programme** ne produit aucun livrable : il regroupe les projets qui concourent au même bénéfice, et c'est à ce niveau que l'arbitrage entre projets se fait. Un projet porte `sous_programme_id` (facultatif).
+
+### Registre des parties prenantes — une entité, plusieurs références
+
+`projet_rse_acteurs` est le registre, **au niveau de l'organisation**. Une partie prenante y figure une seule fois. Les rattachements passent par `projet_rse_acteur_liens`, qui pointe vers exactement une cible parmi portefeuille, programme, sous-programme et projet, et porte le `role_local` — la raison pour laquelle cet acteur est concerné par cet élément précis.
+
+**Règle** : ne jamais recopier une partie prenante d'un élément à l'autre. On la rattache.
+
+Trois conséquences implémentées dans `src/lib/projet-rse/acteurs.ts` :
+
+1. **La modification vaut partout.** Modifier un acteur le modifie sur tous ses rattachements, puisqu'il n'existe qu'une ligne.
+2. **Le changement est tracé.** Chaque champ modifié produit une ligne dans `projet_rse_acteur_historique`, avec l'ancienne et la nouvelle valeur, et le motif.
+3. **Le changement est contextualisé.** Les champs notables produisent en outre une entrée dans `projet_rse_journal` **pour chaque élément rattaché**, rédigée avec le rôle local. C'est ce qui permet, en relisant un projet six mois plus tard, de constater qu'un interlocuteur a changé et de savoir pourquoi.
+
+Le champ `type` de l'acteur (`personne`, `fonction`, `collectif`, `entite`, `sans_voix`) commande le traitement : **renommer un acteur de type `personne` est un remplacement d'interlocuteur, et le `motif` devient obligatoire** — la route renvoie 400 sans lui.
+
+### Compatibilité
+
+`projet_rse_parties` est conservée en archive et n'est plus écrite. La route `/api/projet-rse/projets/[id]/parties` lit et écrit désormais le registre à travers les liens ; `DELETE` y **détache** l'acteur du projet au lieu de l'effacer. Les engagements pointent vers `acteur_id`, `partie_id` restant renvoyé comme alias.
+
+### Piège de plateforme à connaître
+
+Sur les routes imbriquées sous un segment dynamique (`projets/[id]/…`), **la chaîne de requête n'atteint pas le gestionnaire en production** : `req.nextUrl.searchParams` et `new URL(req.url)` sont vides, alors que les routes statiques reçoivent bien leurs paramètres. Utiliser `lireIdentifiant()` de `src/lib/projet-rse/request.ts`, qui lit l'identifiant dans nextUrl, puis dans l'URL brute, puis dans le corps JSON — et faire envoyer les deux par le client.

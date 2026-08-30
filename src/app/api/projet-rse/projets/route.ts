@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
     if (!nom) return NextResponse.json({ error: 'nom requis' }, { status: 400 })
 
     const insert: Record<string, unknown> = { organisation_id: organisationId, nom }
-    for (const key of ['description', 'contexte', 'date_debut', 'date_fin_prevue'] as const) {
+    for (const key of ['description', 'contexte', 'date_debut', 'date_fin_prevue',
+                       'sous_programme_id', 'programme_id', 'portefeuille_id'] as const) {
       if (key in body) insert[key] = body[key]
     }
 
@@ -89,7 +90,7 @@ export async function PATCH(req: NextRequest) {
       'nom', 'description', 'contexte', 'statut', 'phase',
       'date_debut', 'date_fin_prevue', 'business_case',
       // Rattachement au Système de création de valeur (null accepté pour détacher).
-      'programme_id', 'portefeuille_id',
+      'programme_id', 'portefeuille_id', 'sous_programme_id',
     ]
     const patch: Record<string, unknown> = {}
     for (const key of allowed) {

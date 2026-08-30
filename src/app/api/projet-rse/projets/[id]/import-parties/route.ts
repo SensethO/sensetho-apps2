@@ -49,35 +49,53 @@ export async function POST(
     const stakeholders: PPStakeholder[] = Array.isArray(session.stakeholders) ? session.stakeholders : []
     if (stakeholders.length === 0) return NextResponse.json({ imported: 0 })
 
-    // Anti-doublon par nom (insensible à la casse, espaces normalisés).
-    const { data: existing } = await admin
-      .from('projet_rse_parties')
-      .select('nom')
-      .eq('projet_id', params.id)
-    const seen = new Set((existing ?? []).map(p => String(p.nom).trim().toLowerCase()))
+    // L'import alimente le registre de l'organisation, pas une copie propre au
+    // projet : un acteur déjà inscrit est réutilisé et simplement rattaché.
+    const orgId = guard.projet.organisation_id
+    const { data: registre } = await admin
+      .from('projet_rse_acteurs').select('id, nom').eq('organisation_id', orgId)
+    const parNom = new Map((registre ?? []).map(a => [String(a.nom).trim().toLowerCase(), a.id]))
 
-    const rows: Record<string, unknown>[] = []
+    const { data: dejaLies } = await admin
+      .from('projet_rse_acteur_liens').select('acteur_id').eq('projet_id', params.id)
+    const lies = new Set((dejaLies ?? []).map(l => l.acteur_id))
+
+    let importes = 0, reutilises = 0
     for (const s of stakeholders) {
       const nom = typeof s.name === 'string' ? s.name.trim() : ''
       if (!nom) continue
-      const key = nom.toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      rows.push({
-        projet_id: params.id,
-        nom,
-        organisation: typeof s.organisation === 'string' && s.organisation ? s.organisation : null,
-        categorie: 'bleue',
-        pouvoir: clamp15(s.influence),
-        interet: clamp15(s.interest),
-        attentes: typeof s.notes === 'string' && s.notes ? s.notes : null,
-      })
-    }
-    if (rows.length === 0) return NextResponse.json({ imported: 0 })
+      const cle = nom.toLowerCase()
 
-    const { error } = await admin.from('projet_rse_parties').insert(rows)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ imported: rows.length })
+      let acteurId = parNom.get(cle)
+      if (acteurId) {
+        reutilises++
+      } else {
+        const { data: cree, error: eA } = await admin.from('projet_rse_acteurs').insert({
+          organisation_id: orgId,
+          nom,
+          organisation: typeof s.organisation === 'string' && s.organisation ? s.organisation : null,
+          categorie: 'bleue',
+          pouvoir: clamp15(s.influence),
+          interet: clamp15(s.interest),
+          attentes: typeof s.notes === 'string' && s.notes ? s.notes : null,
+        }).select('id').single()
+        if (eA || !cree) continue
+        acteurId = cree.id
+        parNom.set(cle, acteurId)
+        await admin.from('projet_rse_acteur_historique').insert({
+          acteur_id: acteurId, type: 'creation',
+          motif: 'Importé depuis une session « Parties prenantes & Matérialité ».',
+          auteur_id: userId })
+      }
+
+      if (lies.has(acteurId)) continue
+      const { error: eL } = await admin.from('projet_rse_acteur_liens')
+        .insert({ acteur_id: acteurId, projet_id: params.id, criticite: 'concernee' })
+      if (eL) continue
+      lies.add(acteurId)
+      importes++
+    }
+    return NextResponse.json({ imported: importes, reutilises })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

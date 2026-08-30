@@ -1,4 +1,8 @@
 // /api/projet-rse/projets/[id]/engagements — plan d'engagement des parties prenantes.
+//
+// Depuis le passage au registre d'organisation, un engagement pointe vers
+// l'acteur (`acteur_id`) et non vers une copie propre au projet. `partie_id`
+// reste accepté et renvoyé comme alias, pour ne pas casser l'interface.
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjet } from '@/lib/projet-rse/auth'
@@ -7,7 +11,7 @@ import { lireIdentifiant } from '@/lib/projet-rse/request'
 export const dynamic = 'force-dynamic'
 
 const CHAMPS = [
-  'partie_id', 'action', 'responsable', 'canal', 'frequence', 'echeance', 'statut', 'mode',
+  'acteur_id', 'action', 'responsable', 'canal', 'frequence', 'echeance', 'statut', 'mode',
 ] as const
 
 /** GET ?partie_id= (optionnel) → { engagements } */
@@ -25,12 +29,16 @@ export async function GET(
       .select('*')
       .eq('projet_id', params.id)
       .order('created_at', { ascending: true })
-    const partieId = req.nextUrl.searchParams.get('partie_id')
-    if (partieId) query = query.eq('partie_id', partieId)
+    const cible = req.nextUrl.searchParams.get('acteur_id')
+      ?? req.nextUrl.searchParams.get('partie_id')
+    if (cible) query = query.or(`acteur_id.eq.${cible},partie_id.eq.${cible}`)
 
     const { data, error } = await query
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ engagements: data ?? [] })
+    // `partie_id` est conservé comme alias de `acteur_id` pour l'interface.
+    const engagements = (data ?? []).map(e => ({
+      ...e, partie_id: e.acteur_id ?? e.partie_id, acteur_id: e.acteur_id ?? e.partie_id }))
+    return NextResponse.json({ engagements })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
@@ -46,24 +54,27 @@ export async function POST(
     if (guard instanceof NextResponse) return guard
 
     const body = await req.json() as Record<string, unknown>
-    const partieId = typeof body.partie_id === 'string' ? body.partie_id : ''
+    const acteurId = typeof body.acteur_id === 'string' ? body.acteur_id
+      : typeof body.partie_id === 'string' ? body.partie_id : ''
     const action = typeof body.action === 'string' ? body.action.trim() : ''
-    if (!partieId) return NextResponse.json({ error: 'partie_id requis' }, { status: 400 })
+    if (!acteurId) return NextResponse.json({ error: 'acteur_id requis' }, { status: 400 })
     if (!action) return NextResponse.json({ error: 'action requise' }, { status: 400 })
 
     const admin = createAdminClient()
-    // La partie prenante doit appartenir au même projet.
-    const { data: partie } = await admin
-      .from('projet_rse_parties')
+    // L'acteur doit être rattaché à ce projet : on n'engage pas quelqu'un
+    // qui ne figure pas au registre des parties prenantes du projet.
+    const { data: lien } = await admin
+      .from('projet_rse_acteur_liens')
       .select('id')
-      .eq('id', partieId)
+      .eq('acteur_id', acteurId)
       .eq('projet_id', params.id)
       .maybeSingle()
-    if (!partie) return NextResponse.json({ error: 'Partie prenante introuvable dans ce projet' }, { status: 404 })
+    if (!lien) return NextResponse.json(
+      { error: 'Cette partie prenante n’est pas rattachée à ce projet.' }, { status: 404 })
 
-    const insert: Record<string, unknown> = { projet_id: params.id }
+    const insert: Record<string, unknown> = { projet_id: params.id, acteur_id: acteurId }
     for (const key of CHAMPS) {
-      if (key in body) insert[key] = body[key]
+      if (key in body && key !== 'acteur_id') insert[key] = body[key]
     }
     insert.action = action
 

@@ -32,6 +32,15 @@ interface Programme {
   nb_projets: number
 }
 
+interface SousProgramme {
+  id: string
+  programme_id: string
+  code: string
+  nom: string
+  fonction: string | null
+  nb_projets: number
+}
+
 interface Operation {
   id: string
   nom: string
@@ -47,6 +56,7 @@ interface ProjetLite {
   statut: string
   programme_id: string | null
   portefeuille_id: string | null
+  sous_programme_id: string | null
 }
 
 const PHASE_LABELS: Record<Phase, string> = {
@@ -111,6 +121,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
 }) {
   const [portefeuilles, setPortefeuilles] = useState<Portefeuille[]>([])
   const [programmes, setProgrammes] = useState<Programme[]>([])
+  const [sousProgrammes, setSousProgrammes] = useState<SousProgramme[]>([])
   const [operations, setOperations] = useState<Operation[]>([])
   const [projets, setProjets] = useState<ProjetLite[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -121,14 +132,16 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
   const reload = useCallback(async () => {
     try {
       const q = `?organisation_id=${organisationId}`
-      const [pf, pg, op, pj] = await Promise.all([
+      const [pf, pg, sp, op, pj] = await Promise.all([
         apiJson<{ portefeuilles?: Portefeuille[] }>(`${BASE}/portefeuilles${q}`),
         apiJson<{ programmes?: Programme[] }>(`${BASE}/programmes${q}`),
+        apiJson<{ sous_programmes?: SousProgramme[] }>(`${BASE}/sous-programmes${q}`),
         apiJson<{ operations?: Operation[] }>(`${BASE}/operations${q}`),
         apiJson<{ projets?: ProjetLite[] }>(`${BASE}/projets${q}`),
       ])
       setPortefeuilles(pf.portefeuilles ?? [])
       setProgrammes(pg.programmes ?? [])
+      setSousProgrammes(sp.sous_programmes ?? [])
       setOperations(op.operations ?? [])
       setProjets(pj.projets ?? [])
     } catch (e) { setError(String((e as Error).message ?? e)) }
@@ -262,6 +275,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
                 <div className="space-y-2">
                   {programmesDe(pf.id).map(pg => (
                     <ProgrammeBloc key={pg.id} programme={pg} projets={projetsDuProgramme(pg.id)}
+                    sousProgrammes={sousProgrammes.filter(sp => sp.programme_id === pg.id)}
                       readOnly={readOnly} onOpenProjet={onOpenProjet}
                       onAttach={() => setAttachTarget({ type: 'programme', id: pg.id, nom: pg.nom, current: currentOfProgramme(pg) })}
                       onAttachProjet={p => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom, current: currentOfProjet(p) })}
@@ -297,6 +311,7 @@ export default function ProjetRseValeurView({ organisationId, readOnly, onOpenPr
                 <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300">Hors portefeuille</h4>
                 {programmesAutonomes.map(pg => (
                   <ProgrammeBloc key={pg.id} programme={pg} projets={projetsDuProgramme(pg.id)}
+                    sousProgrammes={sousProgrammes.filter(sp => sp.programme_id === pg.id)}
                     readOnly={readOnly} onOpenProjet={onOpenProjet}
                     onAttach={() => setAttachTarget({ type: 'programme', id: pg.id, nom: pg.nom, current: currentOfProgramme(pg) })}
                     onAttachProjet={p => setAttachTarget({ type: 'projet', id: p.id, nom: p.nom, current: currentOfProjet(p) })}
@@ -409,9 +424,10 @@ function FlowArrow({ direction }: { direction: 'down' | 'up' }) {
 
 // ── Bloc programme ────────────────────────────────────────────────────────────
 
-function ProgrammeBloc({ programme, projets, readOnly, onOpenProjet, onAttach, onAttachProjet, onDelete }: {
+function ProgrammeBloc({ programme, projets, sousProgrammes, readOnly, onOpenProjet, onAttach, onAttachProjet, onDelete }: {
   programme: Programme
   projets: ProjetLite[]
+  sousProgrammes: SousProgramme[]
   readOnly: boolean
   onOpenProjet: (id: string) => void
   onAttach: () => void
@@ -443,26 +459,76 @@ function ProgrammeBloc({ programme, projets, readOnly, onOpenProjet, onAttach, o
       {projets.length === 0 ? (
         <p className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>Aucun projet rattaché.</p>
       ) : (
-        <ul className="space-y-1">
-          {projets.map(p => (
-            <li key={p.id} className="flex items-center gap-1.5 text-xs">
-              <span aria-hidden style={{ color: 'var(--text-muted)' }}>•</span>
-              <button onClick={() => onOpenProjet(p.id)}
-                className="min-w-0 truncate text-left font-medium text-gray-900 dark:text-white hover:underline">
-                {p.nom}
-              </button>
-              <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PHASE_BADGES[p.phase] ?? PHASE_BADGES.pre_project}`}>
-                {PHASE_LABELS[p.phase] ?? p.phase}
-              </span>
-              {!readOnly && (
-                <button onClick={() => onAttachProjet(p)} title="Déplacer vers un autre portefeuille ou programme"
-                  className="shrink-0 text-[11px] px-1 rounded border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">↪</button>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-2">
+          {/* Un sous-programme ne produit pas de livrable : il regroupe les projets
+              qui concourent au même bénéfice, et c'est à ce niveau que l'arbitrage
+              entre projets se fait. */}
+          {sousProgrammes.map(sp => {
+            const miens = projets.filter(p => p.sous_programme_id === sp.id)
+            if (!miens.length) return null
+            return (
+              <div key={sp.id}>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400"
+                  title={sp.fonction ?? undefined}>
+                  {sp.code} — {sp.nom}
+                  <span className="ml-1 font-normal opacity-70">({miens.length})</span>
+                </p>
+                <ul className="mt-0.5 space-y-1 pl-2 border-l border-violet-200 dark:border-violet-800">
+                  {miens.map(p => (
+                    <LigneProjet key={p.id} projet={p} readOnly={readOnly}
+                      onOpenProjet={onOpenProjet} onAttachProjet={onAttachProjet} />
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
+          {(() => {
+            const orphelins = projets.filter(p => !p.sous_programme_id
+              || !sousProgrammes.some(sp => sp.id === p.sous_programme_id))
+            if (!orphelins.length) return null
+            return (
+              <div>
+                {sousProgrammes.length > 0 && (
+                  <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                    Hors sous-programme <span className="font-normal opacity-70">({orphelins.length})</span>
+                  </p>
+                )}
+                <ul className="mt-0.5 space-y-1">
+                  {orphelins.map(p => (
+                    <LigneProjet key={p.id} projet={p} readOnly={readOnly}
+                      onOpenProjet={onOpenProjet} onAttachProjet={onAttachProjet} />
+                  ))}
+                </ul>
+              </div>
+            )
+          })()}
+        </div>
       )}
     </div>
+  )
+}
+
+function LigneProjet({ projet: p, readOnly, onOpenProjet, onAttachProjet }: {
+  projet: ProjetLite
+  readOnly: boolean
+  onOpenProjet: (id: string) => void
+  onAttachProjet: (p: ProjetLite) => void
+}) {
+  return (
+    <li className="flex items-center gap-1.5 text-xs">
+      <span aria-hidden style={{ color: 'var(--text-muted)' }}>•</span>
+      <button onClick={() => onOpenProjet(p.id)}
+        className="min-w-0 truncate text-left font-medium text-gray-900 dark:text-white hover:underline">
+        {p.nom}
+      </button>
+      <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PHASE_BADGES[p.phase] ?? PHASE_BADGES.pre_project}`}>
+        {PHASE_LABELS[p.phase] ?? p.phase}
+      </span>
+      {!readOnly && (
+        <button onClick={() => onAttachProjet(p)} title="Déplacer vers un autre portefeuille ou programme"
+          className="shrink-0 text-[11px] px-1 rounded border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">↪</button>
+      )}
+    </li>
   )
 }
 

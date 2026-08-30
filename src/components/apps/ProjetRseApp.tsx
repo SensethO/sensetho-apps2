@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import { PROJET_RSE_MODULES } from '@/lib/projetRseModules'
 import ProjetRseValeurView from '@/components/apps/ProjetRseValeurView'
+import ProjetRseRegistreView from './ProjetRseRegistreView'
 
 // ── Types (contrat API) ───────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Projet | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [vue, setVue] = useState<'projets' | 'valeur'>('projets')
+  const [vue, setVue] = useState<'projets' | 'valeur' | 'registre'>('projets')
 
   // ── Chargement des projets ──
   const loadProjets = useCallback(async (): Promise<Projet[]> => {
@@ -156,6 +157,7 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
             {([
               { id: 'projets' as const, label: '📁 Projets' },
               { id: 'valeur' as const, label: '🏛️ Création de valeur' },
+              { id: 'registre' as const, label: '👥 Registre des parties prenantes' },
             ]).map(v => (
               <button key={v.id} onClick={() => setVue(v.id)}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${vue === v.id
@@ -165,15 +167,19 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
               </button>
             ))}
           </div>
-          {vue === 'projets' ? (
+          {vue === 'projets' && (
             <ProjetsList projets={projets} loaded={loaded} readOnly={readOnly}
               onOpen={setSelected} onCreate={() => setShowCreate(true)} />
-          ) : (
+          )}
+          {vue === 'valeur' && (
             <ProjetRseValeurView organisationId={orgId} readOnly={readOnly}
               onOpenProjet={(projetId) => {
                 const p = projets.find(x => x.id === projetId)
                 if (p) setSelected(p)
               }} />
+          )}
+          {vue === 'registre' && (
+            <ProjetRseRegistreView organisationId={orgId} readOnly={readOnly} />
           )}
         </>
       )}
@@ -183,6 +189,70 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
           onClose={() => setShowCreate(false)}
           onCreated={async (p) => { setShowCreate(false); await loadProjets(); setSelected(p) }}
           onError={setError} />
+      )}
+    </div>
+  )
+}
+
+// ── Fil d'avancement du projet ────────────────────────────────────────────────
+
+interface EntreeJournal {
+  id: string
+  type: string
+  texte: string
+  created_at: string
+}
+
+const JOURNAL_BADGES: Record<string, string> = {
+  acteur: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300',
+  rattachement: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300',
+  structure: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300',
+  revue: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  note: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+}
+const JOURNAL_LABELS: Record<string, string> = {
+  acteur: 'Partie prenante', rattachement: 'Rattachement',
+  structure: 'Structure', revue: 'Revue', jalon: 'Jalon', note: 'Note',
+}
+
+function JournalProjet({ projetId, organisationId }: { projetId: string; organisationId: string }) {
+  const [entrees, setEntrees] = useState<EntreeJournal[]>([])
+  const [ouvert, setOuvert] = useState(false)
+
+  useEffect(() => {
+    let vivant = true
+    ;(async () => {
+      try {
+        const res = await fetch(
+          `/api/projet-rse/journal?organisation_id=${organisationId}&projet_id=${projetId}`)
+        if (!res.ok) return
+        const j = await res.json()
+        if (vivant) setEntrees(j.entrees ?? [])
+      } catch { /* le fil est un complément : son échec ne bloque pas la page */ }
+    })()
+    return () => { vivant = false }
+  }, [projetId, organisationId])
+
+  if (!entrees.length) return null
+
+  return (
+    <div>
+      <button onClick={() => setOuvert(v => !v)}
+        className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+        {ouvert ? '▾' : '▸'} Fil d’avancement ({entrees.length})
+      </button>
+      {ouvert && (
+        <div className="mt-2 divide-y" style={{ borderColor: 'var(--border)' }}>
+          {entrees.map(e => (
+            <div key={e.id} className="py-2 flex flex-wrap items-start gap-2 text-xs">
+              <span className={`inline-block px-2 py-0.5 rounded-full font-semibold ${JOURNAL_BADGES[e.type] ?? JOURNAL_BADGES.note}`}>
+                {JOURNAL_LABELS[e.type] ?? e.type}
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>{formatDateFr(e.created_at)}</span>
+              <span className="w-full text-gray-800 dark:text-gray-200">{e.texte}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -442,6 +512,11 @@ function ProjetDetail({ projet, organisationId, readOnly, onProjetChanged, onErr
             )
           )}
         </div>
+
+        {/* Fil d'avancement : les changements de parties prenantes y sont reportés
+            avec leur contexte, ce qui rend lisible, plus tard, qu'un interlocuteur
+            a changé en cours de route et pour quelle raison. */}
+        <JournalProjet projetId={projet.id} organisationId={organisationId} />
       </div>
 
       {/* Onglets modules (générés depuis le registre) */}
