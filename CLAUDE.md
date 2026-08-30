@@ -422,6 +422,25 @@ Le champ `type` de l'acteur (`personne`, `fonction`, `collectif`, `entite`, `san
 
 `projet_rse_parties` est conservée en archive et n'est plus écrite. La route `/api/projet-rse/projets/[id]/parties` lit et écrit désormais le registre à travers les liens ; `DELETE` y **détache** l'acteur du projet au lieu de l'effacer. Les engagements pointent vers `acteur_id`, `partie_id` restant renvoyé comme alias.
 
+### Les six sous-applications
+
+Toutes disponibles depuis le 31 août 2026. Le registre `src/lib/projetRseModules.tsx` déclare un onglet par module ; un module s'y ajoute sans toucher au cœur.
+
+| Module | Portée | Table |
+|---|---|---|
+| Cadrage & business case durable | Par projet | `projet_rse_cadrage` (une fiche par projet) |
+| Parties prenantes | Par projet, via les rattachements au registre | `projet_rse_acteur_liens` |
+| Analyse d'impact P5 | Par projet | `projet_rse_p5` (notes seules ; le référentiel des éléments est dans le code) |
+| Plan de management de la durabilité | **Au programme** | `projet_rse_smp` |
+| WBS, RACI, risques & jalons | Par projet | `projet_rse_lots`, `projet_rse_raci`, `projet_rse_jalons`, `projet_rse_risques`, `projet_rse_indicateurs` |
+| Théorie du changement & SROI | Par projet | `projet_rse_impact_social` |
+
+**Règle** : tout ce qui désigne une personne pointe vers `projet_rse_acteurs` — pilote et parrain du cadrage, titulaires RACI, porteur d'un risque, propriétaire d'un indicateur. Jamais un nom recopié, pour qu'une succession suive partout.
+
+Les routes des tables rattachées à un projet sont fabriquées par `routesDeProjet()` et `ficheDeProjet()` dans `src/lib/projet-rse/crud.ts` : une seule mécanique, une seule garde d'autorisation.
+
+Trois règles de méthode sont portées par l'interface et non par la base, parce qu'elles doivent être visibles sans bloquer la saisie : une fiche de cadrage incomplète interdit le démarrage, un lot ne peut avoir qu'un seul approbateur, et le ratio de retour social reste masqué tant que sa méthode n'est pas écrite. L'analyse P5 n'affiche jamais de moyenne — seulement le pire élément de chaque catégorie.
+
 ### Piège de plateforme à connaître
 
 Sur les routes imbriquées sous un segment dynamique (`projets/[id]/…`), **la chaîne de requête n'atteint pas le gestionnaire en production** : `req.nextUrl.searchParams` et `new URL(req.url)` sont vides, alors que les routes statiques reçoivent bien leurs paramètres. Utiliser `lireIdentifiant()` de `src/lib/projet-rse/request.ts`, qui lit l'identifiant dans nextUrl, puis dans l'URL brute, puis dans le corps JSON — et faire envoyer les deux par le client.
