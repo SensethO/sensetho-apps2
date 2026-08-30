@@ -6,6 +6,9 @@
 import ProjetRsePartiesModule from '@/components/apps/ProjetRsePartiesModule'
 import ProjetRseCadrageModule from '@/components/apps/ProjetRseCadrageModule'
 import ProjetRseCycleModule from '@/components/apps/ProjetRseCycleModule'
+import ProjetRseP5Module from '@/components/apps/ProjetRseP5Module'
+import ProjetRseSmpModule from '@/components/apps/ProjetRseSmpModule'
+import ProjetRseImpactSocialModule from '@/components/apps/ProjetRseImpactSocialModule'
 
 export interface ProjetRseModuleProps {
   projetId: string
@@ -51,18 +54,20 @@ export const PROJET_RSE_MODULES: ProjetRseModule[] = [
     label: 'Analyse d’impact P5',
     icon: '🌍',
     phasePrincipale: 'discovery',
-    statut: 'a_venir',
+    statut: 'disponible',
     description:
-      '52 éléments People / Planet / Prosperity évalués sur une échelle de 1 à 5, avec la règle anti-masquage : un impact très négatif ne peut pas être compensé par un impact positif ailleurs.',
+      'Les éléments People, Planet, Prosperity, Product et Process cotés de −3 à +3, avec la règle anti-masquage : aucune moyenne n’est affichée, seulement le pire élément de chaque catégorie.',
+    Component: ProjetRseP5Module,
   },
   {
     id: 'smp',
     label: 'Plan de management de la durabilité',
     icon: '📋',
     phasePrincipale: 'design',
-    statut: 'a_venir',
+    statut: 'disponible',
     description:
-      'KPI de durabilité, seuils d’alerte, procédures d’escalade et matériau de reporting : le SMP transforme l’analyse d’impact en engagements mesurables et suivis.',
+      'Indicateurs de durabilité, seuils d’alerte et instance saisie au franchissement. Tenu au niveau du programme et non projet par projet, pour qu’il soit tenu par quelqu’un.',
+    Component: ProjetRseSmpModule,
   },
   {
     id: 'cycle',
@@ -79,8 +84,9 @@ export const PROJET_RSE_MODULES: ProjetRseModule[] = [
     label: 'Théorie du changement, SROI & Lean Startup',
     icon: '💫',
     phasePrincipale: 'closure',
-    statut: 'a_venir',
+    statut: 'disponible',
     description:
-      'Théorie du changement, mesure du retour social sur investissement (SROI) et boucles d’apprentissage Lean Startup pour piloter et prouver l’impact social du projet.',
+      'Théorie du changement avec ses hypothèses écrites, retour social sur investissement dont le ratio reste masqué tant que la méthode ne l’est pas, et boucles d’apprentissage.',
+    Component: ProjetRseImpactSocialModule,
   },
 ]
