@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireOrgOwner } from '@/lib/projet-rse/auth'
+import { structureAbsente } from '@/lib/projet-rse/compat'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
 
 export const dynamic = 'force-dynamic'
@@ -45,7 +46,10 @@ export async function GET(req: NextRequest) {
     let q = admin.from('projet_rse_sous_programmes').select('*').in('programme_id', ids)
     if (programmeId) q = q.eq('programme_id', programmeId)
     const { data, error } = await q.order('ordre', { ascending: true })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      if (structureAbsente(error)) return NextResponse.json({ sous_programmes: [] })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
     const { data: projets } = await admin
       .from('projet_rse_projets')

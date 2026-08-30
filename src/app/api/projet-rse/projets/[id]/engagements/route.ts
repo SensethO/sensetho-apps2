@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjet } from '@/lib/projet-rse/auth'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
+import { structureAbsente } from '@/lib/projet-rse/compat'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,7 +34,15 @@ export async function GET(
       ?? req.nextUrl.searchParams.get('partie_id')
     if (cible) query = query.or(`acteur_id.eq.${cible},partie_id.eq.${cible}`)
 
-    const { data, error } = await query
+    let { data, error } = await query
+    if (error && structureAbsente(error)) {
+      // Migration non encore appliquee : la colonne acteur_id n'existe pas.
+      let secours = admin.from('projet_rse_engagements').select('*')
+        .eq('projet_id', params.id).order('created_at', { ascending: true })
+      if (cible) secours = secours.eq('partie_id', cible)
+      const r = await secours
+      data = r.data; error = r.error
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     // `partie_id` est conservé comme alias de `acteur_id` pour l'interface.
     const engagements = (data ?? []).map(e => ({
@@ -63,16 +72,19 @@ export async function POST(
     const admin = createAdminClient()
     // L'acteur doit être rattaché à ce projet : on n'engage pas quelqu'un
     // qui ne figure pas au registre des parties prenantes du projet.
-    const { data: lien } = await admin
+    const { data: lien, error: eLien } = await admin
       .from('projet_rse_acteur_liens')
       .select('id')
       .eq('acteur_id', acteurId)
       .eq('projet_id', params.id)
       .maybeSingle()
-    if (!lien) return NextResponse.json(
+    const legacy = Boolean(eLien && structureAbsente(eLien))
+    if (!legacy && !lien) return NextResponse.json(
       { error: 'Cette partie prenante n’est pas rattachée à ce projet.' }, { status: 404 })
 
-    const insert: Record<string, unknown> = { projet_id: params.id, acteur_id: acteurId }
+    const insert: Record<string, unknown> = legacy
+      ? { projet_id: params.id, partie_id: acteurId }
+      : { projet_id: params.id, acteur_id: acteurId }
     for (const key of CHAMPS) {
       if (key in body && key !== 'acteur_id') insert[key] = body[key]
     }

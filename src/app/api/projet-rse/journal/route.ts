@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireOrgOwner } from '@/lib/projet-rse/auth'
+import { structureAbsente } from '@/lib/projet-rse/compat'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
 
 export const dynamic = 'force-dynamic'
@@ -29,7 +30,10 @@ export async function GET(req: NextRequest) {
 
     const limite = Math.min(Number(sp.get('limite') ?? 100) || 100, 500)
     const { data, error } = await q.order('created_at', { ascending: false }).limit(limite)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      if (structureAbsente(error)) return NextResponse.json({ entrees: [] })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
     return NextResponse.json({ entrees: data ?? [] })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })

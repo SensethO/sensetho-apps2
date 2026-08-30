@@ -12,6 +12,7 @@ import { requireProjet } from '@/lib/projet-rse/auth'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
 import { CHAMPS_ACTEUR, consignerLien, consignerModification, elementsRattaches }
   from '@/lib/projet-rse/acteurs'
+import { structureAbsente } from '@/lib/projet-rse/compat'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +36,17 @@ export async function GET(
     const admin = createAdminClient()
     const { data: liens, error } = await admin
       .from('projet_rse_acteur_liens').select('*').eq('projet_id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      // Migration non encore appliquee : on sert l'ancien modele plutot que
+      // d'afficher un ecran vide, qui ressemblerait a une perte de donnees.
+      if (structureAbsente(error)) {
+        const { data: legacy } = await admin
+          .from('projet_rse_parties').select('*').eq('projet_id', params.id)
+          .order('created_at', { ascending: true })
+        return NextResponse.json({ parties: legacy ?? [], modele: 'legacy' })
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
     if (!liens?.length) return NextResponse.json({ parties: [] })
 
     const { data: acteurs } = await admin
@@ -71,9 +82,23 @@ export async function POST(
     if (!nom) return NextResponse.json({ error: 'nom requis' }, { status: 400 })
 
     const admin = createAdminClient()
-    const { data: existant } = await admin
+    const { data: existant, error: eRegistre } = await admin
       .from('projet_rse_acteurs').select('*')
       .eq('organisation_id', orgId).ilike('nom', nom).maybeSingle()
+    if (eRegistre && structureAbsente(eRegistre)) {
+      const insertL: Record<string, unknown> = { projet_id: params.id, nom }
+      for (const k of CHAMPS_ACTEUR)
+        if (k in body && k !== 'nom' && k !== 'type' && k !== 'actif') insertL[k] = body[k]
+      if (typeof insertL.strategie !== 'string' || !insertL.strategie) {
+        const pv = typeof insertL.pouvoir === 'number' ? insertL.pouvoir : 3
+        const it = typeof insertL.interet === 'number' ? insertL.interet : 3
+        insertL.strategie = strategieQuadrant(pv, it)
+      }
+      const { data, error } = await admin
+        .from('projet_rse_parties').insert(insertL).select().single()
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ partie: data, modele: 'legacy' })
+    }
 
     let acteur = existant
     if (!acteur) {
@@ -142,8 +167,20 @@ export async function PATCH(
     if (!acteurId) return NextResponse.json({ error: 'id requis' }, { status: 400 })
 
     const admin = createAdminClient()
-    const { data: avant } = await admin
+    const { data: avant, error: eAvant } = await admin
       .from('projet_rse_acteurs').select('*').eq('id', acteurId).maybeSingle()
+    if (eAvant && structureAbsente(eAvant)) {
+      const patchL: Record<string, unknown> = {}
+      for (const k of CHAMPS_ACTEUR)
+        if (k in body && k !== 'type' && k !== 'actif') patchL[k] = body[k]
+      if (!Object.keys(patchL).length)
+        return NextResponse.json({ error: 'Aucun champ a mettre a jour' }, { status: 400 })
+      const { data, error } = await admin.from('projet_rse_parties').update(patchL)
+        .eq('id', acteurId).eq('projet_id', params.id).select().single()
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ partie: data, modele: 'legacy',
+        propagation: { champs: Object.keys(patchL), elements: 0 } })
+    }
     if (!avant || avant.organisation_id !== guard.projet.organisation_id)
       return NextResponse.json({ error: 'Acteur introuvable' }, { status: 404 })
 
@@ -200,8 +237,14 @@ export async function DELETE(
     if (!acteurId) return NextResponse.json({ error: 'id requis' }, { status: 400 })
 
     const admin = createAdminClient()
-    const { data: acteur } = await admin
+    const { data: acteur, error: eActeur } = await admin
       .from('projet_rse_acteurs').select('*').eq('id', acteurId).maybeSingle()
+    if (eActeur && structureAbsente(eActeur)) {
+      const { error } = await admin.from('projet_rse_parties').delete()
+        .eq('id', acteurId).eq('projet_id', params.id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true, modele: 'legacy' })
+    }
     if (!acteur || acteur.organisation_id !== guard.projet.organisation_id)
       return NextResponse.json({ error: 'Acteur introuvable' }, { status: 404 })
 
