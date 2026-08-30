@@ -614,6 +614,7 @@ function ModaleSuccession({ acteur, onClose, onFait, onError }: {
   onError: (m: string) => void
 }) {
   const [nom, setNom] = useState('')
+  const [role, setRole] = useState(acteur.role ?? '')
   const [motif, setMotif] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [niveau, setNiveau] = useState<Niveau>('peu_conscient')
@@ -625,7 +626,8 @@ function ModaleSuccession({ acteur, onClose, onFait, onError }: {
       const r = await fetch(`${BASE}/acteurs/succession`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acteur_id: acteur.id, nouveau_nom: nom.trim(),
-          motif: motif.trim(), date_effet: date, engagement_initial: niveau }),
+          motif: motif.trim(), date_effet: date, engagement_initial: niveau,
+          attributs: { role: role.trim() || null } }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error ?? 'Succession impossible')
@@ -651,6 +653,14 @@ function ModaleSuccession({ acteur, onClose, onFait, onError }: {
             <label className={labelCls}>Nom du successeur</label>
             <input className={inputCls} style={{ borderColor: 'var(--border)' }}
               value={nom} onChange={e => setNom(e.target.value)} autoFocus />
+          </div>
+          <div>
+            <label className={labelCls}>Rôle du successeur</label>
+            <input className={inputCls} style={{ borderColor: 'var(--border)' }}
+              value={role} onChange={e => setRole(e.target.value)} />
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+              Repris du prédécesseur. À relire : un intitulé genré ne convient pas toujours au successeur.
+            </p>
           </div>
           <div>
             <label className={labelCls}>Date d’effet</label>

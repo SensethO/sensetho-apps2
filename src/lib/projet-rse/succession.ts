@@ -39,8 +39,10 @@ export interface ResultatSuccession {
 
 function dateFr(iso: string): string {
   const d = new Date(iso)
-  return isNaN(d.getTime()) ? iso
-    : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+  if (isNaN(d.getTime())) return iso
+  const rendu = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+  // En français, le premier du mois s'écrit « 1er ».
+  return d.getDate() === 1 ? rendu.replace(/^1\s/, '1er ') : rendu
 }
 
 /**
