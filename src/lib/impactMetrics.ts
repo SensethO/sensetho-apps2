@@ -45,7 +45,7 @@ async function measure(): Promise<ImpactMetrics | null> {
   }
 }
 
-export const getImpactMetrics = unstable_cache(measure, ['impact-metrics'], {
+export const getImpactMetrics = unstable_cache(measure, ['impact-metrics', 'v2-taille'], {
   revalidate: 86_400, // 24 h : la mesure n'a pas besoin d'être plus fraîche que ça
-  tags: ['impact-metrics'],
+  tags: ['impact-metrics', 'v2-taille'],
 })

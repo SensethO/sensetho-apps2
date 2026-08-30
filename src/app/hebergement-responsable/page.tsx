@@ -5,7 +5,7 @@ import { getImpactMetrics } from '@/lib/impactMetrics'
 // (HTTP avec compression, cache vide) — méthode et date affichées sur la page.
 // À refaire quand le bundle évolue sensiblement : voir docs/MAINTENANCE.md.
 const PAGE_WEIGHT = {
-  measuredOn: '29 août 2026',
+  measuredOn: '30 août 2026',
   htmlKb: 12,
   assetsKb: 170,
   imageKb: 5,

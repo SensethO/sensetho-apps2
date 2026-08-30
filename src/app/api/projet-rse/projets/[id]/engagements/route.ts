@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjet } from '@/lib/projet-rse/auth'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
-import { structureAbsente } from '@/lib/projet-rse/compat'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,21 +31,12 @@ export async function GET(
       .order('created_at', { ascending: true })
     const cible = req.nextUrl.searchParams.get('acteur_id')
       ?? req.nextUrl.searchParams.get('partie_id')
-    if (cible) query = query.or(`acteur_id.eq.${cible},partie_id.eq.${cible}`)
+    if (cible) query = query.eq('acteur_id', cible)
 
-    let { data, error } = await query
-    if (error && structureAbsente(error)) {
-      // Migration non encore appliquee : la colonne acteur_id n'existe pas.
-      let secours = admin.from('projet_rse_engagements').select('*')
-        .eq('projet_id', params.id).order('created_at', { ascending: true })
-      if (cible) secours = secours.eq('partie_id', cible)
-      const r = await secours
-      data = r.data; error = r.error
-    }
+    const { data, error } = await query
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    // `partie_id` est conservé comme alias de `acteur_id` pour l'interface.
-    const engagements = (data ?? []).map(e => ({
-      ...e, partie_id: e.acteur_id ?? e.partie_id, acteur_id: e.acteur_id ?? e.partie_id }))
+    // `partie_id` reste exposé comme alias, l'interface s'en sert encore.
+    const engagements = (data ?? []).map(e => ({ ...e, partie_id: e.acteur_id }))
     return NextResponse.json({ engagements })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -72,19 +62,16 @@ export async function POST(
     const admin = createAdminClient()
     // L'acteur doit être rattaché à ce projet : on n'engage pas quelqu'un
     // qui ne figure pas au registre des parties prenantes du projet.
-    const { data: lien, error: eLien } = await admin
+    const { data: lien } = await admin
       .from('projet_rse_acteur_liens')
       .select('id')
       .eq('acteur_id', acteurId)
       .eq('projet_id', params.id)
       .maybeSingle()
-    const legacy = Boolean(eLien && structureAbsente(eLien))
-    if (!legacy && !lien) return NextResponse.json(
+    if (!lien) return NextResponse.json(
       { error: 'Cette partie prenante n’est pas rattachée à ce projet.' }, { status: 404 })
 
-    const insert: Record<string, unknown> = legacy
-      ? { projet_id: params.id, partie_id: acteurId }
-      : { projet_id: params.id, acteur_id: acteurId }
+    const insert: Record<string, unknown> = { projet_id: params.id, acteur_id: acteurId }
     for (const key of CHAMPS) {
       if (key in body && key !== 'acteur_id') insert[key] = body[key]
     }

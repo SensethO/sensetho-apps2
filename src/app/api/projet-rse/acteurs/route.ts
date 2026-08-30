@@ -5,7 +5,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireOrgOwner } from '@/lib/projet-rse/auth'
-import { structureAbsente } from '@/lib/projet-rse/compat'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
 import { CHAMPS_ACTEUR, consignerModification, elementsRattaches } from '@/lib/projet-rse/acteurs'
 
@@ -43,10 +42,7 @@ export async function GET(req: NextRequest) {
     let q = admin.from('projet_rse_acteurs').select('*').eq('organisation_id', organisationId!)
     if (un) q = q.eq('id', un)
     const { data, error } = await q.order('nom', { ascending: true })
-    if (error) {
-      if (structureAbsente(error)) return NextResponse.json({ acteurs: [], migration_requise: true })
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     if (req.nextUrl.searchParams.get('avec_liens') !== '1')
       return NextResponse.json({ acteurs: data ?? [] })

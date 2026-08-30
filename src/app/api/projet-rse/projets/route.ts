@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
     const engagementsCount: Record<string, number> = {}
     if (ids.length > 0) {
       const [{ data: parties }, { data: engagements }] = await Promise.all([
-        admin.from('projet_rse_parties').select('projet_id').in('projet_id', ids),
+        // Les parties prenantes d'un projet sont ses rattachements au registre.
+        admin.from('projet_rse_acteur_liens').select('projet_id').in('projet_id', ids),
         admin.from('projet_rse_engagements').select('projet_id').in('projet_id', ids),
       ])
       for (const row of parties ?? []) {

@@ -4,6 +4,8 @@
 // projet courant, un module « a_venir » affiche sa carte descriptive.
 
 import ProjetRsePartiesModule from '@/components/apps/ProjetRsePartiesModule'
+import ProjetRseCadrageModule from '@/components/apps/ProjetRseCadrageModule'
+import ProjetRseCycleModule from '@/components/apps/ProjetRseCycleModule'
 
 export interface ProjetRseModuleProps {
   projetId: string
@@ -29,9 +31,10 @@ export const PROJET_RSE_MODULES: ProjetRseModule[] = [
     label: 'Cadrage & Business case durable',
     icon: '🎯',
     phasePrincipale: 'pre_project',
-    statut: 'a_venir',
+    statut: 'disponible',
     description:
-      'Justification du projet, analyse des alternatives, objectifs, seuils d’impact et critères de succès : le business case durable est la référence interrogée à chaque revue de fin de phase.',
+      'Les douze rubriques de la fiche de cadrage, dont la capacité visée — ce que l’organisation saura faire une fois le livrable remis. Une fiche incomplète interdit le démarrage.',
+    Component: ProjetRseCadrageModule,
   },
   {
     id: 'parties-prenantes',
@@ -66,9 +69,10 @@ export const PROJET_RSE_MODULES: ProjetRseModule[] = [
     label: 'WBS, RACI, risques & jalons',
     icon: '🗺️',
     phasePrincipale: 'delivery',
-    statut: 'a_venir',
+    statut: 'disponible',
     description:
-      'Découpage du travail (WBS), matrice de responsabilités (RACI), registre des risques et jalons du projet — l’outillage classique du chef de projet, revisité durable.',
+      'Découpage du travail, matrice de responsabilités, jalons dotés de leur critère et de leur preuve, registre des risques et jeu minimal d’indicateurs. Les titulaires sont pris au registre des parties prenantes.',
+    Component: ProjetRseCycleModule,
   },
   {
     id: 'impact-social',
