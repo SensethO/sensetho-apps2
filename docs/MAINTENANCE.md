@@ -22,7 +22,7 @@ Portail web multi-tenant. Un utilisateur se connecte (Supabase Auth), sélection
 | Dépôt Git | `github.com/SensethO/sensetho-apps2` (branche `master`) | GitHub |
 | Hébergement | Vercel — projet `sensetho-apps2` | Console Vercel |
 | Domaine | `apps.sensetho.com` | Vercel / DNS OVHcloud |
-| Base de données | Supabase — projet **`ketnixnfrbpdpduypfbv`** | Console Supabase |
+| Base de données | Supabase — projet **`pjrwjfozzynmjvbygqev`** | Console Supabase |
 | Fichiers | SharePoint (tenant Microsoft 365 SCDB PRO) via Graph API | Azure AD app registration |
 | IA | Anthropic API | console.anthropic.com |
 | Admin plateforme | `sylvain.cassaro@sensetho.com` (rôle `admin` dans `profiles`) | — |
@@ -60,10 +60,10 @@ Portail web multi-tenant. Un utilisateur se connecte (Supabase Auth), sélection
 Chaque app a ses tables préfixées `<slug>_*` (ex. `vigilance_diagnostics`, `eudr_buyers`, `iso26000_actions`, `strategie_partagee`…). Le patron RSE impose `<slug>_diagnostics / _reponses / _actions / _notes` (voir [RSE_APP_PATTERN.md](RSE_APP_PATTERN.md)).
 
 ### Migrations
-Les fichiers **`supabase/migrations/*.sql`** sont la trace de référence du schéma. **Elles ne sont pas jouées automatiquement** : elles sont appliquées via l'**API de gestion Supabase** (endpoint `POST /v1/projects/ketnixnfrbpdpduypfbv/database/query`) avec un **PAT Supabase** (jeton personnel, gardé hors dépôt). Pour appliquer une migration :
+Les fichiers **`supabase/migrations/*.sql`** sont la trace de référence du schéma. **Elles ne sont pas jouées automatiquement** : elles sont appliquées via l'**API de gestion Supabase** (endpoint `POST /v1/projects/pjrwjfozzynmjvbygqev/database/query`) avec un **PAT Supabase** (jeton personnel, gardé hors dépôt). Pour appliquer une migration :
 
 ```bash
-curl -s -X POST "https://api.supabase.com/v1/projects/ketnixnfrbpdpduypfbv/database/query" \
+curl -s -X POST "https://api.supabase.com/v1/projects/pjrwjfozzynmjvbygqev/database/query" \
   -H "Authorization: Bearer <SUPABASE_PAT>" -H "Content-Type: application/json" \
   --data-binary '{"query": "<contenu SQL>"}'
 ```
