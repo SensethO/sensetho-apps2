@@ -143,7 +143,10 @@ export async function consignerModification(opts: {
     let texte: string
     if (opts.remplacement) {
       texte = `Changement d’interlocuteur : ${affiche(opts.avant.nom)} est remplacé par ${nomFinal}.`
-      if (el.role_local) texte += ` Rôle sur cet élément : ${el.role_local}.`
+      if (el.role_local) {
+        const r = el.role_local.trim()
+        texte += ` Rôle sur cet élément : ${/[.!?]$/.test(r) ? r : r + '.'}`
+      }
       texte += opts.motif
         ? ` Motif : ${opts.motif}`
         : ' Motif non renseigné — à documenter.'
@@ -190,8 +193,13 @@ export async function consignerLien(opts: {
     auteur_id: opts.auteurId,
   })
 
+  // Le rôle local est saisi librement : il se termine souvent déjà par un point.
+  const phrase = (t: string | null) => {
+    const v = (t ?? '').trim()
+    return !v ? '' : /[.!?]$/.test(v) ? ` — ${v}` : ` — ${v}.`
+  }
   const texte = opts.sens === 'rattachement'
-    ? `Partie prenante rattachée : « ${opts.nomActeur} »${opts.element.role_local ? ` — ${opts.element.role_local}` : ''}.${opts.motif ? ` Motif : ${opts.motif}` : ''}`
+    ? `Partie prenante rattachée : « ${opts.nomActeur} »${phrase(opts.element.role_local) || '.'}${opts.motif ? ` Motif : ${opts.motif}` : ''}`
     : `Partie prenante détachée : « ${opts.nomActeur} ».${opts.motif ? ` Motif : ${opts.motif}` : ''}`
 
   await admin.from('projet_rse_journal').insert({
