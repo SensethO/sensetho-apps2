@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjet } from '@/lib/projet-rse/auth'
+import { lireIdentifiant } from '@/lib/projet-rse/request'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,7 +116,7 @@ export async function PATCH(
   }
 }
 
-/** DELETE ?id= → { ok: true } */
+/** DELETE ?id= (identifiant accepté aussi dans le corps JSON) → { ok: true } */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -124,7 +125,7 @@ export async function DELETE(
     const guard = await requireProjet(params.id)
     if (guard instanceof NextResponse) return guard
 
-    const id = req.nextUrl.searchParams.get('id')
+    const id = await lireIdentifiant(req)
     if (!id) return NextResponse.json({ error: 'id requis' }, { status: 400 })
 
     const admin = createAdminClient()

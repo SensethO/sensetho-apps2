@@ -347,7 +347,13 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
   const deletePartie = useCallback(async (id: string) => {
     if (!window.confirm('Supprimer cette partie prenante (et ses actions d’engagement) ?')) return
     try {
-      const res = await fetch(`${base}/parties?id=${id}`, { method: 'DELETE' })
+      const res = await fetch(`${base}/parties?id=${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        // L'identifiant est aussi transmis dans le corps : la chaîne de requête
+        // n'atteint pas toujours les routes imbriquées sous un segment dynamique.
+        body: JSON.stringify({ id }),
+      })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
         throw new Error((j as { error?: string }).error ?? 'Erreur de suppression')
@@ -468,7 +474,13 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
 
   const deleteEngagement = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`${base}/engagements?id=${id}`, { method: 'DELETE' })
+      const res = await fetch(`${base}/engagements?id=${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        // L'identifiant est aussi transmis dans le corps : la chaîne de requête
+        // n'atteint pas toujours les routes imbriquées sous un segment dynamique.
+        body: JSON.stringify({ id }),
+      })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
         throw new Error((j as { error?: string }).error ?? 'Erreur de suppression')
