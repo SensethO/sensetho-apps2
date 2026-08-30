@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireOrgOwner, requireProjet } from '@/lib/projet-rse/auth'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
+import { messageErreur } from '@/lib/projet-rse/erreurs'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
     let q = admin.from('projet_rse_smp').select('*')
     q = programmeId ? q.eq('programme_id', programmeId) : q.eq('projet_id', projetId!)
     const { data, error } = await q.order('created_at', { ascending: true })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
     return NextResponse.json({ kpi: data ?? [] })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
     const admin = createAdminClient()
     const { data, error } = await admin
       .from('projet_rse_smp').insert(insert).select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
     return NextResponse.json({ kpi: data })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -93,7 +94,7 @@ export async function PATCH(req: NextRequest) {
 
     const { data, error } = await admin
       .from('projet_rse_smp').update(patch).eq('id', id).select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
     return NextResponse.json({ kpi: data })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -113,7 +114,7 @@ export async function DELETE(req: NextRequest) {
     if (g instanceof NextResponse) return g
 
     const { error } = await admin.from('projet_rse_smp').delete().eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })

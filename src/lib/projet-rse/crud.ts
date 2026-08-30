@@ -9,22 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjet } from '@/lib/projet-rse/auth'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
-
-/**
- * Message lisible lorsque la table n'existe pas encore — c'est-à-dire lorsque
- * la migration des sous-applications n'a pas été exécutée dans Supabase.
- * Sans cela l'interface afficherait une erreur Postgres brute, illisible pour
- * qui n'a pas le contexte.
- */
-function messageErreur(e: { code?: string; message?: string }): string {
-  const m = (e.message ?? '').toLowerCase()
-  if (e.code === '42P01' || e.code === 'PGRST205' || m.includes('does not exist')
-      || m.includes('could not find the table')) {
-    return 'Cette sous-application attend sa migration : le script '
-         + '20260831_projet_rse_modules.sql n’a pas encore été exécuté dans Supabase.'
-  }
-  return e.message ?? 'Erreur inattendue'
-}
+import { messageErreur } from '@/lib/projet-rse/erreurs'
 
 export interface OptionsTable {
   /** Nom de la table Supabase. */

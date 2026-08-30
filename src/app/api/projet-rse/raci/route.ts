@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjet } from '@/lib/projet-rse/auth'
 import { lireIdentifiant } from '@/lib/projet-rse/request'
+import { messageErreur, structureAbsente } from '@/lib/projet-rse/erreurs'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,14 +29,18 @@ export async function GET(req: NextRequest) {
     if (guard instanceof NextResponse) return guard
 
     const admin = createAdminClient()
-    const { data: lots } = await admin
+    const { data: lots, error: eLots } = await admin
       .from('projet_rse_lots').select('id').eq('projet_id', projetId)
+    // Sans ce contrôle, l'absence de table se traduirait par une liste vide —
+    // c'est-à-dire par un silence, alors qu'il faut agir.
+    if (eLots && structureAbsente(eLots))
+      return NextResponse.json({ error: messageErreur(eLots) }, { status: 500 })
     const ids = (lots ?? []).map(l => l.id)
     if (!ids.length) return NextResponse.json({ raci: [] })
 
     const { data, error } = await admin
       .from('projet_rse_raci').select('*').in('lot_id', ids)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
     return NextResponse.json({ raci: data ?? [] })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -96,7 +101,7 @@ export async function DELETE(req: NextRequest) {
     if (guard instanceof NextResponse) return guard
 
     const { error } = await admin.from('projet_rse_raci').delete().eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
