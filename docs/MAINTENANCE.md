@@ -121,7 +121,13 @@ La page publie des chiffres **mesurés**, avec la méthode affichée sous chacun
 |---|---|---|
 | Lignes de données + nombre de tables | Mesure **automatique** : RPC `list_public_tables` via `src/lib/impactMetrics.ts`, cache 24 h (`unstable_cache`) | Aucun — se met à jour seul. Si la mesure échoue, la page n'affiche rien (jamais d'approximation) |
 | Taille du schéma public | RPC `public_schema_size_bytes` (migration `20260829_public_schema_size.sql`) | **À appliquer une fois** via l'API de gestion (§4). Non appliquée = indicateur masqué proprement |
+| Pages vues sur 30 jours (+ cumul) | Mesure **automatique** : comptage exact `app_logs` (robots exclus) via PostgREST en HEAD, même cache 24 h | Aucun. Périmètre affiché sur la page : ni appels d'API ni ressources statiques. Les agrégats SQL sont refusés par PostgREST (`PGRST123`) — toute somme/moyenne demanderait une RPC |
 | Poids transféré de la page d'accueil | Constante `PAGE_WEIGHT` **datée** dans `src/app/hebergement-responsable/page.tsx` | À re-mesurer quand le bundle change sensiblement, puis mettre à jour la date |
+
+> 🔑 **Si la forme de l'objet mesuré change** (nouveau champ dans `ImpactMetrics`), incrémenter la version
+> dans les `keyParts` de `unstable_cache` (`['impact-metrics', 'v3-usage']`) — sinon l'ancien objet en cache
+> est resservi jusqu'à 24 h et les nouveaux champs restent vides. Le `tag` reste stable pour permettre un
+> `revalidateTag('impact-metrics')`.
 
 Re-mesurer le poids de l'accueil (HTML + JS/CSS + image du premier chargement, compression active) :
 
