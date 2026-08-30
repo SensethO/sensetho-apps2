@@ -303,6 +303,7 @@ function AttachmentItem({
   const [editing, setEditing]   = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
+  const [viewerEmbedUrl, setViewerEmbedUrl] = useState<string | null>(null)
   const [thumbUrl, setThumbUrl]   = useState<string | null>(null)
   const [pdfThumb, setPdfThumb]   = useState<string | null>(null)
   const [videoUrl, setVideoUrl]         = useState<string | null>(null)
@@ -349,14 +350,23 @@ function AttachmentItem({
   }, [att.path, isPdf, appKey])
 
   async function openViewer() {
-    if (isPdf) {
-      // Ouvrir via proxy inline pour visualisation dans une iframe
-      const proxyUrl = `/api/sharepoint/image?item_id=${encodeURIComponent(att.path)}&app=${encodeURIComponent(appKey)}`
-      setViewerUrl(proxyUrl)
-      return
-    }
     setLoading('open')
-    try { setViewerUrl(await getSignedUrl(apiBase, diagnosticId, att.path)) }
+    try {
+      if (isPdf) {
+        // URL signée + URL d'aperçu embarquable, demandées à chaque ouverture
+        // (elles expirent) — le contenu va de SharePoint au navigateur en direct.
+        const res = await fetch(
+          `/api/sharepoint/image?item_id=${encodeURIComponent(att.path)}&app=${encodeURIComponent(appKey)}`
+        )
+        if (!res.ok) throw new Error('Impossible de générer le lien')
+        const { url, embedUrl } = await res.json() as { url: string; embedUrl?: string | null }
+        setViewerEmbedUrl(embedUrl ?? null)
+        setViewerUrl(url)
+        return
+      }
+      setViewerEmbedUrl(null)
+      setViewerUrl(await getSignedUrl(apiBase, diagnosticId, att.path))
+    }
     catch (e) { alert(e instanceof Error ? e.message : 'Erreur') }
     finally { setLoading(null) }
   }
@@ -441,7 +451,13 @@ function AttachmentItem({
   return (
     <>
       {viewerUrl && (
-        <FileViewerModal url={viewerUrl} name={att.name} mime={att.mime} onClose={() => setViewerUrl(null)} />
+        <FileViewerModal
+          url={viewerUrl}
+          embedUrl={viewerEmbedUrl}
+          name={att.name}
+          mime={att.mime}
+          onClose={() => { setViewerUrl(null); setViewerEmbedUrl(null) }}
+        />
       )}
 
       <div className="flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden hover:shadow-md transition-shadow group">

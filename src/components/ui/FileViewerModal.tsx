@@ -4,12 +4,20 @@ import { useEffect } from 'react'
 
 interface FileViewerModalProps {
   url: string
+  /**
+   * URL d'aperçu embarquable (action Graph `/preview`), utilisée pour l'iframe
+   * PDF quand elle est disponible : les URL de téléchargement SharePoint sont
+   * servies en `Content-Disposition: attachment` et déclencheraient un
+   * téléchargement au lieu d'un rendu inline. `url` reste utilisée pour le
+   * bouton de téléchargement. Optionnel — sans elle, comportement inchangé.
+   */
+  embedUrl?: string | null
   name: string
   mime: string
   onClose: () => void
 }
 
-export default function FileViewerModal({ url, name, mime, onClose }: FileViewerModalProps) {
+export default function FileViewerModal({ url, embedUrl, name, mime, onClose }: FileViewerModalProps) {
   const isImage  = mime.startsWith('image/')
   const isPdf    = mime === 'application/pdf'
   const isWord   = mime.includes('word') || mime.includes('opendocument.text')
@@ -60,7 +68,7 @@ export default function FileViewerModal({ url, name, mime, onClose }: FileViewer
           )}
           {isPdf && (
             <iframe
-              src={`${url}#toolbar=1&navpanes=0`}
+              src={embedUrl ?? `${url}#toolbar=1&navpanes=0`}
               className="w-full min-h-[75vh]"
               style={{ height: '75vh' }}
               title={name}

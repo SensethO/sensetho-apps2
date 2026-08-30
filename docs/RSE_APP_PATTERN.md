@@ -417,7 +417,22 @@ Informations légales/réglementaires (si applicable) :
 
 | Règle | Détail |
 |---|---|
-| **Aucun fichier via Vercel/Supabase** | Upload : navigateur → SharePoint direct. Download : URL signée Graph API → navigateur |
+| **Aucun fichier via Vercel/Supabase** | Upload : navigateur → SharePoint direct. Download : URL signée Graph API → navigateur. **Aperçu inline compris** : `/api/sharepoint/image` renvoie une URL signée (+ `embedUrl` Graph `/preview` pour les PDF en iframe), jamais les octets |
+
+### La règle vaut aussi pour les aperçus et les routes « legacy »
+
+Mise en conformité du 2026-08-30 : quatre routes héritées de mai 2026 la violaient encore.
+`/api/sharepoint/image` bufferisait le fichier entier (`arrayBuffer`) pour le réémettre —
+convertie en fournisseur d'URL signée. Trois routes d'upload AgriTracker streamaient le
+corps de la requête (`runtime: 'edge'` + `body: req.body` + `duplex: 'half'`) : les octets
+ne s'accumulaient pas en mémoire, mais **traversaient Vercel** — elles étaient de surcroît
+mortes (leurs clients utilisaient déjà `upload-session`), donc supprimées.
+
+**Seules exemptions admises** — le serveur *lit* un fichier depuis SharePoint pour le
+**traiter**, sans jamais le servir au navigateur ni le stocker : tri et correction des
+géodonnées EUDR, soumission DDS à TRACES, analyse COA par IA, imagerie Copernicus, et
+l'outil d'administration `supabase-migrator`. Tout le reste — upload, téléchargement,
+aperçu, vignette — passe par le navigateur et Microsoft, jamais par nous.
 | **RLS sur TOUTES les tables** | Immédiatement à la création |
 | **createAdminClient()** | Dans TOUTES les routes API (bypass RLS côté serveur) |
 | **eslint-disable en haut** | `/* eslint-disable @typescript-eslint/no-explicit-any */` si `as any` utilisé |

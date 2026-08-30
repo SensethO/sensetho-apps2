@@ -9,6 +9,12 @@
  *
  * Body JSON : { filename, mime, size, sectionId, plantation_id? }
  * Retourne : { uploadUrl, attachmentId, finalName }
+ *
+ * Mise en conformité du 2026-08-30 (docs/RSE_APP_PATTERN.md §11) : la route
+ * héritée POST .../action-notes/[key]/upload — runtime Edge, qui pipait le
+ * corps du fichier à travers Vercel vers SharePoint — a été supprimée. Cette
+ * route est désormais l'unique voie d'upload des pièces jointes de notes
+ * d'observation, et aucun octet de fichier ne transite par Vercel.
  */
 export const dynamic = 'force-dynamic'
 

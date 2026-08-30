@@ -10,6 +10,12 @@
  *               date_prise, champ_id?, type_sujet?, produit?, commentaire?,
  *               latitude?, longitude? }
  * Retourne  : { uploadUrl, fileName, confirmUrl }
+ *
+ * Mise en conformité du 2026-08-30 (docs/RSE_APP_PATTERN.md §11) : la route
+ * héritée POST /api/agri/photos/upload — runtime Edge, qui pipait le corps du
+ * fichier à travers Vercel vers SharePoint — a été supprimée. Ce couple
+ * upload-session (ici) + upload-confirm est désormais l'unique voie d'upload
+ * des photos terrain, et aucun octet de fichier ne transite par Vercel.
  */
 export const dynamic = 'force-dynamic'
 
