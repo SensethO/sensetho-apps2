@@ -48,6 +48,11 @@ interface Acteur {
   liens?: Lien[]
 }
 
+interface Succession {
+  predecesseur_id: string | null
+  successeur_id: string | null
+}
+
 interface EntreeHistorique {
   id: string
   type: string
@@ -139,13 +144,19 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
   const [recherche, setRecherche] = useState('')
   const [filtre, setFiltre] = useState<'tous' | CleSalience>('tous')
   const [creation, setCreation] = useState(false)
+  const [successions, setSuccessions] = useState<Record<string, Succession>>({})
+  const [montrerRemplaces, setMontrerRemplaces] = useState(false)
 
   const charger = useCallback(async () => {
     try {
-      const r = await fetch(`${BASE}/acteurs?organisation_id=${organisationId}&avec_liens=1`)
+      const [r, rs] = await Promise.all([
+        fetch(`${BASE}/acteurs?organisation_id=${organisationId}&avec_liens=1`),
+        fetch(`${BASE}/acteurs/succession?organisation_id=${organisationId}`),
+      ])
       const j = await r.json()
       if (!r.ok) throw new Error(j.error ?? 'Chargement impossible')
       setActeurs(j.acteurs ?? [])
+      if (rs.ok) setSuccessions((await rs.json()).successions ?? {})
     } catch (e) { setErreur(e instanceof Error ? e.message : String(e)) }
     finally { setCharge(true) }
   }, [organisationId])
@@ -155,11 +166,12 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
   const visibles = useMemo(() => {
     const q = recherche.trim().toLowerCase()
     return acteurs.filter(a => {
+      if (!a.actif && !montrerRemplaces) return false
       if (filtre !== 'tous' && salienceDe(a.pouvoir, a.legitimite, a.urgence) !== filtre) return false
       if (!q) return true
       return [a.nom, a.organisation, a.role].some(v => (v ?? '').toLowerCase().includes(q))
     })
-  }, [acteurs, recherche, filtre])
+  }, [acteurs, recherche, filtre, montrerRemplaces])
 
   const compteurs = useMemo(() => {
     const c = {} as Record<CleSalience, number>
@@ -172,7 +184,10 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
 
   const ecart = useMemo(() => acteurs.reduce((s, a) =>
     s + Math.max(0, NIVEAU_INDEX(a.engagement_souhaite) - NIVEAU_INDEX(a.engagement_actuel)), 0), [acteurs])
-  const nonRattaches = acteurs.filter(a => !a.liens?.length).length
+  const nonRattaches = acteurs.filter(a => a.actif && !a.liens?.length).length
+  const remplaces = acteurs.filter(a => !a.actif).length
+  const nomDe = useCallback((id: string | null | undefined) =>
+    acteurs.find(a => a.id === id)?.nom ?? null, [acteurs])
 
   if (!charge) return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Chargement du registre…</p>
 
@@ -193,7 +208,7 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
           d’avancement de chaque élément rattaché.
         </p>
         <div className="mt-3 flex flex-wrap gap-4 text-sm">
-          <span><strong className="text-lg">{acteurs.length}</strong> au registre</span>
+          <span><strong className="text-lg">{acteurs.filter(a => a.actif).length}</strong> au registre</span>
           <span><strong className="text-lg">{ecart}</strong> niveaux d’engagement à gagner</span>
           {nonRattaches > 0 && (
             <span className="text-amber-700 dark:text-amber-400">
@@ -214,6 +229,13 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
             <option key={k} value={k}>{SALIENCE[k].l} ({compteurs[k] ?? 0})</option>
           ))}
         </select>
+        {remplaces > 0 && (
+          <label className="flex items-center gap-1.5 text-sm cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+            <input type="checkbox" className="accent-indigo-600"
+              checked={montrerRemplaces} onChange={e => setMontrerRemplaces(e.target.checked)} />
+            Afficher les {remplaces} remplacé{remplaces > 1 ? 's' : ''}
+          </label>
+        )}
         {!readOnly && (
           <button onClick={() => setCreation(true)}
             className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">
@@ -249,6 +271,12 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
                   <td className="px-3 py-2">
                     <div className="font-medium text-gray-900 dark:text-white">{a.nom}</div>
                     {a.organisation && <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{a.organisation}</div>}
+                    {!a.actif && (
+                      <div className="text-xs text-amber-700 dark:text-amber-400">
+                        Remplacé{nomDe(successions[a.id]?.successeur_id)
+                          ? ` par ${nomDe(successions[a.id]?.successeur_id)}` : ''}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${CATEGORIES[a.categorie].c}`}>
@@ -290,6 +318,7 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
 
       {ouvert && (
         <FicheActeur acteurId={ouvert} readOnly={readOnly}
+          succession={successions[ouvert]} nomDe={nomDe}
           onClose={() => setOuvert(null)}
           onChanged={() => { void charger() }}
           onError={setErreur} />
@@ -306,9 +335,11 @@ export default function ProjetRseRegistreView({ organisationId, readOnly }: {
 
 // ── fiche d'un acteur ───────────────────────────────────────────────────────
 
-function FicheActeur({ acteurId, readOnly, onClose, onChanged, onError }: {
+function FicheActeur({ acteurId, readOnly, succession, nomDe, onClose, onChanged, onError }: {
   acteurId: string
   readOnly: boolean
+  succession?: Succession
+  nomDe: (id: string | null | undefined) => string | null
   onClose: () => void
   onChanged: () => void
   onError: (m: string) => void
@@ -319,6 +350,7 @@ function FicheActeur({ acteurId, readOnly, onClose, onChanged, onError }: {
   const [motif, setMotif] = useState('')
   const [enCours, setEnCours] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [ouvrirSuccession, setOuvrirSuccession] = useState(false)
 
   const charger = useCallback(async () => {
     try {
@@ -390,6 +422,42 @@ function FicheActeur({ acteurId, readOnly, onClose, onChanged, onError }: {
         <div className="px-5 py-4 space-y-4">
           {a && (
             <>
+              {(succession?.predecesseur_id || succession?.successeur_id || !a.actif) && (
+                <div className="rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+                  {succession?.predecesseur_id && (
+                    <div className="text-gray-800 dark:text-gray-200">
+                      Succède à <strong>{nomDe(succession.predecesseur_id) ?? 'un prédécesseur'}</strong>.
+                    </div>
+                  )}
+                  {succession?.successeur_id && (
+                    <div className="text-amber-700 dark:text-amber-400">
+                      Remplacé par <strong>{nomDe(succession.successeur_id) ?? 'un successeur'}</strong> —
+                      cette fiche est close et conserve ce qui lui est attaché.
+                    </div>
+                  )}
+                  {!a.actif && !succession?.successeur_id && (
+                    <div className="text-amber-700 dark:text-amber-400">Retiré du registre.</div>
+                  )}
+                </div>
+              )}
+
+              {!readOnly && a.actif && (a.type === 'personne' || a.type === 'fonction') && (
+                <div className="rounded-lg border border-dashed p-3" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Une <strong>autre personne</strong> prend ce rôle ? Utilisez la succession plutôt que le
+                      renommage : elle transfère les rattachements et les actions à mener, et laisse ce qui a
+                      été fait attaché à son auteur.
+                    </p>
+                    <button onClick={() => setOuvrirSuccession(true)}
+                      className="shrink-0 rounded-md border border-amber-400 dark:border-amber-700 px-3 py-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
+                      ↦ Remplacer le titulaire
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>Nom</label>
@@ -509,8 +577,113 @@ function FicheActeur({ acteurId, readOnly, onClose, onChanged, onError }: {
 
               <Rattachements acteur={a} readOnly={readOnly} onChanged={() => { onChanged() }} onError={onError} />
               <Historique entrees={histo} />
+
+              {ouvrirSuccession && (
+                <ModaleSuccession acteur={a}
+                  onClose={() => setOuvrirSuccession(false)}
+                  onFait={(r) => {
+                    setOuvrirSuccession(false)
+                    setMessage(`Succession enregistrée. ${r.rattachements_transferes} rattachement(s) `
+                      + `et ${r.engagements_transferes} action(s) transférés ; `
+                      + `${r.engagements_conserves} action(s) achevée(s) restent attachées au prédécesseur. `
+                      + `Le changement est reporté dans le fil de ${r.elements_journalises} élément(s).`)
+                    void charger(); onChanged()
+                  }}
+                  onError={onError} />
+              )}
             </>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface ResultatSuccession {
+  rattachements_transferes: number
+  engagements_transferes: number
+  engagements_conserves: number
+  elements_journalises: number
+}
+
+/** Remplacement du titulaire — distinct du renommage. */
+function ModaleSuccession({ acteur, onClose, onFait, onError }: {
+  acteur: Acteur
+  onClose: () => void
+  onFait: (r: ResultatSuccession) => void
+  onError: (m: string) => void
+}) {
+  const [nom, setNom] = useState('')
+  const [motif, setMotif] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [niveau, setNiveau] = useState<Niveau>('peu_conscient')
+  const [enCours, setEnCours] = useState(false)
+
+  const lancer = async () => {
+    setEnCours(true)
+    try {
+      const r = await fetch(`${BASE}/acteurs/succession`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acteur_id: acteur.id, nouveau_nom: nom.trim(),
+          motif: motif.trim(), date_effet: date, engagement_initial: niveau }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error ?? 'Succession impossible')
+      onFait(j.succession)
+    } catch (e) { onError(e instanceof Error ? e.message : String(e)) }
+    finally { setEnCours(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-lg rounded-xl border p-5 shadow-xl"
+        style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Remplacer le titulaire
+        </h3>
+        <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+          <strong>{acteur.nom}</strong> sera clos au registre et conservera ce qu’il a produit. Le successeur
+          reprend les rattachements, leur rôle local, et les actions restant à mener. Les actions achevées
+          restent attachées au prédécesseur, parce que c’est lui qui les a menées.
+        </p>
+        <div className="mt-4 space-y-3">
+          <div>
+            <label className={labelCls}>Nom du successeur</label>
+            <input className={inputCls} style={{ borderColor: 'var(--border)' }}
+              value={nom} onChange={e => setNom(e.target.value)} autoFocus />
+          </div>
+          <div>
+            <label className={labelCls}>Date d’effet</label>
+            <input type="date" className={inputCls} style={{ borderColor: 'var(--border)' }}
+              value={date} onChange={e => setDate(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Position d’engagement du successeur</label>
+            <select className={inputCls} style={{ borderColor: 'var(--border)' }}
+              value={niveau} onChange={e => setNiveau(e.target.value as Niveau)}>
+              {NIVEAUX.map(n => <option key={n.v} value={n.v}>{n.l}</option>)}
+            </select>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+              Par défaut « peu conscient » : un successeur hérite du rôle, pas de la relation.
+            </p>
+          </div>
+          <div>
+            <label className={labelCls}>Motif <span className="text-red-600 dark:text-red-400">— requis</span></label>
+            <textarea rows={2} className={inputCls} style={{ borderColor: 'var(--border)' }}
+              value={motif} onChange={e => setMotif(e.target.value)}
+              placeholder="Ex. : départ à la retraite au 31 décembre 2026 ; mobilité interne ; réorganisation de la direction…" />
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+              Repris dans le fil d’avancement de chacun des {acteur.liens?.length ?? 0} élément(s) rattaché(s).
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-sm"
+            style={{ borderColor: 'var(--border)' }}>Annuler</button>
+          <button onClick={lancer} disabled={enCours || !nom.trim() || !motif.trim()}
+            className="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60">
+            {enCours ? 'Succession…' : 'Enregistrer la succession'}
+          </button>
         </div>
       </div>
     </div>
