@@ -248,10 +248,11 @@ const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: 'plan', label: '🤝 Plan d’engagement' },
 ]
 
-export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: ProjetRseModuleProps) {
+export default function ProjetRsePartiesModule({ projetId, organisationId, phase, readOnly }: ProjetRseModuleProps) {
   const base = `/api/projet-rse/projets/${projetId}`
 
   const [tab, setTab] = useState<SubTab>('registre')
+  const [rattacher, setRattacher] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [parties, setParties] = useState<Partie[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -544,7 +545,17 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
           onEdit={(p) => setForm(formFromPartie(p))}
           onDelete={deletePartie}
           onImport={openImport}
+          onRattacher={() => setRattacher(true)}
         />
+      )}
+
+      {rattacher && !readOnly && (
+        <ModaleRattachement
+          projetId={projetId} organisationId={organisationId}
+          dejaRattaches={parties.map(p => p.id)}
+          onClose={() => setRattacher(false)}
+          onFait={() => { setRattacher(false); void loadParties() }}
+          onError={setError} />
       )}
 
       {tab === 'matrice' && (
@@ -628,7 +639,133 @@ export default function ProjetRsePartiesModule({ projetId, phase, readOnly }: Pr
 
 // ── Onglet Registre ───────────────────────────────────────────────────────────
 
-function RegistreTab({ parties, loaded, readOnly, onNew, onPreset, onEdit, onDelete, onImport }: {
+/**
+ * Rattacher une partie prenante déjà inscrite au registre de l'organisation.
+ *
+ * C'est le geste normal : on ne recrée pas une partie prenante existante, on la
+ * référence. Le rôle local est demandé parce que c'est lui qui distingue un
+ * rattachement utile d'une liste recopiée.
+ */
+function ModaleRattachement({ projetId, organisationId, dejaRattaches, onClose, onFait, onError }: {
+  projetId: string
+  organisationId: string
+  dejaRattaches: string[]
+  onClose: () => void
+  onFait: () => void
+  onError: (m: string) => void
+}) {
+  const [candidats, setCandidats] = useState<{ id: string; nom: string; organisation: string | null; role: string | null }[]>([])
+  const [charge, setCharge] = useState(false)
+  const [q, setQ] = useState('')
+  const [choisi, setChoisi] = useState<string | null>(null)
+  const [roleLocal, setRoleLocal] = useState('')
+  const [criticite, setCriticite] = useState('concernee')
+  const [enCours, setEnCours] = useState(false)
+
+  useEffect(() => {
+    let vivant = true
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/projet-rse/acteurs?organisation_id=${organisationId}`)
+        const j = await r.json()
+        if (!r.ok) throw new Error(j.error ?? 'Registre inaccessible')
+        if (vivant) setCandidats((j.acteurs ?? []).filter(
+          (a: { id: string; actif: boolean }) => a.actif && !dejaRattaches.includes(a.id)))
+      } catch (e) { onError(e instanceof Error ? e.message : String(e)) }
+      finally { if (vivant) setCharge(true) }
+    })()
+    return () => { vivant = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organisationId])
+
+  const visibles = candidats.filter(a => {
+    const t = q.trim().toLowerCase()
+    return !t || [a.nom, a.organisation, a.role].some(v => (v ?? '').toLowerCase().includes(t))
+  })
+
+  const poser = async () => {
+    if (!choisi) return
+    setEnCours(true)
+    try {
+      const r = await fetch('/api/projet-rse/acteurs/liens', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acteur_id: choisi, projet_id: projetId,
+          role_local: roleLocal.trim() || null, criticite }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error ?? 'Rattachement impossible')
+      onFait()
+    } catch (e) { onError(e instanceof Error ? e.message : String(e)) }
+    finally { setEnCours(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-lg rounded-xl border p-5 shadow-xl"
+        style={{ borderColor: 'var(--border)', background: 'var(--card-bg)' }}>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Rattacher depuis le registre</h3>
+        <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+          Le registre est tenu au niveau de l’organisation. Rattacher plutôt que recréer, c’est ce qui
+          permet à une modification de valoir partout.
+        </p>
+
+        <input value={q} onChange={e => setQ(e.target.value)} autoFocus
+          placeholder="Rechercher dans le registre…"
+          className="mt-4 w-full rounded-md border px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          style={{ borderColor: 'var(--border)' }} />
+
+        <div className="mt-2 max-h-52 overflow-y-auto rounded-md border" style={{ borderColor: 'var(--border)' }}>
+          {!charge ? (
+            <p className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>Chargement…</p>
+          ) : visibles.length === 0 ? (
+            <p className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>
+              Aucune partie prenante disponible. Toutes celles du registre sont déjà rattachées à ce projet.
+            </p>
+          ) : visibles.map(a => (
+            <button key={a.id} onClick={() => setChoisi(a.id)}
+              className={`block w-full text-left px-3 py-2 text-sm border-b last:border-b-0 transition-colors ${
+                choisi === a.id ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+              style={{ borderColor: 'var(--border)' }}>
+              <span className="font-medium text-gray-900 dark:text-white">{a.nom}</span>
+              {a.organisation && <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>{a.organisation}</span>}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3">
+          <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+            Rôle sur ce projet
+          </label>
+          <textarea rows={2} value={roleLocal} onChange={e => setRoleLocal(e.target.value)}
+            placeholder="Pourquoi cette partie prenante est-elle concernée par ce projet précis ?"
+            className="w-full rounded-md border px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            style={{ borderColor: 'var(--border)' }} />
+        </div>
+        <div className="mt-2">
+          <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">Criticité</label>
+          <select value={criticite} onChange={e => setCriticite(e.target.value)}
+            className="w-full rounded-md border px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            style={{ borderColor: 'var(--border)' }}>
+            <option value="cle">Clé — le projet dépend d’elle</option>
+            <option value="concernee">Concernée</option>
+            <option value="informee">Informée</option>
+          </select>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-sm"
+            style={{ borderColor: 'var(--border)' }}>Annuler</button>
+          <button onClick={poser} disabled={enCours || !choisi}
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+            {enCours ? 'Rattachement…' : 'Rattacher'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RegistreTab({ parties, loaded, readOnly, onNew, onPreset, onEdit, onDelete, onImport, onRattacher }: {
   parties: Partie[]
   loaded: boolean
   readOnly: boolean
@@ -637,6 +774,7 @@ function RegistreTab({ parties, loaded, readOnly, onNew, onPreset, onEdit, onDel
   onEdit: (p: Partie) => void
   onDelete: (id: string) => void
   onImport: () => void
+  onRattacher: () => void
 }) {
   return (
     <div className="space-y-4">
@@ -664,6 +802,10 @@ function RegistreTab({ parties, loaded, readOnly, onNew, onPreset, onEdit, onDel
           <button onClick={() => onPreset(PRESET_SOCIETE)}
             className="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors">
             🏘️ + Ajouter la société
+          </button>
+          <button onClick={onRattacher}
+            className="px-3 py-1.5 text-sm font-medium rounded-lg border border-indigo-400 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+            ↳ Rattacher depuis le registre
           </button>
           <button onClick={onImport}
             className="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors">
