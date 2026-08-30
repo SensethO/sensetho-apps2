@@ -11,10 +11,12 @@ const ActCarboneDiagnosticApp = dynamic(
 
 export default function ActCarbonePage() {
   return (
-    <RequireSubscription appSlug="act-carbone" appName="Démarche ACT Bas-Carbone">
-      <RseAppShell appSlug="act-carbone" title="Démarche ACT Bas-Carbone">
-        {(ctx: RseContext) => <ActCarboneDiagnosticApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="act-carbone" title="Démarche ACT Bas-Carbone">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="act-carbone" appName="Démarche ACT Bas-Carbone">
+          <ActCarboneDiagnosticApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

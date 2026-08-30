@@ -8,10 +8,12 @@ const CollecteRseDiagnosticApp = dynamic(() => import('@/components/apps/Collect
 
 export default function CollecteRsePage() {
   return (
-    <RequireSubscription appSlug="collecte-rse" appName="Collecte documentaire RSE">
-      <RseAppShell appSlug="collecte-rse" title="Collecte documentaire RSE — Préparation au diagnostic initial de maturité RSE (ISO 26000)">
-        {(ctx: RseContext) => <CollecteRseDiagnosticApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="collecte-rse" title="Collecte documentaire RSE — Préparation au diagnostic initial de maturité RSE (ISO 26000)">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="collecte-rse" appName="Collecte documentaire RSE">
+          <CollecteRseDiagnosticApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

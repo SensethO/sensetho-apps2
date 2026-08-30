@@ -6,10 +6,12 @@ import GestionTempsApp from '@/components/apps/GestionTempsApp'
 
 export default function GestionTempsPage() {
   return (
-    <RequireSubscription appSlug="gestion-temps">
-      <RseAppShell appSlug="gestion-temps" title="Gestion du temps">
-        {(ctx: RseContext) => <GestionTempsApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="gestion-temps" title="Gestion du temps">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="gestion-temps">
+          <GestionTempsApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

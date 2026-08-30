@@ -6,10 +6,12 @@ import ProjetRseApp from '@/components/apps/ProjetRseApp'
 
 export default function ProjetRsePage() {
   return (
-    <RequireSubscription appSlug="projet-rse" appName="Projet RSE">
-      <RseAppShell appSlug="projet-rse" title="Projet RSE" requireYear={false}>
-        {(ctx) => <ProjetRseApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="projet-rse" title="Plan Stratégique" requireYear={false}>
+      {(ctx) => (
+        <RequireSubscription appSlug="projet-rse" appName="Plan Stratégique">
+          <ProjetRseApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

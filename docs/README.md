@@ -1,6 +1,7 @@
 # Documentation sensetho-apps2 — index
 
 Point d'entrée de la documentation. **Reprise sans l'auteur ?** Lire dans l'ordre : ce fichier → `MAINTENANCE.md` → `HANDOVER.md`.
+*Dernière mise à jour : 30 août 2026.*
 
 | Document | Rôle |
 |---|---|
@@ -24,11 +25,17 @@ Chaque sous-système, son emplacement dans le code, et où il est documenté. Le
 | **Récap actions (cron)** | `src/lib/rseActionSources.ts`, `src/app/api/cron/rse-actions-digest` | MAINTENANCE §7 · RSE_APP_PATTERN §14.C |
 | **Fichiers / SharePoint** | `src/lib/sharepointMulti.ts`, `sharepointSecurity.ts` | MAINTENANCE §5 |
 | **EUDR — API TRACES** | `src/lib/eudr/tracesV3.ts`, `tracesClient.ts`, `crypto.ts` | MAINTENANCE §6 |
-| **EUDR — analyse COA (IA)** | `src/lib/eudr/coaAnalyze.ts`, `coaConformity.ts` | MAINTENANCE §6 · HANDOVER §7 |
+| **EUDR — analyse COA (IA)** | `src/lib/eudr/coaAnalyze.ts`, `coaConformity.ts` | MAINTENANCE §6 · HANDOVER §12 |
 | **App métier EUDR** | `src/components/apps/EudrFournisseursApp.tsx`, `/api/eudr-fournisseurs/*` | HANDOVER §2 (org-keyed) |
 | **Stratégie Partagée** | `src/components/apps/StrategiePartageeApp.tsx`, `/api/strategie-partagee/*` | HANDOVER §2 |
+| **Apps Budget (asso & entreprise)** | `src/lib/budget-association/`, `src/lib/budget-entreprise/`, `Budget…App.tsx` | HANDOVER §7-8 |
+| **Import bancaire Qonto** | `src/components/apps/QontoImportModal.tsx`, `src/lib/qonto/`, `/api/qonto/*` | HANDOVER §8 · MAINTENANCE §6 |
+| **Veille Sindup** | `src/lib/sindup/`, `VeilleSindupApp.tsx`, `/api/cron/sindup-collect` | HANDOVER §9 · MAINTENANCE §6-7 |
+| **Plan Stratégique (slug `projet-rse`)** | `src/components/apps/ProjetRseApp.tsx`, `src/lib/projet-rse/`, `projetRseModules.tsx` | HANDOVER §10 · CLAUDE.md (§ Projet RSE) |
+| **Pages publiques** | `src/middleware.ts` (`PUBLIC_ROUTES`), `src/app/hebergement-responsable`, `engagements-rse` | HANDOVER §11 · MAINTENANCE §9 bis-ter |
+| **Garde-fous consommation** | `src/middleware.ts` (rate-limit), `scripts/check-polling.mjs`, `src/hooks/usePolling.ts` | MAINTENANCE §11 |
 | **Catalogue & abonnements** | tables `apps`, `app_categories`, `app_subscriptions` ; admin `src/app/admin/*` | MAINTENANCE §4 |
-| **Schéma base de données** | `supabase/migrations/*.sql` | MAINTENANCE §4 |
+| **Schéma base de données** | `supabase/migrations/*.sql` | MAINTENANCE §4 · **migrations en attente : MAINTENANCE §12** |
 | **Déploiement & crons** | `vercel.json` | MAINTENANCE §7-8 |
 
 ## Cartographie visuelle

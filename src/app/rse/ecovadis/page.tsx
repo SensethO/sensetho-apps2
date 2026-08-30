@@ -6,10 +6,12 @@ import EcoVadisDiagnosticApp from '@/components/apps/EcoVadisDiagnosticApp'
 
 export default function EcoVadisPage() {
   return (
-    <RequireSubscription appSlug="ecovadis" appName="EcoVadis Diagnostic RSE">
-      <RseAppShell appSlug="ecovadis" title="EcoVadis — Diagnostic RSE">
-        {(ctx: RseContext) => <EcoVadisDiagnosticApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="ecovadis" title="EcoVadis — Diagnostic RSE">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="ecovadis" appName="EcoVadis Diagnostic RSE">
+          <EcoVadisDiagnosticApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

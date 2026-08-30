@@ -8,10 +8,12 @@ const Iso53001DiagnosticApp = dynamic(() => import('@/components/apps/Iso53001Di
 
 export default function Iso53001Page() {
   return (
-    <RequireSubscription appSlug="iso53001" appName="Diagnostic ISO 53001 — ODD">
-      <RseAppShell appSlug="iso53001" title="Diagnostic ISO 53001 — Management des ODD">
-        {(ctx: RseContext) => <Iso53001DiagnosticApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="iso53001" title="Diagnostic ISO 53001 — Management des ODD">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="iso53001" appName="Diagnostic ISO 53001 — ODD">
+          <Iso53001DiagnosticApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

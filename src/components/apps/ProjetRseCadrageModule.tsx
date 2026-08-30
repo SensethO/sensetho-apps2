@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { ProjetRseModuleProps } from '@/lib/projetRseModules'
+import ProjetRseNotesPanel from '@/components/apps/ProjetRseNotesPanel'
 
 interface Cadrage {
   finalite: string | null
@@ -269,6 +270,11 @@ export default function ProjetRseCadrageModule({ projetId, organisationId, readO
               ?? 'Elle se choisit selon la stabilité de l’exigence, elle ne s’hérite pas des habitudes.'}
           </p>
         </div>
+      </div>
+
+      {/* Notes & documents du cadrage — règle universelle des apps RSE */}
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+        <ProjetRseNotesPanel projetId={projetId} actionKey="cadrage" readOnly={readOnly} />
       </div>
 
       {message && <p className="text-sm text-indigo-700 dark:text-indigo-300">{message}</p>}

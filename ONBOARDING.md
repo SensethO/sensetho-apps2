@@ -23,7 +23,9 @@ Bienvenue. Ce dépôt est **Sens'ethO Apps** : une plateforme d'applications RSE
 - **RLS** sur toutes les tables ; les routes serveur re-vérifient l'accès (`createAdminClient` = service role).
 - **Diagnostics RSE** : respecter le patron marbre (5 axes × 4 critères, 5 onglets, tables `<slug>_*`).
 - **Apps Business/Métier** (ex. EUDR fournisseurs) : mode « document vivant » clé-organisation, hors marbre.
-- **Migrations** : `supabase/migrations/*.sql` appliquées via l'API de gestion Supabase (cf. `docs/MAINTENANCE.md §4`) — toujours committer le `.sql`.
+- **Migrations** : `supabase/migrations/*.sql` appliquées via l'API de gestion Supabase (cf. `docs/MAINTENANCE.md §4`) — toujours committer le `.sql`. ⚠️ Certaines sont **committées mais pas encore appliquées** : voir `docs/MAINTENANCE.md §12`.
+- **Garde-fous consommation** : le build exécute `scripts/check-polling.mjs` (prebuild) et refuse les `setInterval` risqués — utiliser le hook `usePolling`. Contexte : incident quotas du 30/07/2026 (`docs/MAINTENANCE.md §11`).
+- **Modules vendorisés** (budget, Qonto) : toute évolution se reporte au dépôt `@sensetho/catalogue-app` (`docs/HANDOVER.md §7`). Ne jamais bumper sa version à la main (CI auto-bump).
 - **Déploiement** : `git push origin master` → build Vercel automatique.
 
 ## Repères code

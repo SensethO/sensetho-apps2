@@ -6,10 +6,12 @@ import GreenClaimsApp from '@/components/apps/GreenClaimsApp'
 
 export default function GreenClaimsPage() {
   return (
-    <RequireSubscription appSlug="green-claims" appName="Diagnostic Green Claims">
-      <RseAppShell appSlug="green-claims" title="Diagnostic Green Claims">
-        {(ctx: RseContext) => <GreenClaimsApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="green-claims" title="Diagnostic Green Claims">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="green-claims" appName="Diagnostic Green Claims">
+          <GreenClaimsApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

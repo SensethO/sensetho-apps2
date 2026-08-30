@@ -161,15 +161,25 @@ const DiagApp = dynamic(() => import('@/components/apps/<Slug>DiagnosticApp'), {
 
 export default function Page() {
   return (
-    <RequireSubscription appSlug="<slug>" appName="<Nom>">
-      <RseAppShell appSlug="<slug>" title="<Titre complet>">
-        {(ctx: RseContext) => <DiagApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="<slug>" title="<Titre complet>">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="<slug>" appName="<Nom>">
+          <DiagApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }
 ```
 
+> ⚠️ **L'ordre d'imbrication est une règle, pas un détail : le shell DEHORS, la barrière
+> d'abonnement DEDANS.** `RequireSubscription` remplace tout ce qu'il enveloppe pendant la
+> vérification d'accès (spinner) et en cas de refus (écran « Accès requis »). Placé à
+> l'extérieur, il emportait la barre latérale avec lui : l'utilisateur se retrouvait sans
+> aucune navigation, incapable de passer à une autre application — sur 31 pages
+> (constaté et corrigé le 2026-08-30). Le shell à l'extérieur garantit que la navigation
+> reste présente quoi qu'il arrive.
+>
 > ⚠️ **JAMAIS** passer une render prop directement à `RequireSubscription` — il attend
 > `React.ReactNode` et ferait un rendu vide (bug page blanche ACT Bas-Carbone, 2026-06-10).
 > La render prop `(ctx) => ...` va dans `RseAppShell`, pas dans `RequireSubscription`.

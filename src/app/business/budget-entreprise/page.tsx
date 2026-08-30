@@ -6,10 +6,12 @@ import BudgetEntrepriseApp from '@/components/apps/BudgetEntrepriseApp'
 
 export default function BudgetEntreprisePage() {
   return (
-    <RequireSubscription appSlug="budget-entreprise" appName="Budget entreprise">
-      <RseAppShell appSlug="budget-entreprise" title="Budget entreprise" requireYear={false}>
-        {(ctx) => <BudgetEntrepriseApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="budget-entreprise" title="Budget entreprise" requireYear={false}>
+      {(ctx) => (
+        <RequireSubscription appSlug="budget-entreprise" appName="Budget entreprise">
+          <BudgetEntrepriseApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

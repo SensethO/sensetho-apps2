@@ -6,10 +6,12 @@ import VsmeEfragApp from '@/components/apps/VsmeEfragApp'
 
 export default function VsmeEfragPage() {
   return (
-    <RequireSubscription appSlug="vsme-efrag" appName="VSME EFRAG — Standard PME">
-      <RseAppShell appSlug="vsme-efrag" title="VSME EFRAG — Standard PME">
-        {(ctx: RseContext) => <VsmeEfragApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="vsme-efrag" title="VSME EFRAG — Standard PME">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="vsme-efrag" appName="VSME EFRAG — Standard PME">
+          <VsmeEfragApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

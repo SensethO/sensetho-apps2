@@ -5,10 +5,12 @@ import RapportIntegre from '@/components/apps/RapportIntegre'
 
 export default function RapportIntegrePage() {
   return (
-    <RequireSubscription appSlug="rapport-integre" appName="Rapport Intégré">
-      <RseAppShell appSlug="rapport-integre" title="Rapport Intégré">
-        {(ctx: RseContext) => <RapportIntegre ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="rapport-integre" title="Rapport Intégré">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="rapport-integre" appName="Rapport Intégré">
+          <RapportIntegre ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

@@ -8,8 +8,9 @@
 // registre des parties prenantes — jamais saisis en clair — pour qu'une
 // succession suive jusqu'ici.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { ProjetRseModuleProps } from '@/lib/projetRseModules'
+import ProjetRseNotesPanel from '@/components/apps/ProjetRseNotesPanel'
 
 type Onglet = 'lots' | 'jalons' | 'risques' | 'indicateurs'
 
@@ -152,13 +153,13 @@ export default function ProjetRseCycleModule({ projetId, organisationId, readOnl
           onRaciSupprimer={(id) => envoyer(`/api/projet-rse/raci?id=${id}`, 'DELETE', { id })} />
       )}
       {onglet === 'jalons' && (
-        <OngletJalons jalons={jalons} readOnly={readOnly}
+        <OngletJalons jalons={jalons} projetId={projetId} readOnly={readOnly}
           onAjouter={(c) => envoyer(`${base}/jalons`, 'POST', c)}
           onModifier={(c) => envoyer(`${base}/jalons`, 'PATCH', c)}
           onSupprimer={(id) => envoyer(`${base}/jalons?id=${id}`, 'DELETE', { id })} />
       )}
       {onglet === 'risques' && (
-        <OngletRisques risques={risques} acteurs={acteurs} readOnly={readOnly} nomActeur={nomActeur}
+        <OngletRisques risques={risques} projetId={projetId} acteurs={acteurs} readOnly={readOnly} nomActeur={nomActeur}
           onAjouter={(c) => envoyer(`${base}/risques`, 'POST', c)}
           onModifier={(c) => envoyer(`${base}/risques`, 'PATCH', c)}
           onSupprimer={(id) => envoyer(`${base}/risques?id=${id}`, 'DELETE', { id })} />
@@ -338,8 +339,8 @@ function OngletLots({ lots, raci, acteurs, readOnly, nomActeur, onAjouter, onSup
 
 // ── Jalons ──────────────────────────────────────────────────────────────────
 
-function OngletJalons({ jalons, readOnly, onAjouter, onModifier, onSupprimer }: {
-  jalons: Jalon[]; readOnly: boolean
+function OngletJalons({ jalons, projetId, readOnly, onAjouter, onModifier, onSupprimer }: {
+  jalons: Jalon[]; projetId: string; readOnly: boolean
   onAjouter: (c: Record<string, unknown>) => Promise<boolean>
   onModifier: (c: Record<string, unknown>) => Promise<boolean>
   onSupprimer: (id: string) => Promise<boolean>
@@ -446,6 +447,10 @@ function OngletJalons({ jalons, readOnly, onAjouter, onModifier, onSupprimer }: 
               </div>
             ))}
           </dl>
+          {/* Notes & documents du jalon — règle universelle des apps RSE */}
+          <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+            <ProjetRseNotesPanel projetId={projetId} actionKey={`jalon_${j.id}`} readOnly={readOnly} />
+          </div>
         </div>
       ))}
     </div>
@@ -454,8 +459,8 @@ function OngletJalons({ jalons, readOnly, onAjouter, onModifier, onSupprimer }: 
 
 // ── Risques ─────────────────────────────────────────────────────────────────
 
-function OngletRisques({ risques, acteurs, readOnly, nomActeur, onAjouter, onModifier, onSupprimer }: {
-  risques: Risque[]; acteurs: Acteur[]; readOnly: boolean
+function OngletRisques({ risques, projetId, acteurs, readOnly, nomActeur, onAjouter, onModifier, onSupprimer }: {
+  risques: Risque[]; projetId: string; acteurs: Acteur[]; readOnly: boolean
   nomActeur: (id: string | null) => string
   onAjouter: (c: Record<string, unknown>) => Promise<boolean>
   onModifier: (c: Record<string, unknown>) => Promise<boolean>
@@ -541,7 +546,8 @@ function OngletRisques({ risques, acteurs, readOnly, nomActeur, onAjouter, onMod
             {tries.map(r => {
               const n = niveauCriticite(r.probabilite, r.impact)
               return (
-                <tr key={r.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                <Fragment key={r.id}>
+                <tr className="border-t" style={{ borderColor: 'var(--border)' }}>
                   <td className="px-3 py-2 text-gray-900 dark:text-white">
                     {r.libelle}
                     {r.traitement && <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.traitement}</div>}
@@ -571,6 +577,13 @@ function OngletRisques({ risques, acteurs, readOnly, nomActeur, onAjouter, onMod
                     </td>
                   )}
                 </tr>
+                {/* Notes & documents du risque — règle universelle des apps RSE */}
+                <tr>
+                  <td colSpan={readOnly ? 7 : 8} className="px-3 pb-2">
+                    <ProjetRseNotesPanel projetId={projetId} actionKey={`risque_${r.id}`} readOnly={readOnly} />
+                  </td>
+                </tr>
+                </Fragment>
               )
             })}
             {!tries.length && (

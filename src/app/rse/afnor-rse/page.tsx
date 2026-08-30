@@ -6,10 +6,12 @@ import AfnorRseDiagnosticApp from '@/components/apps/AfnorRseDiagnosticApp'
 
 export default function AfnorRsePage() {
   return (
-    <RequireSubscription appSlug="afnor-rse" appName="Label Engagé RSE">
-      <RseAppShell appSlug="afnor-rse" title="Label Engagé RSE — AFNOR Certification">
-        {(ctx: RseContext) => <AfnorRseDiagnosticApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="afnor-rse" title="Label Engagé RSE — AFNOR Certification">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="afnor-rse" appName="Label Engagé RSE">
+          <AfnorRseDiagnosticApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }

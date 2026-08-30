@@ -6,10 +6,12 @@ import LabelNrDiagnosticApp from '@/components/apps/LabelNrDiagnosticApp'
 
 export default function LabelNrPage() {
   return (
-    <RequireSubscription appSlug="label-nr" appName="Label Numérique Responsable">
-      <RseAppShell appSlug="label-nr" title="Label Numérique Responsable (Label NR) — Agence LUCIE / INR">
-        {(ctx: RseContext) => <LabelNrDiagnosticApp ctx={ctx} />}
-      </RseAppShell>
-    </RequireSubscription>
+    <RseAppShell appSlug="label-nr" title="Label Numérique Responsable (Label NR) — Agence LUCIE / INR">
+      {(ctx: RseContext) => (
+        <RequireSubscription appSlug="label-nr" appName="Label Numérique Responsable">
+          <LabelNrDiagnosticApp ctx={ctx} />
+        </RequireSubscription>
+      )}
+    </RseAppShell>
   )
 }
