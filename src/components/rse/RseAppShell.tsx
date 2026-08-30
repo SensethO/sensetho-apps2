@@ -2,7 +2,7 @@
 
 // Shell OBLIGATOIRE des applications RSE (organisation + année + header + partage).
 // @see docs/HANDOVER.md §2 · docs/RSE_APP_PATTERN.md · docs/README.md (carte code↔doc)
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import clsx from 'clsx'
 import Icon from '@/components/ui/Icon'
 import Sidebar from '@/components/layout/Sidebar'
@@ -213,13 +213,27 @@ export default function RseAppShell({ appSlug, title, requireYear = true, childr
   // Résolution de l'app courante pour récupérer son icône (même que la sidebar)
   const currentApp = categories.flatMap(c => c.apps ?? []).find(a => a.slug === appSlug)
 
-  const ctx: RseContext = {
+  // Enregistre le handler de decalage d'annee de l'app enfant. Stable : n'ecrit
+  // que dans une ref, donc aucune dependance.
+  const setYearShiftHandler = useCallback((fn: (delta: number) => Promise<void>) => {
+    yearShiftHandlerRef.current = fn
+  }, [])
+
+  // ⚠️ ctx DOIT etre memoise. Plusieurs apps le placent dans les dependances de
+  // l'effet qui appelle ctx.setActions (le bouton du header). Recree a chaque
+  // rendu, il declenchait : effet -> setActions -> nouvel etat du shell -> nouveau
+  // rendu -> nouveau ctx -> effet... soit une boucle de rendu infinie qui saturait
+  // le navigateur : la page ne repondait plus aux clics, impossible de changer
+  // d'application (constate sur Plan Strategique le 2026-08-30 ; meme famille de
+  // bug que la boucle satellite du 30/07 qui avait fait exploser les quotas).
+  // setHeaderActions est un setter useState, donc deja stable.
+  const ctx: RseContext = useMemo(() => ({
     org: selectedOrg,
     year: effectiveYear,
     isShared: isSharedOrg,
     setActions: setHeaderActions,
-    setYearShiftHandler: (fn) => { yearShiftHandlerRef.current = fn },
-  }
+    setYearShiftHandler,
+  }), [selectedOrg, effectiveYear, isSharedOrg, setYearShiftHandler])
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
