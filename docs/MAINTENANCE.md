@@ -257,15 +257,19 @@ Synthèse des leçons apprises — les garde-fous listés ici sont **actifs dans
 | `20260830_rename_plan_strategique.sql` | Renommage catalogue « Projet RSE » → « Plan Stratégique » (slug `projet-rse` inchangé) | 30/08/2026 |
 | `20260830_projet_rse_notes.sql` | Notes de projet (`ProjetRseNotesPanel`) | 30/08/2026 |
 | `20260830_icone_admin_sso.sql` | Icône de l'app `admin-sso` : `shieldCheck` (doublon) → `lock` | 30/08/2026 |
+| `20260830_projet_rse_sous_programmes_et_acteurs.sql` | Niveau sous-programme + registre d'acteurs référencés | vérifié appliqué le 30/08/2026 |
+| `20260831_projet_rse_modules.sql` | Tables des six sous-applications (cadrage, P5, SMP, WBS/RACI/jalons/risques/indicateurs, impact social) | vérifié appliqué le 30/08/2026 |
+
+> Le renommage « Plan Stratégique » a dû être **appliqué deux fois** : une session
+> parallèle avait réécrit l'entrée du catalogue entre-temps. Contrôle rapide :
+> `SELECT name FROM apps WHERE slug = 'projet-rse'` doit renvoyer « Plan Stratégique ».
+> Ce nom est aussi modifiable sans jeton depuis Administration → Catégories.
 
 ### En attente
 
-Committées mais **pas encore appliquées**. Le code est écrit pour rester fonctionnel sans elles (messages explicites côté interface), mais les fonctionnalités correspondantes sont inertes d'ici là.
-
-| Migration | Objet | Effet visible tant qu'elle n'est pas passée |
-|---|---|---|
-| `20260830_projet_rse_sous_programmes_et_acteurs.sql` | Niveau sous-programme + registre d'acteurs référencés (`projet_rse_acteurs`, `projet_rse_acteur_liens`, `_historique`, `_journal`) | Plan Stratégique : niveau sous-programme et registre d'acteurs annoncés comme indisponibles |
-| `20260831_projet_rse_modules.sql` | Tables des six sous-applications (cadrage, P5, SMP, WBS/RACI/jalons/risques/indicateurs, impact social) | Plan Stratégique : les onglets de modules affichent le message « migration manquante » |
+**Aucune migration en attente au 30/08/2026** — vérifié en base par la méthode du
+§12 bis (présence des tables `projet_rse_acteurs`, `projet_rse_p5`, `projet_rse_notes`).
+Toute nouvelle migration committée vient s'ajouter ici jusqu'à son application.
 
 Application (une par une, dans l'ordre des noms de fichiers, cf. §4) :
 

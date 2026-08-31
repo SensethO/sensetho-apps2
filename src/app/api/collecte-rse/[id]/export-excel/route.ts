@@ -82,7 +82,7 @@ const COLLECTE_RSE_AXES = [
     { id: 'col-gov-juridique',   label: "Documents juridiques & organisation (Kbis, statuts, organigramme, raison d'être / clause de mission)" },
     { id: 'col-gov-strategie',   label: 'Stratégie & politique RSE (feuille de route, politique RSE signée, comptes rendus de comité RSE)' },
     { id: 'col-gov-materialite', label: 'Analyse de matérialité & cartographie des parties prenantes' },
-    { id: 'col-gov-ethique',     label: 'Éthique & gestion des risques (code de conduite, cartographie des risques RSE, rapports RSE antérieurs)' },
+    { id: 'col-gov-ethique',     label: 'Éthique & gestion des risques (code de conduite/éthique, cartographie des risques RSE, rapports RSE antérieurs)' },
   ]},
   { id: 'social', label: 'Social & Conditions de travail', icon: '👥', weight: 0.20, criteres: [
     { id: 'col-soc-donnees',  label: 'Données sociales (bilan social, DSN, registre du personnel, pyramide des âges)' },
@@ -92,7 +92,7 @@ const COLLECTE_RSE_AXES = [
   ]},
   { id: 'environnement', label: 'Environnement', icon: '🌍', weight: 0.20, criteres: [
     { id: 'col-env-politique',      label: 'Politique & certifications environnementales (politique, ISO 14001/50001 le cas échéant, conformité ICPE)' },
-    { id: 'col-env-climat',         label: 'Énergie & climat (bilan GES / Bilan Carbone scopes 1-2-3, plan de transition, suivis de consommations, audit énergétique)' },
+    { id: 'col-env-climat',         label: 'Énergie & climat (bilan GES / Bilan Carbone scopes 1-2-3, plan de transition, factures et suivis de consommations, audit énergétique)' },
     { id: 'col-env-dechets',        label: 'Déchets & circularité (registre des déchets, BSD, contrats de collecte, taux de valorisation)' },
     { id: 'col-env-ecoconception',  label: 'Écoconception & achats responsables (ACV produits, démarche d\'écoconception, politique achats verts)' },
   ]},

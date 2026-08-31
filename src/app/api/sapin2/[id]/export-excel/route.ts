@@ -59,7 +59,7 @@ const SAPIN2_AXES = [
   { id: 'gouvernance',  label: 'Gouvernance & Engagement',      icon: '🏛️', weight: 0.20, criteres: [
     { id: 'gouv-code',         label: 'Code de conduite anti-corruption' },
     { id: 'gouv-direction',    label: 'Engagement de la direction générale' },
-    { id: 'gouv-ressources',   label: 'Ressources et organisation dédiées (Compliance Officer)' },
+    { id: 'gouv-ressources',   label: 'Ressources et organisation dédiées' },
     { id: 'gouv-strategie',    label: 'Intégration dans la stratégie d\'entreprise' },
   ]},
   { id: 'cartographie', label: 'Cartographie des risques',      icon: '🗺️', weight: 0.20, criteres: [
