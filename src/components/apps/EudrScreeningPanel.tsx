@@ -204,6 +204,17 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
                       Verser au référentiel
                     </button>
                   )}
+                  {/* Sans cette mention, l'absence du bouton laisse croire que les
+                      parcelles ont disparu : elles ne sont simplement jamais entrées
+                      au référentiel, un fichier rédhibitoire devant repartir en
+                      révision plutôt que d'y figurer comme valide. */}
+                  {canWrite && tri && !tri.exploitable && (
+                    <span
+                      className="px-3 py-1.5 text-xs rounded-lg border border-dashed border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400"
+                      title="Le référentiel ne reçoit que des fichiers exploitables. Corrigez le fichier, ou faites-le corriger par le fournisseur, puis rejouez le tri.">
+                      Versement au référentiel bloqué — anomalie rédhibitoire
+                    </span>
+                  )}
                   {canWrite && (
                     <button
                       className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
