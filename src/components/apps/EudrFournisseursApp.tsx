@@ -673,9 +673,9 @@ function Dashboard({ orgId, buyers, suppliers, contracts, onOpenTraces }: {
             Déclarations DDS et référentiel des parcelles
           </h3>
           <p className="text-xs text-amber-900 dark:text-amber-200 m-0">
-            {ddsEcarts.ecarts} déclaration(s) sur {ddsEcarts.total} portent un fichier de géolocalisation qui n’est
-            plus la version au périmètre courant du référentiel. Les géométries déclarées diffèrent de celles du
-            référentiel ; une déclaration rectificative peut être nécessaire.
+            {ddsEcarts.ecarts} déclaration(s) sur {ddsEcarts.total} ne portent plus les géométries du référentiel —
+            parce qu’une autre version du fichier fait désormais référence, ou parce que le contenu du fichier déclaré
+            a changé depuis le dépôt. Une déclaration rectificative peut être nécessaire.
           </p>
           <button className="mt-2 text-xs text-amber-800 dark:text-amber-300 underline" onClick={onOpenTraces}>
             Voir le détail dans « TRACES »

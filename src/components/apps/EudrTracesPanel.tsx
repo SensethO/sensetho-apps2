@@ -41,7 +41,7 @@ interface DdsRow {
  * modification de DDS n'est automatisé.
  */
 interface ControleReferentiel {
-  etat: 'conforme' | 'version_perimee' | 'hors_perimetre' | 'non_rattachee' | 'fichier_absent'
+  etat: 'conforme' | 'contenu_modifie' | 'version_perimee' | 'hors_perimetre' | 'non_rattachee' | 'fichier_absent'
   ecart: boolean
   libelle: string
   message: string
@@ -431,9 +431,10 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
             if (!ecarts) return null
             return (
               <p className="text-sm rounded-lg px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 m-0">
-                {ecarts} déclaration(s) portent un fichier de géolocalisation qui n’est plus la version au périmètre
-                courant du référentiel. Les géométries déclarées diffèrent de celles du référentiel ; une déclaration
-                rectificative peut être nécessaire.
+                {ecarts} déclaration(s) ne portent plus les géométries du référentiel — parce qu’une autre version
+                du fichier fait désormais référence, ou parce que le contenu du fichier déclaré a changé depuis le
+                dépôt. Le détail figure dans la colonne « Fichier déclaré » ; une déclaration rectificative peut être
+                nécessaire.
               </p>
             )
           })()}

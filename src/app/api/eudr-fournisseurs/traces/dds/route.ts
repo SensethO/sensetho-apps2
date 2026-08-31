@@ -4,6 +4,7 @@ import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClie
 import { getDdsV3, withdrawDdsV3, getDdsByInternalReferenceV3 } from '@/lib/eudr/tracesV3'
 import { guard } from '../_auth'
 import { chargerEtatVersions, type EtatVersion } from '../../plots/_referentiel'
+import { empreinteActuelle } from '../_geojson'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -22,7 +23,7 @@ export const runtime = 'nodejs'
  * n'est automatisé. Formulation factuelle, l'appréciation revient à l'opérateur.
  * ────────────────────────────────────────────────────────────────────────── */
 
-type EtatControle = 'conforme' | 'version_perimee' | 'hors_perimetre' | 'non_rattachee' | 'fichier_absent'
+type EtatControle = 'conforme' | 'contenu_modifie' | 'version_perimee' | 'hors_perimetre' | 'non_rattachee' | 'fichier_absent'
 
 interface ControleReferentiel {
   etat: EtatControle
@@ -69,6 +70,44 @@ function controlerDds(attId: string | null, etats: Map<string, EtatVersion>): Co
   }
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Second contrôle : le fichier a-t-il changé DE CONTENU depuis le dépôt ?
+ *
+ * Le contrôle de version ci-dessus suit le pointeur (quel attachement fait
+ * référence). Il ne voit pas le cas où le contenu du MÊME document est remplacé
+ * sur SharePoint hors du flux de correction : le pointeur reste valide, et la
+ * déclaration paraît conforme alors qu'elle ne porte plus les mêmes géométries.
+ *
+ * On recalcule donc l'empreinte du GeoJSON assaini avec le réglage figé au dépôt
+ * et on la compare à celle transmise. Trois silences volontaires :
+ *   — DDS déposée avant le 2026-08-31 (empreinte nulle) : rien à comparer ;
+ *   — fichier illisible ou supprimé : `empreinteActuelle` renvoie null ;
+ *   — écart de version déjà signalé : inutile de superposer deux alertes.
+ * Dans ces cas le contrôle de version reste seul à s'exprimer.
+ * ────────────────────────────────────────────────────────────────────────── */
+async function controlerContenu(
+  orgId: string,
+  lignes: { attId: string | null; sha: string | null; simplify: boolean | null; controle: ControleReferentiel }[],
+): Promise<Map<string, boolean>> {
+  // Une seule lecture SharePoint par (fichier, réglage), quel que soit le nombre de DDS.
+  const aVerifier = new Map<string, { attId: string; simplify: boolean; shas: Set<string> }>()
+  for (const l of lignes) {
+    if (!l.attId || !l.sha) continue
+    if (l.controle.etat !== 'conforme') continue
+    const cle = `${l.attId}|${l.simplify !== false}`
+    const e = aVerifier.get(cle) ?? { attId: l.attId, simplify: l.simplify !== false, shas: new Set<string>() }
+    e.shas.add(l.sha)
+    aVerifier.set(cle, e)
+  }
+  const modifies = new Map<string, boolean>()
+  await Promise.all(Array.from(aVerifier.entries()).map(async ([cle, e]) => {
+    const actuel = await empreinteActuelle(orgId, e.attId, e.simplify)
+    if (!actuel) return
+    Array.from(e.shas).forEach(sha => modifies.set(`${cle}|${sha}`, actuel !== sha))
+  }))
+  return modifies
+}
+
 /** Liste enrichie du contrôle. Une erreur de contrôle ne fait jamais échouer la liste. */
 async function listerDds(orgId: string) {
   const admin = createAdminClient()
@@ -77,9 +116,25 @@ async function listerDds(orgId: string) {
     chargerEtatVersions(orgId).catch(() => new Map<string, EtatVersion>()),
   ])
   if (dds.error) return { error: dds.error.message, data: [] as Record<string, unknown>[] }
-  const data = (dds.data ?? []).map(d => ({
-    ...d,
-    controle_referentiel: controlerDds((d.geojson_attachment_id as string | null) ?? null, etats),
+  const lignes = (dds.data ?? []).map(d => ({
+    d,
+    attId: (d.geojson_attachment_id as string | null) ?? null,
+    sha: (d.geojson_sha256 as string | null) ?? null,
+    simplify: (d.geojson_simplify as boolean | null) ?? null,
+    controle: controlerDds((d.geojson_attachment_id as string | null) ?? null, etats),
+  }))
+  const modifies = await controlerContenu(orgId, lignes).catch(() => new Map<string, boolean>())
+  const data = lignes.map(l => ({
+    ...l.d,
+    controle_referentiel: modifies.get(`${l.attId}|${l.simplify !== false}|${l.sha}`)
+      ? {
+          etat: 'contenu_modifie' as EtatControle, ecart: true, libelle: 'Contenu modifié',
+          message: 'Le fichier de géolocalisation porte toujours le même nom et reste au périmètre courant,'
+            + ' mais son contenu a changé depuis le dépôt : les géométries transmises à TRACES ne sont plus'
+            + ' celles du fichier d’aujourd’hui. Vérifiez ce qui a été modifié ;'
+            + ' une déclaration rectificative peut être nécessaire.',
+        }
+      : l.controle,
   }))
   return { error: null, data }
 }

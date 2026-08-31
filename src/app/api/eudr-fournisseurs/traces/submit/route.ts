@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { spGraphForApp } from '@/lib/sharepointMulti'
 import { getTracesCredentials, describeTracesError } from '@/lib/eudr/tracesClient'
 import { submitDdsV3, amendDdsV3, DdsStatement } from '@/lib/eudr/tracesV3'
 import { toIso2 } from '@/lib/eudr/countries'
-import { sanitizeGeojson, SanitizeReport } from '@/lib/eudr/geoSanitize'
+import { SanitizeReport } from '@/lib/eudr/geoSanitize'
+import { geojsonFromAttachment } from '../_geojson'
 import { guard } from '../_auth'
 
 /** Normalise en ISO2 tous les pays de la déclaration (pays d'activité, transit, producteurs). */
@@ -20,23 +20,6 @@ function normalizeCountries(s: DdsStatement): void {
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-/** Lit un document GeoJSON stocké dans SharePoint et le renvoie encodé en base64. */
-async function geojsonFromAttachment(orgId: string, attachmentId: string, simplify: boolean): Promise<{ base64: string; report: SanitizeReport }> {
-  const admin = createAdminClient()
-  const { data: row } = await admin.from('eudr_attachments')
-    .select('sharepoint_item_id').eq('id', attachmentId).eq('org_id', orgId).maybeSingle()
-  if (!row) throw new Error('Document GeoJSON introuvable.')
-  const res = await spGraphForApp('eudr-fournisseurs', `/items/${row.sharepoint_item_id}`)
-  if (!res.ok) throw new Error('Fichier GeoJSON SharePoint introuvable.')
-  const item = await res.json() as Record<string, unknown>
-  const url = item['@microsoft.graph.downloadUrl'] as string | undefined
-  if (!url) throw new Error('URL de téléchargement GeoJSON indisponible.')
-  const raw = Buffer.from(await (await fetch(url)).arrayBuffer()).toString('utf-8')
-  // Nettoyage TRACES : éclatement MultiPolygon, suppression des trous, arrondi (+ simplification optionnelle).
-  const { geojson, report } = sanitizeGeojson(raw, { simplify })
-  return { base64: Buffer.from(JSON.stringify(geojson)).toString('base64'), report }
-}
 
 /**
  * POST { org_id, operatorType, statement }
@@ -59,10 +42,13 @@ export async function POST(req: NextRequest) {
 
     const statement = body.statement
     let geoReport: SanitizeReport | null = null
+    let geoSha: string | null = null
+    const geoSimplify = body.simplifyGeometry !== false
     // GeoJSON depuis un document SharePoint : on lit le fichier, on le nettoie et on l'injecte dans le 1er producteur.
     if (body.geojsonAttachmentId) {
-      const { base64, report } = await geojsonFromAttachment(body.org_id!, body.geojsonAttachmentId, body.simplifyGeometry !== false)
+      const { base64, sha256, report } = await geojsonFromAttachment(body.org_id!, body.geojsonAttachmentId, geoSimplify)
       geoReport = report
+      geoSha = sha256
       const c0 = statement.commodities?.[0]
       if (c0) {
         const producers = Array.isArray(c0.producers) ? c0.producers : c0.producers ? [c0.producers] : []
@@ -82,6 +68,10 @@ export async function POST(req: NextRequest) {
       net_weight: c0?.descriptors?.goodsMeasure?.netWeight ?? null,
       form_json: body.formSnapshot ?? null,
       geojson_attachment_id: body.geojsonAttachmentId ?? null,
+      // Empreinte des octets transmis : sans elle, un fichier modifié après coup
+      // sur SharePoint passerait le contrôle a posteriori sans un mot.
+      geojson_sha256: geoSha,
+      geojson_simplify: body.geojsonAttachmentId ? geoSimplify : null,
     }
     const admin = createAdminClient()
 

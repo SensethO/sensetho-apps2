@@ -267,38 +267,78 @@ Synthèse des leçons apprises — les garde-fous listés ici sont **actifs dans
 
 ### En attente
 
-| Migration | Objet | Committée le |
+*Aucune.* Les quatre migrations EUDR du 31/08/2026 ont été appliquées le jour même
+sur le projet Paris `pjrwjfozzynmjvbygqev`, et vérifiées par lecture de
+`information_schema` :
+
+| Migration | Objet | Appliquée le |
 |---|---|---|
-| `20260831_eudr_signal_qualification.sql` | Table `eudr_signal_qualifications` : conclusion d'instruction (à instruire / déforestation confirmée / écartée…) par parcelle signalée par Whisp, onglet « Perturbation du couvert » de l'app EUDR | 31/08/2026 |
-| `20260831_eudr_plots_supplier.sql` | `eudr_plots` : garantit `supplier_id` + sa clé étrangère, ajoute `supplier_assigned_at` / `supplier_assigned_by` (provenance d'un rattachement manuel), index des parcelles orphelines, politique RLS d'écriture — onglet « 🗺️ Parcelles » de l'app EUDR | 31/08/2026 |
-| `20260831_eudr_attachment_origine.sql` | `eudr_attachments.corrige_de` : lien d'une version corrigée vers le fichier dont elle est issue (+ index, + reprise des versions déjà déposées par leur nom). Empêche le double comptage des mêmes terres au référentiel — onglets « 🔎 Tri géodonnées » et « 🗺️ Parcelles » de l'app EUDR | 31/08/2026 |
+| `20260831_eudr_signal_qualification.sql` | Table `eudr_signal_qualifications` : conclusion d'instruction (à instruire / déforestation confirmée / écartée…) par parcelle signalée par Whisp, onglet « Perturbation du couvert » | 31/08/2026 |
+| `20260831_eudr_plots_supplier.sql` | `eudr_plots` : garantit `supplier_id` + sa clé étrangère, ajoute `supplier_assigned_at` / `supplier_assigned_by` (provenance d'un rattachement manuel), index des parcelles orphelines, politique RLS d'écriture — onglet « 🗺️ Parcelles » | 31/08/2026 |
+| `20260831_eudr_attachment_origine.sql` | `eudr_attachments.corrige_de` : lien d'une version corrigée vers le fichier dont elle est issue. Empêche le double comptage des mêmes terres au référentiel, et rattrape le cas d'un fichier renommé à la main | 31/08/2026 |
+| `20260831_eudr_dds_empreinte.sql` | `eudr_dds.geojson_sha256` / `geojson_simplify` : empreinte du GeoJSON **assaini** réellement transmis à TRACES au dépôt — voir §12 ter | 31/08/2026 |
 
-> Tant qu'elle n'est pas appliquée, le panneau « Perturbation du couvert » reste utilisable :
-> il affiche « Qualification des signaux indisponible » et n'écrit rien. Repère du §12 bis :
-> présence de la table `eudr_signal_qualifications`.
+Les replis décrits ci-dessous restent en place dans le code : ils ne coûtent rien
+et couvrent une base restaurée depuis une sauvegarde antérieure, ou un déploiement
+de l'application sur un autre projet Supabase.
 
-> Idem pour l'onglet « 🗺️ Parcelles » : `supplier_id` existe déjà depuis
-> `20260806_eudr_plots.sql`, le rattachement fonctionne donc sans cette migration —
-> seule sa provenance (qui, quand) n'est pas consignée, la route retombant
-> automatiquement sur une écriture sans trace. Repère du §12 bis : présence de la
-> colonne `eudr_plots.supplier_assigned_at`.
+> Sans `20260831_eudr_signal_qualification`, le panneau « Perturbation du couvert »
+> affiche « Qualification des signaux indisponible » et n'écrit rien ; la reprise des
+> conclusions (`/api/eudr-fournisseurs/deforestation/reprise`) répond 503 avec le motif.
 
-> Idem pour `corrige_de` : original et version corrigée sont rapprochés par leur
-> nom, que le code construit lui-même (« X (corrigé).geojson » ↔ « X.geojson », même
-> organisation). Le versement retire donc déjà l'autre version du périmètre courant
-> sans cette migration ; elle remplace une convention de nommage par un fait consigné,
-> et rattrape le cas d'un fichier renommé à la main. Repère du §12 bis : présence de la
-> colonne `eudr_attachments.corrige_de`.
+> Sans `20260831_eudr_plots_supplier`, le rattachement d'une parcelle à un fournisseur
+> fonctionne (`supplier_id` existe depuis `20260806_eudr_plots.sql`) mais sa provenance
+> (qui, quand) n'est pas consignée : la route retombe sur une écriture sans trace.
 
-> **Aucune migration nouvelle** pour les trois contrôles de version ajoutés ensuite
-> (analyse de couvert, conclusions d'instruction, DDS déposée) : ils lisent le même
-> appariement (`src/app/api/eudr-fournisseurs/plots/_referentiel.ts`,
-> `chargerEtatVersions`) et fonctionnent donc avec ou sans `corrige_de`. Sans elle,
-> l'appariement repose sur le nom : **un fichier renommé à la main n'est plus apparié**,
-> et les trois contrôles se taisent alors au lieu de se tromper — un fichier isolé est
-> traité comme un fichier sans autre version. La reprise des conclusions
-> (`/api/eudr-fournisseurs/deforestation/reprise`) exige en plus
-> `20260831_eudr_signal_qualification` : sans elle, elle répond 503 avec le motif.
+> Sans `20260831_eudr_attachment_origine`, original et version corrigée sont rapprochés
+> par leur nom, que le code construit lui-même (« X (corrigé).geojson » ↔ « X.geojson »,
+> même organisation). Le versement retire donc déjà l'autre version du périmètre courant.
+> **Un fichier renommé à la main cesse d'être apparié** : les contrôles de version se
+> taisent alors au lieu de se tromper — un fichier isolé est traité comme un fichier
+> sans autre version.
+
+> Sans `20260831_eudr_dds_empreinte`, le contrôle de contenu (§12 ter) ne s'exprime
+> jamais ; le contrôle de version continue de s'appliquer.
+
+### §12 ter — Ce que le contrôle des déclarations voit, et ce qu'il ne voit pas
+
+Deux contrôles distincts s'appliquent à une DDS déjà déposée, tous deux dans
+`src/app/api/eudr-fournisseurs/traces/dds/route.ts`. Aucun des deux n'agit :
+ils constatent, l'appréciation revient à l'opérateur.
+
+1. **Contrôle de version** — suit le pointeur `eudr_dds.geojson_attachment_id`.
+   Détecte qu'une *autre* version du fichier fait désormais référence
+   (état `version_perimee`), ou que le fichier déclaré est sorti du périmètre
+   courant (`hors_perimetre`).
+2. **Contrôle de contenu** — compare `eudr_dds.geojson_sha256` à l'empreinte
+   recalculée aujourd'hui (état `contenu_modifie`). Détecte le remplacement du
+   contenu du *même* document sur SharePoint, hors du flux de correction de
+   l'application — cas que le contrôle de version ne peut pas voir, puisque le
+   pointeur reste valide.
+
+L'empreinte porte sur le GeoJSON **après assainissement** (éclatement des
+MultiPolygon, suppression des trous, arrondi, simplification optionnelle),
+c'est-à-dire sur les octets effectivement transmis à TRACES — pas sur le fichier
+brut. Le réglage de simplification est figé au dépôt dans `geojson_simplify` et
+rejoué au contrôle : sans cela, une comparaison faite avec un assainissement
+différent signalerait un faux écart. Dépôt et contrôle partagent pour cette raison
+la même fonction, `src/app/api/eudr-fournisseurs/traces/_geojson.ts` — **ne pas
+dupliquer cette logique**.
+
+Le contrôle de contenu se tait volontairement dans trois cas : DDS déposée avant
+le 31/08/2026 (empreinte nulle, rien à comparer), fichier illisible ou supprimé,
+et écart de version déjà signalé (inutile de superposer deux alertes).
+
+Ce qu'aucun des deux ne voit : **une modification faite sur SharePoint n'est pas
+détectée au moment où elle a lieu.** L'application ne surveille pas SharePoint ;
+l'écart apparaît au prochain affichage de la liste TRACES ou du tableau de bord.
+Le tri et le versement, eux, relisent toujours le fichier depuis SharePoint — un
+contenu modifié y est donc bien pris en compte dès qu'ils sont relancés, mais rien
+ne les relance tout seul.
+
+Le coût de lecture est borné : une seule lecture SharePoint par couple
+(fichier, réglage), quel que soit le nombre de déclarations qui s'y rattachent, et
+seules les DDS par ailleurs conformes sont vérifiées.
 
 Toute nouvelle migration committée vient s'ajouter ici jusqu'à son application.
 
