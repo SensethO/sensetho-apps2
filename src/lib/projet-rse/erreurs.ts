@@ -13,10 +13,23 @@ export function structureAbsente(e: { code?: string; message?: string } | null |
   return m.includes('does not exist') || m.includes('could not find the table')
 }
 
-const ATTENTE = 'Cette sous-application attend sa migration : le script '
-              + '20260831_projet_rse_modules.sql n’a pas encore été exécuté dans Supabase.'
+/** Script attendu par défaut : celui qui crée les tables des modules. */
+export const SCRIPT_MODULES = '20260831_projet_rse_modules.sql'
+/** Script qui ouvre les notes aux niveaux autres que le projet. */
+export const SCRIPT_MULTI_NIVEAUX = '20260901_projet_rse_notes_multi_niveaux.sql'
 
-/** Traduit une erreur Supabase en message affichable. */
-export function messageErreur(e: { code?: string; message?: string }): string {
-  return structureAbsente(e) ? ATTENTE : (e.message ?? 'Erreur inattendue')
+/**
+ * Traduit une erreur Supabase en message affichable.
+ *
+ * `script` nomme la migration qui manque réellement. L'indiquer est loin d'être
+ * cosmétique : renvoyer vers un script déjà exécuté fait chercher au mauvais
+ * endroit.
+ */
+export function messageErreur(
+  e: { code?: string; message?: string },
+  script: string = SCRIPT_MODULES,
+): string {
+  if (!structureAbsente(e)) return e.message ?? 'Erreur inattendue'
+  return 'Cette sous-application attend sa migration : le script '
+       + script + ' n’a pas encore été exécuté dans Supabase.'
 }

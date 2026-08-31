@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireCible, filtreDeCible } from '@/lib/projet-rse/cible'
-import { messageErreur, structureAbsente } from '@/lib/projet-rse/erreurs'
+import { messageErreur, structureAbsente, SCRIPT_MULTI_NIVEAUX } from '@/lib/projet-rse/erreurs'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, { params }: Contexte) {
       // Sans les colonnes de la migration, on dit pourquoi plutôt que de
       // renvoyer une liste vide qui ferait croire à une absence de contenu.
       if (structureAbsente(error))
-        return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
+        return NextResponse.json({ error: messageErreur(error, SCRIPT_MULTI_NIVEAUX) }, { status: 500 })
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -75,7 +75,7 @@ export async function PUT(req: NextRequest, { params }: Contexte) {
     const { data: existante, error: eLecture } = await q.maybeSingle()
     if (eLecture) {
       if (structureAbsente(eLecture))
-        return NextResponse.json({ error: messageErreur(eLecture) }, { status: 500 })
+        return NextResponse.json({ error: messageErreur(eLecture, SCRIPT_MULTI_NIVEAUX) }, { status: 500 })
       return NextResponse.json({ error: eLecture.message }, { status: 500 })
     }
 
@@ -90,7 +90,7 @@ export async function PUT(req: NextRequest, { params }: Contexte) {
           .insert({ ...filtre, action_key: body.action_key, ...champs })
           .select('id').single()
 
-    if (error) return NextResponse.json({ error: messageErreur(error) }, { status: 500 })
+    if (error) return NextResponse.json({ error: messageErreur(error, SCRIPT_MULTI_NIVEAUX) }, { status: 500 })
     return NextResponse.json({ data: { id: data.id } })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
