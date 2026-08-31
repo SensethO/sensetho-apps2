@@ -12,6 +12,7 @@
 // s'y passe. C'est pourtant le niveau où l'arbitrage entre projets se fait.
 
 import { useCallback, useEffect, useState } from 'react'
+import ProjetRseNotesNiveauPanel from '@/components/apps/ProjetRseNotesNiveauPanel'
 
 const BASE = '/api/projet-rse'
 
@@ -284,6 +285,11 @@ export function PanneauSousProgramme({ sousProgramme, organisationId, projets, r
           <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border)' }}>
             <FilAvancement organisationId={organisationId} niveau="sous_programme"
               cibleId={sp.id} readOnly={readOnly} />
+
+            <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+              <ProjetRseNotesNiveauPanel niveau="sous_programme" cibleId={sp.id}
+                readOnly={readOnly} libelle="dossier du sous-programme" />
+            </div>
           </div>
         </div>
       </div>

@@ -105,9 +105,44 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: eNotes.message }, { status: 500 })
     }
 
+    // Les notes des niveaux supérieurs et du registre d'acteurs, si la
+    // migration multi-niveaux est passée. Sinon la requête échoue sur une
+    // colonne absente et la vue se limite aux projets — sans mentir dessus.
+    const NIVEAUX: Array<[string, string, string]> = [
+      ['portefeuille_id', 'projet_rse_portefeuilles', 'Portefeuille'],
+      ['programme_id', 'projet_rse_programmes', 'Programme'],
+      ['sous_programme_id', 'projet_rse_sous_programmes', 'Sous-programme'],
+      ['acteur_id', 'projet_rse_acteurs', 'Partie prenante'],
+    ]
+    const horsProjet: Array<Record<string, unknown>> = []
+    let multiNiveaux = true
+    {
+      const { data, error } = await admin
+        .from('projet_rse_notes')
+        .select('action_key, content, sections, updated_at, '
+              + 'portefeuille_id, programme_id, sous_programme_id, acteur_id')
+        .eq('organisation_id', organisationId)
+        .is('projet_id', null)
+      if (error) multiNiveaux = false
+      else horsProjet.push(...((data ?? []) as unknown as Array<Record<string, unknown>>))
+    }
+    // Nom de chaque cible hors projet, en un appel par table concernée.
+    const nomCible = new Map<string, string>()
+    if (multiNiveaux && horsProjet.length) {
+      for (const [col, table] of NIVEAUX) {
+        const ids = Array.from(new Set(horsProjet
+          .map(r => r[col] as string | null).filter((v): v is string => !!v)))
+        if (!ids.length) continue
+        const { data } = await admin.from(table).select('id, nom').in('id', ids)
+        for (const l of ((data ?? []) as unknown as Record<string, unknown>[])) {
+          nomCible.set(l.id as string, l.nom as string)
+        }
+      }
+    }
+
     // Résolution des libellés : un appel par table concernée, jamais un par ligne.
     const parNature: Record<string, string[]> = {}
-    for (const n of (notes ?? [])) {
+    for (const n of [...(notes ?? []), ...horsProjet]) {
       const { nature, identifiant } = decouper(n.action_key as string)
       if (!identifiant || !NATURES[nature]?.table) continue
       ;(parNature[nature] ??= []).push(identifiant)
@@ -152,11 +187,48 @@ export async function GET(req: NextRequest) {
         modifie_le: n.updated_at as string,
       }
     })
+    for (const n of horsProjet) {
+      const cle = n.action_key as string
+      const { nature, identifiant } = decouper(cle)
+      const meta = NATURES[nature]
+      const sections = (Array.isArray(n.sections) ? n.sections : []) as Section[]
+      const pieces = sections.flatMap(s =>
+        (s.attachments ?? [])
+          .filter(a => !a.deleted_at && a.path)
+          .map(a => ({
+            id: a.id ?? a.path,
+            nom: a.name ?? 'sans nom',
+            item_id: a.path,
+            mime: a.mime ?? '',
+            taille: a.size ?? 0,
+            section: (s.title ?? '').replace(/<[^>]*>/g, '').trim(),
+          })))
+      // Le niveau porteur tient la place du projet dans la colonne d'origine.
+      const trouve = NIVEAUX.find(([col]) => !!n[col])
+      const cibleId = trouve ? (n[trouve[0]] as string) : null
+      const porteur = trouve
+        ? `${trouve[2]} — ${nomCible.get(cibleId as string) ?? '—'}`
+        : 'Organisation'
+      elements.push({
+        projet_id: cibleId
+          ? `${trouve![0].replace('_id', '').replace('sous_programme', 'sous_programme')}:${cibleId}`
+          : `organisation:${organisationId}`,
+        projet_nom: porteur,
+        action_key: cle,
+        nature: meta?.libelle ?? nature,
+        libelle: identifiant ? (libelles.get(cle) ?? identifiant) : (meta?.libelle ?? cle),
+        note: ((n.content as string) ?? '').replace(/<[^>]*>/g, '').trim(),
+        nb_pieces: pieces.length,
+        pieces,
+        modifie_le: n.updated_at as string,
+      })
+    }
+
     // Ce qui porte des fichiers d'abord, puis le plus récemment modifié.
     elements.sort((a, b) =>
       (b.nb_pieces - a.nb_pieces) || String(b.modifie_le).localeCompare(String(a.modifie_le)))
 
-    return NextResponse.json({ elements })
+    return NextResponse.json({ elements, multiNiveaux })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

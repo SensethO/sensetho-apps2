@@ -117,6 +117,7 @@ type CreateKind = 'portefeuille' | 'programme' | 'operation'
 // ── Composant principal ───────────────────────────────────────────────────────
 
 import { FilAvancement, PanneauSousProgramme } from './ProjetRseNiveaux'
+import ProjetRseNotesNiveauPanel from '@/components/apps/ProjetRseNotesNiveauPanel'
 
 export default function ProjetRseValeurView({ organisationId, readOnly, onOpenProjet }: {
   organisationId: string
@@ -526,6 +527,10 @@ function ProgrammeBloc({ programme, projets, sousProgrammes, organisationId, rea
       <div className="pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
         <FilAvancement organisationId={organisationId} niveau="programme"
           cibleId={programme.id} readOnly={readOnly} replie />
+        <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+          <ProjetRseNotesNiveauPanel niveau="programme" cibleId={programme.id}
+            readOnly={readOnly} libelle="dossier du programme" />
+        </div>
       </div>
     </div>
   )

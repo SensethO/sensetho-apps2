@@ -102,12 +102,19 @@ export default function ProjetRseDocumentsView({ organisationId }: { organisatio
   const piecesVisibles = useMemo(
     () => visibles.reduce((n, e) => n + e.nb_pieces, 0), [visibles])
 
-  /** Ouvre le fichier par une URL SharePoint signée, obtenue à la demande. */
-  const ouvrir = async (projetId: string, piece: Piece) => {
+  /**
+   * Ouvre le fichier par une URL SharePoint signée, obtenue à la demande.
+   * Un élément de projet porte un identifiant nu ; un élément d'un niveau
+   * supérieur porte « programme:<uuid> » — deux familles de routes.
+   */
+  const ouvrir = async (porteur: string, piece: Piece) => {
     setEnCours(piece.id)
+    const base = porteur.includes(':')
+      ? `/api/projet-rse/niveaux/${porteur}`
+      : `/api/projet-rse/projets/${porteur}`
     try {
       const r = await fetch(
-        `/api/projet-rse/projets/${projetId}/notes/signed-url?item_id=${encodeURIComponent(piece.item_id)}`)
+        `${base}/notes/signed-url?item_id=${encodeURIComponent(piece.item_id)}`)
       const j = await r.json() as { url?: string; error?: string }
       if (!r.ok || !j.url) throw new Error(j.error ?? 'Fichier introuvable dans SharePoint')
       window.open(j.url, '_blank', 'noopener')

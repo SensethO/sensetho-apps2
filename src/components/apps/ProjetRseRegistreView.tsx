@@ -10,6 +10,7 @@
 // et de savoir pourquoi.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import ProjetRseNotesNiveauPanel from '@/components/apps/ProjetRseNotesNiveauPanel'
 
 const BASE = '/api/projet-rse'
 
@@ -593,6 +594,11 @@ function FicheActeur({ acteurId, readOnly, succession, nomDe, onClose, onChanged
               )}
             </>
           )}
+
+          <div className="pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+            <ProjetRseNotesNiveauPanel niveau="acteur" cibleId={acteurId}
+              readOnly={readOnly} libelle="pièces de la partie prenante" />
+          </div>
         </div>
       </div>
     </div>
