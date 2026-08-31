@@ -56,7 +56,7 @@ const PROVIDERS = [
     carbon: 'Infrastructure AWS Europe. AWS indique couvrir depuis 2023 100% de l\'électricité consommée par ses opérations par des sources renouvelables — couverture annuelle selon sa méthodologie (PPA et attributs renouvelables), à distinguer de l\'électricité physiquement consommée par la région de Paris à un instant donné.',
     dataResidence: 'Données structurées (comptes, diagnostics RSE, sessions, résultats) stockées en région Paris (France). Les données ne quittent pas l\'Union Européenne.',
     url: 'https://supabase.com/privacy',
-    certUrl: 'https://supabase.com/docs/guides/platform/security',
+    certUrl: 'https://supabase.com/security',
     note: null,
   },
   {
