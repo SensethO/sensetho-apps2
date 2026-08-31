@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 
 // Tri automatique des fichiers de géolocalisation.
@@ -16,7 +16,26 @@ interface Tri {
   nb_parcelles: number; surface_ha: number; nb_bloquants: number; nb_alertes: number
   exploitable: boolean; constats: Constat[]; analyzed_at: string; analyzed_by: string | null
 }
-interface Doc { id: string; name: string; created_at: string }
+interface Doc { id: string; name: string; created_at: string; corrige_de?: string | null }
+
+/**
+ * Versions d'un même fichier.
+ *
+ * La correction ne remplace pas l'original : elle dépose « X (corrigé).geojson »
+ * à côté de lui. Les deux décrivent les mêmes terres, et le référentiel ne doit
+ * jamais porter les deux à la fois. L'écran les montre donc appariés, jamais
+ * comme deux fichiers sans rapport.
+ */
+const RE_CORRIGE = /\s*\(corrigé\)(?=\.[^.]+$|$)/i
+const estNomCorrige = (nom: string) => RE_CORRIGE.test(nom)
+const nomOriginalDe = (nom: string) => nom.replace(RE_CORRIGE, '')
+const nomCorrigeDe = (nom: string) => {
+  const base = nom.replace(/\.(geojson|json)$/i, '')
+  const ext = nom.match(/\.(geojson|json)$/i)?.[0] ?? '.geojson'
+  return `${base} (corrigé)${ext}`
+}
+
+interface Ligne { doc: Doc; corrigee: boolean; origine: Doc | null; corrige: Doc | null }
 
 const PASTILLE: Record<Gravite, string> = {
   bloquant: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
@@ -36,7 +55,9 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
   const [ouvert, setOuvert] = useState<string | null>(null)
   const [erreur, setErreur] = useState('')
   const [verse, setVerse] = useState<Record<string, string>>({})
+  const [rappel, setRappel] = useState<Record<string, string>>({})
   const [corrige, setCorrige] = useState<Record<string, string>>({})
+  const [auReferentiel, setAuReferentiel] = useState<Set<string>>(new Set())
 
   const charger = useCallback(async () => {
     const res = await fetch(`/api/eudr-fournisseurs/screening?org_id=${orgId}`)
@@ -44,10 +65,44 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
     if (!res.ok) { setErreur(j.error ?? `Erreur ${res.status}`); setChargement(false); return }
     setDocs(j.documents ?? [])
     setTris(Object.fromEntries((j.tris ?? []).map((t: Tri) => [t.attachment_id, t])))
+    setAuReferentiel(new Set<string>((j.auReferentiel ?? []) as string[]))
     setChargement(false)
   }, [orgId])
 
   useEffect(() => { void charger() }, [charger])
+
+  // Chaque version corrigée est affichée sous son original, jamais ailleurs :
+  // deux entrées sans lien visible laisseraient croire à deux fichiers distincts.
+  const lignes = useMemo<Ligne[]>(() => {
+    const parId = new Map(docs.map(d => [d.id, d]))
+    const parNom = new Map(docs.map(d => [d.name, d]))
+    const corrigeeDe = (d: Doc) => (d.corrige_de ? parId.get(d.corrige_de) ?? null : null) ?? (
+      estNomCorrige(d.name) ? parNom.get(nomOriginalDe(d.name)) ?? null : null
+    )
+    const versionCorrigee = (d: Doc) =>
+      docs.find(x => x.corrige_de === d.id) ?? parNom.get(nomCorrigeDe(d.name)) ?? null
+
+    const estCorrigee = (d: Doc) => !!d.corrige_de || estNomCorrige(d.name)
+    const placees = new Set<string>()
+    const sortie: Ligne[] = []
+    for (const d of docs) {
+      if (placees.has(d.id) || estCorrigee(d)) continue
+      const c = versionCorrigee(d)
+      sortie.push({ doc: d, corrigee: false, origine: null, corrige: c })
+      placees.add(d.id)
+      if (c && !placees.has(c.id)) {
+        sortie.push({ doc: c, corrigee: true, origine: d, corrige: null })
+        placees.add(c.id)
+      }
+    }
+    // Versions corrigées dont l'original a disparu : elles restent visibles.
+    for (const d of docs) {
+      if (placees.has(d.id)) continue
+      sortie.push({ doc: d, corrigee: estCorrigee(d), origine: corrigeeDe(d), corrige: null })
+      placees.add(d.id)
+    }
+    return sortie
+  }, [docs])
 
   async function trier(doc: Doc) {
     setOccupe(doc.id); setErreur('')
@@ -73,11 +128,16 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
     setOccupe(null)
     if (!res.ok) { setErreur(j.error ?? `Erreur ${res.status}`); return }
     const alerte = (j.doublonsInterFournisseurs ?? []).length
+    // Le message vient de la route : elle seule sait ce qui est sorti du
+    // périmètre courant, et « en l'état » ou « version corrigée » n'engagent
+    // pas la même chose vis-à-vis d'une déclaration déjà déposée.
     setVerse(v => ({
       ...v,
-      [doc.id]: `${j.versees} parcelle(s) versée(s), ${j.surfaceHa} ha`
+      [doc.id]: (j.message ?? `${j.versees} parcelle(s) versée(s), ${j.surfaceHa} ha`)
         + (alerte ? ` — ⚠️ ${alerte} contour(s) déclaré(s) par plusieurs fournisseurs` : ''),
     }))
+    setRappel(r => ({ ...r, [doc.id]: j.rappel ?? '' }))
+    await charger() // le périmètre courant a changé : l'autre version n'y est plus
   }
 
   /** Corrige automatiquement les erreurs réparables et dépose une version corrigée. */
@@ -94,7 +154,9 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
     setCorrige(c => ({
       ...c,
       [doc.id]: `Fichier corrigé déposé (${j.name}) — ${(j.codesResolus ?? []).length} type(s) d’erreur résolu(s)`
-        + (j.exploitable ? ', désormais exploitable.' : ` ; ${restants} anomalie(s) rédhibitoire(s) restent à corriger par le fournisseur.`),
+        + (j.exploitable
+          ? ', désormais exploitable. Versez cette version corrigée au référentiel : elle en retirera les parcelles issues du fichier initial.'
+          : ` ; ${restants} anomalie(s) rédhibitoire(s) restent à corriger par le fournisseur.`),
     }))
     await charger() // le fichier corrigé (avec sa note) apparaît dans la liste
   }
@@ -139,13 +201,39 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
       )}
 
       <div className="space-y-2">
-        {docs.map(doc => {
+        {lignes.map(({ doc, corrigee, origine, corrige: docCorrige }) => {
           const tri = tris[doc.id]
+          // Cas dangereux : la version corrigée existe, mais c'est l'original qui
+          // porte le périmètre courant. La déclaration reposerait alors sur les
+          // géométries que la correction a précisément écartées.
+          const originalAuReferentiel = !corrigee && !!docCorrige
+            && auReferentiel.has(doc.id) && !auReferentiel.has(docCorrige.id)
           return (
-            <div key={doc.id} className="border border-gray-200 dark:border-slate-700 rounded-xl p-4">
+            <div key={doc.id}
+              className={`border rounded-xl p-4 ${corrigee
+                ? 'ml-6 border-l-4 border-l-amber-400 dark:border-l-amber-500/60 border-gray-200 dark:border-slate-700 bg-amber-50/40 dark:bg-amber-900/10'
+                : 'border-gray-200 dark:border-slate-700'}`}>
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-slate-100 truncate">📄 {doc.name}</p>
+                  <p className="font-medium text-gray-900 dark:text-slate-100 truncate">
+                    {corrigee ? '🛠️' : '📄'} {doc.name}
+                    {auReferentiel.has(doc.id) && (
+                      <span className="ml-2 align-middle text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                        title="Les parcelles de ce fichier sont dans le périmètre courant du référentiel.">
+                        au référentiel
+                      </span>
+                    )}
+                  </p>
+                  {corrigee && (
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                      ↳ Version corrigée de « {origine?.name ?? 'fichier initial introuvable'} »
+                    </p>
+                  )}
+                  {!corrigee && docCorrige && (
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                      Une version corrigée de ce fichier existe : « {docCorrige.name} ».
+                    </p>
+                  )}
                   {tri ? (
                     <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
                       Trié le {new Date(tri.analyzed_at).toLocaleString('fr-FR')}
@@ -158,6 +246,28 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
                   )}
                   {verse[doc.id] && (
                     <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">{verse[doc.id]}</p>
+                  )}
+                  {/* Le référentiel n'est pas la déclaration : si la géométrie
+                      retenue change, ce qui a déjà été transmis ne correspond plus. */}
+                  {rappel[doc.id] && (
+                    <div className="mt-1.5 rounded-lg border border-blue-300 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1.5">
+                      <p className="text-[11px] font-semibold text-blue-900 dark:text-blue-300">
+                        À faire suite à ce versement
+                      </p>
+                      <p className="text-[11px] text-blue-900/90 dark:text-blue-200/90 mt-0.5">{rappel[doc.id]}</p>
+                    </div>
+                  )}
+                  {originalAuReferentiel && (
+                    <div className="mt-1.5 rounded-lg border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-900/20 px-2.5 py-1.5">
+                      <p className="text-[11px] font-semibold text-red-800 dark:text-red-300">
+                        ⚠️ Le référentiel porte le fichier initial alors qu’une version corrigée existe
+                      </p>
+                      <p className="text-[11px] text-red-800/90 dark:text-red-200/90 mt-0.5">
+                        Les parcelles au périmètre courant viennent des géométries que la correction a écartées.
+                        Versez « {docCorrige?.name} » : le versement retire alors du périmètre courant les parcelles
+                        issues de ce fichier-ci.
+                      </p>
+                    </div>
                   )}
                   {corrige[doc.id] && (
                     <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">✅ {corrige[doc.id]}</p>
@@ -200,8 +310,10 @@ export default function EudrScreeningPanel({ orgId, canWrite }: { orgId: string;
                     <button
                       className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50"
                       onClick={() => verser(doc)} disabled={occupe === doc.id}
-                      title="Enregistre les parcelles au référentiel : identité stable, surfaces, détection des contours déclarés deux fois">
-                      Verser au référentiel
+                      title={corrigee || docCorrige
+                        ? 'Enregistre les parcelles au référentiel. Les parcelles issues de l’autre version du même fichier sont retirées du périmètre courant : les deux versions décrivent les mêmes terres et ne doivent jamais y figurer ensemble.'
+                        : 'Enregistre les parcelles au référentiel : identité stable, surfaces, détection des contours déclarés deux fois'}>
+                      {corrigee ? 'Verser la version corrigée' : 'Verser au référentiel'}
                     </button>
                   )}
                   {/* Sans cette mention, l'absence du bouton laisse croire que les

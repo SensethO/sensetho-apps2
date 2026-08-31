@@ -11,6 +11,10 @@ export const maxDuration = 120
 
 const MOTEUR_VERSION = 'v1'
 
+/** La colonne visée manque-t-elle en base (migration non appliquée) ? */
+const colonneAbsente = (e: { code?: string; message?: string } | null) =>
+  !!e && (e.code === '42703' || /column .* does not exist/i.test(e.message ?? ''))
+
 /**
  * POST { org_id, attachmentId } → corrige automatiquement les erreurs réparables
  * d'un fichier GeoJSON (trous, contours non refermés, auto-intersections, sommets
@@ -114,14 +118,23 @@ export async function POST(req: NextRequest) {
     const { data: existant } = await admin.from('eudr_attachments')
       .select('id').eq('org_id', orgId).eq('doc_type', 'geojson').eq('name', nomCorrige).maybeSingle()
 
+    // Le lien vers l'original, écrit ici, évite d'avoir à le deviner plus tard :
+    // c'est lui qui permet au versement de sortir l'autre version du périmètre
+    // courant plutôt que de compter deux fois les mêmes terres.
+    const avecOrigine = { ...champs, corrige_de: attachmentId }
+
     let newAttId: string
     if (existant) {
-      await admin.from('eudr_attachments').update(champs).eq('id', existant.id)
+      let up = await admin.from('eudr_attachments').update(avecOrigine).eq('id', existant.id)
+      if (colonneAbsente(up.error)) up = await admin.from('eudr_attachments').update(champs).eq('id', existant.id)
       newAttId = existant.id
     } else {
-      const { data: ins, error: insErr } = await admin.from('eudr_attachments').insert(champs).select('id').single()
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 502 })
-      newAttId = ins.id
+      let ins = await admin.from('eudr_attachments').insert(avecOrigine).select('id').single()
+      // Migration 20260831_eudr_attachment_origine non appliquée (cf. §12) : le
+      // rapprochement retombe sur le nom déterministe « … (corrigé) ».
+      if (colonneAbsente(ins.error)) ins = await admin.from('eudr_attachments').insert(champs).select('id').single()
+      if (ins.error) return NextResponse.json({ error: ins.error.message }, { status: 502 })
+      newAttId = ins.data!.id
     }
 
     // — Historiser le tri du fichier corrigé
@@ -142,6 +155,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       attachmentId: newAttId,
       name: nomCorrige,
+      origineId: attachmentId,
+      origineName: row.name,
       note,
       noteTexte,
       report,

@@ -45,6 +45,9 @@ interface Parcelle {
   polygone_requis: boolean
   polygone_manquant: boolean
   signal: Signal
+  version_fichier: 'en_etat' | 'corrigee'
+  version_libelle: string
+  version_origine_nom: string | null
 }
 
 interface Totaux {
@@ -55,6 +58,8 @@ interface Totaux {
   auDela4Ha: number
   manquementsPolygone: number
   seuilHa: number
+  depuisVersionCorrigee: number
+  depuisFichierEnEtat: number
 }
 
 interface Doublon {
@@ -78,7 +83,15 @@ const SIGNAUX = {
   non_analyse: { label: 'Non analysée', cls: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300' },
 } as const
 
-type Colonne = 'ref' | 'fournisseur' | 'fichier' | 'pays' | 'geometrie' | 'surface' | 'versee' | 'signal'
+type Colonne = 'ref' | 'fournisseur' | 'fichier' | 'version' | 'pays' | 'geometrie' | 'surface' | 'versee' | 'signal'
+
+// Une parcelle vient soit du fichier reçu, soit de sa version corrigée. Les deux
+// décrivent les mêmes terres : savoir laquelle fait référence conditionne ce qui
+// peut être déclaré.
+const VERSIONS = {
+  en_etat: { label: 'En l’état', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' },
+  corrigee: { label: 'Version corrigée', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+} as const
 
 const nb = (v: number, d = 2) => v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d })
 const jour = (v?: string | null) => {
@@ -87,6 +100,9 @@ const jour = (v?: string | null) => {
   return isNaN(+d) ? String(v) : d.toLocaleDateString('fr-FR')
 }
 const refLisible = (p: Parcelle) => p.plot_ref?.trim() || `#${p.feature_index + 1}`
+// Une réponse plus ancienne peut ne pas porter la version : elle est alors lue
+// comme un fichier reçu en l'état, jamais comme une version corrigée.
+const version = (p: Parcelle) => VERSIONS[p.version_fichier] ?? VERSIONS.en_etat
 
 export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; canWrite: boolean }) {
   const [parcelles, setParcelles] = useState<Parcelle[]>([])
@@ -105,6 +121,7 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
   const [fPays, setFPays] = useState('')
   const [fSurface, setFSurface] = useState<'' | 'grandes' | 'petites' | 'manquement'>('')
   const [fSignal, setFSignal] = useState('')
+  const [fVersion, setFVersion] = useState<'' | 'en_etat' | 'corrigee'>('')
 
   // Tri
   const [triCol, setTriCol] = useState<Colonne>('surface')
@@ -144,6 +161,7 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
       if (fSurface === 'petites' && p.polygone_requis) return false
       if (fSurface === 'manquement' && !p.polygone_manquant) return false
       if (fSignal && p.signal.etat !== fSignal) return false
+      if (fVersion && p.version_fichier !== fVersion) return false
       if (q) {
         const foin = [refLisible(p), p.supplier_name, p.producer_name, p.attachment_name, p.country, p.commodity, p.survey_source]
           .filter(Boolean).join(' ').toLowerCase()
@@ -158,6 +176,7 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
         case 'ref': return refLisible(p).toLowerCase()
         case 'fournisseur': return (p.supplier_name ?? '').toLowerCase()
         case 'fichier': return (p.attachment_name ?? '').toLowerCase()
+        case 'version': return p.version_fichier
         case 'pays': return (p.country ?? '').toLowerCase()
         case 'geometrie': return (p.geometry_type ?? '').toLowerCase()
         case 'surface': return p.surface_retenue_ha
@@ -170,7 +189,7 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sens
       return String(va).localeCompare(String(vb), 'fr') * sens
     })
-  }, [parcelles, recherche, fFournisseur, fPays, fSurface, fSignal, triCol, triAsc])
+  }, [parcelles, recherche, fFournisseur, fPays, fSurface, fSignal, fVersion, triCol, triAsc])
 
   // Totaux de la sélection courante : c'est la surface filtrée qui sert à préparer
   // une déclaration, pas toujours celle du référentiel entier.
@@ -317,7 +336,7 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
             Un point ne suffit pas : la déclaration de diligence raisonnée serait incomplète.
             Demandez au fournisseur un contour fermé pour ces parcelles.
           </p>
-          <button className={`${btnG} mt-2`} onClick={() => { setFSurface('manquement'); setFSignal(''); setRecherche('') }}>
+          <button className={`${btnG} mt-2`} onClick={() => { setFSurface('manquement'); setFSignal(''); setFVersion(''); setRecherche('') }}>
             Voir ces parcelles
           </button>
         </div>
@@ -333,6 +352,24 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
             Un même contour vendu par deux fournisseurs différents ne se voit qu’au référentiel.
             À instruire avant toute déclaration.
           </p>
+        </div>
+      )}
+
+      {/* Parcelles issues d'une version corrigée : le référentiel n'est pas la
+          déclaration, et ce qui a déjà été transmis ne porte pas ces géométries. */}
+      {totaux && totaux.depuisVersionCorrigee > 0 && (
+        <div className="rounded-xl border border-blue-300 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-900/20 px-4 py-3">
+          <p className="text-sm font-semibold text-blue-900 dark:text-blue-300">
+            {totaux.depuisVersionCorrigee} parcelle(s) proviennent d’une version corrigée du fichier reçu
+          </p>
+          <p className="text-xs text-blue-900/90 dark:text-blue-200/90 mt-1">
+            Le fichier initial correspondant doit être remplacé partout où il a été transmis — notamment dans la
+            déclaration de diligence raisonnée déposée à TRACES et auprès du fournisseur. À défaut, la déclaration
+            porterait sur des géométries différentes de celles du référentiel.
+          </p>
+          <button className={`${btnG} mt-2`} onClick={() => { setFVersion('corrigee'); setFSurface(''); setFSignal(''); setRecherche('') }}>
+            Voir ces parcelles
+          </button>
         </div>
       )}
 
@@ -363,8 +400,13 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
           <option value="">Tous signaux</option>
           {Object.entries(SIGNAUX).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
-        {(recherche || fFournisseur || fPays || fSurface || fSignal) && (
-          <button className={btnG} onClick={() => { setRecherche(''); setFFournisseur(''); setFPays(''); setFSurface(''); setFSignal('') }}>
+        <select className={input} value={fVersion} onChange={e => setFVersion(e.target.value as typeof fVersion)}>
+          <option value="">Toutes versions de fichier</option>
+          <option value="en_etat">Fichier versé en l’état</option>
+          <option value="corrigee">Version corrigée</option>
+        </select>
+        {(recherche || fFournisseur || fPays || fSurface || fSignal || fVersion) && (
+          <button className={btnG} onClick={() => { setRecherche(''); setFFournisseur(''); setFPays(''); setFSurface(''); setFSignal(''); setFVersion('') }}>
             Réinitialiser
           </button>
         )}
@@ -416,6 +458,7 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
                 <th className="px-3 py-2 cursor-pointer" onClick={() => trierPar('ref')}>Référence{fleche('ref')}</th>
                 <th className="px-3 py-2 cursor-pointer" onClick={() => trierPar('fournisseur')}>Fournisseur{fleche('fournisseur')}</th>
                 <th className="px-3 py-2 cursor-pointer" onClick={() => trierPar('fichier')}>Fichier d’origine{fleche('fichier')}</th>
+                <th className="px-3 py-2 cursor-pointer" onClick={() => trierPar('version')}>Version{fleche('version')}</th>
                 <th className="px-3 py-2 cursor-pointer" onClick={() => trierPar('pays')}>Pays{fleche('pays')}</th>
                 <th className="px-3 py-2 cursor-pointer" onClick={() => trierPar('geometrie')}>Géométrie{fleche('geometrie')}</th>
                 <th className="px-3 py-2 text-right cursor-pointer" onClick={() => trierPar('surface')}>Surface (ha){fleche('surface')}</th>
@@ -448,6 +491,14 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
                   <td className="px-3 py-2 text-gray-500 dark:text-gray-400 text-xs max-w-[220px] truncate" title={p.attachment_name ?? ''}>
                     {p.attachment_name ?? '—'}
                   </td>
+                  <td className="px-3 py-2">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${version(p).cls}`}
+                      title={p.version_fichier === 'corrigee'
+                        ? `Parcelle issue de la version corrigée${p.version_origine_nom ? ` du fichier « ${p.version_origine_nom} »` : ''}. Le fichier initial doit être remplacé partout où il a été transmis.`
+                        : 'Parcelle issue du fichier tel qu’il a été reçu, sans correction automatique.'}>
+                      {version(p).label}
+                    </span>
+                  </td>
                   <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{p.country ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
                     {p.geometry_type ?? '—'}
@@ -473,7 +524,7 @@ export default function EudrPlotsPanel({ orgId, canWrite }: { orgId: string; can
               ))}
               {!listeFiltree.length && (
                 <tr>
-                  <td colSpan={canWrite ? 9 : 8} className="px-3 py-8 text-center text-sm text-gray-400 dark:text-gray-500">
+                  <td colSpan={canWrite ? 10 : 9} className="px-3 py-8 text-center text-sm text-gray-400 dark:text-gray-500">
                     Aucune parcelle ne correspond aux filtres.
                   </td>
                 </tr>

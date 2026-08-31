@@ -26,12 +26,27 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const admin = createAdminClient()
-  const [tris, docs] = await Promise.all([
+  const COLS_DOC = 'id, name, entity_type, entity_id, created_at'
+  const [tris, docsAvecOrigine, verses] = await Promise.all([
     admin.from('eudr_geo_screening').select('*').eq('org_id', orgId!).order('analyzed_at', { ascending: false }),
-    admin.from('eudr_attachments').select('id, name, entity_type, entity_id, created_at')
+    admin.from('eudr_attachments').select(`${COLS_DOC}, corrige_de`)
       .eq('org_id', orgId!).eq('doc_type', 'geojson').order('created_at', { ascending: false }),
+    // Quels fichiers portent effectivement le périmètre courant : sans cela,
+    // l'écran ne peut pas signaler qu'une version corrigée existe mais que c'est
+    // l'original qui est au référentiel.
+    admin.from('eudr_plots').select('attachment_id').eq('org_id', orgId!).eq('is_current', true),
   ])
   if (tris.error) return NextResponse.json({ error: tris.error.message }, { status: 502 })
+
+  // Colonne absente (migration 20260831_eudr_attachment_origine non appliquée,
+  // cf. §12) : l'écran retombe sur le rapprochement par nom déterministe.
+  let documents = (docsAvecOrigine.data ?? []) as unknown as Record<string, unknown>[]
+  if (docsAvecOrigine.error && (docsAvecOrigine.error.code === '42703'
+    || /column .* does not exist/i.test(docsAvecOrigine.error.message))) {
+    const sansOrigine = await admin.from('eudr_attachments').select(COLS_DOC)
+      .eq('org_id', orgId!).eq('doc_type', 'geojson').order('created_at', { ascending: false })
+    documents = (sansOrigine.data ?? []) as unknown as Record<string, unknown>[]
+  }
 
   // Seul le tri le plus récent de chaque document est renvoyé : l'historique
   // complet reste en base pour le dossier de conformité.
@@ -39,8 +54,9 @@ export async function GET(req: NextRequest) {
   for (const t of tris.data ?? []) if (!dernier.has(t.attachment_id)) dernier.set(t.attachment_id, t)
 
   return NextResponse.json({
-    documents: docs.data ?? [],
-    tris: [...dernier.values()],
+    documents,
+    tris: Array.from(dernier.values()),
+    auReferentiel: Array.from(new Set((verses.data ?? []).map(p => String(p.attachment_id)))),
   })
 }
 

@@ -271,6 +271,7 @@ Synthèse des leçons apprises — les garde-fous listés ici sont **actifs dans
 |---|---|---|
 | `20260831_eudr_signal_qualification.sql` | Table `eudr_signal_qualifications` : conclusion d'instruction (à instruire / déforestation confirmée / écartée…) par parcelle signalée par Whisp, onglet « Perturbation du couvert » de l'app EUDR | 31/08/2026 |
 | `20260831_eudr_plots_supplier.sql` | `eudr_plots` : garantit `supplier_id` + sa clé étrangère, ajoute `supplier_assigned_at` / `supplier_assigned_by` (provenance d'un rattachement manuel), index des parcelles orphelines, politique RLS d'écriture — onglet « 🗺️ Parcelles » de l'app EUDR | 31/08/2026 |
+| `20260831_eudr_attachment_origine.sql` | `eudr_attachments.corrige_de` : lien d'une version corrigée vers le fichier dont elle est issue (+ index, + reprise des versions déjà déposées par leur nom). Empêche le double comptage des mêmes terres au référentiel — onglets « 🔎 Tri géodonnées » et « 🗺️ Parcelles » de l'app EUDR | 31/08/2026 |
 
 > Tant qu'elle n'est pas appliquée, le panneau « Perturbation du couvert » reste utilisable :
 > il affiche « Qualification des signaux indisponible » et n'écrit rien. Repère du §12 bis :
@@ -281,6 +282,13 @@ Synthèse des leçons apprises — les garde-fous listés ici sont **actifs dans
 > seule sa provenance (qui, quand) n'est pas consignée, la route retombant
 > automatiquement sur une écriture sans trace. Repère du §12 bis : présence de la
 > colonne `eudr_plots.supplier_assigned_at`.
+
+> Idem pour `corrige_de` : original et version corrigée sont rapprochés par leur
+> nom, que le code construit lui-même (« X (corrigé).geojson » ↔ « X.geojson », même
+> organisation). Le versement retire donc déjà l'autre version du périmètre courant
+> sans cette migration ; elle remplace une convention de nommage par un fait consigné,
+> et rattrape le cas d'un fichier renommé à la main. Repère du §12 bis : présence de la
+> colonne `eudr_attachments.corrige_de`.
 
 Toute nouvelle migration committée vient s'ajouter ici jusqu'à son application.
 
@@ -311,6 +319,7 @@ Repères de lecture :
 | Table `projet_rse_acteurs` | `20260830_projet_rse_sous_programmes_et_acteurs.sql` |
 | Table `projet_rse_cadrage` (ou `projet_rse_lots`) | `20260831_projet_rse_modules.sql` |
 | Table `projet_rse_notes` | `20260830_projet_rse_notes.sql` |
+| Colonne `eudr_attachments.corrige_de` (`select column_name from information_schema.columns where table_name = 'eudr_attachments' and column_name = 'corrige_de';`) | `20260831_eudr_attachment_origine.sql` |
 | Fonction `public_schema_size_bytes` (`select proname from pg_proc where proname = 'public_schema_size_bytes';`) | `20260829_public_schema_size.sql` |
 | `select name from apps where slug = 'projet-rse';` → « Plan Stratégique » | `20260830_rename_plan_strategique.sql` |
 | `select icon from apps where slug = 'admin-sso';` → `lock` | `20260830_icone_admin_sso.sql` |

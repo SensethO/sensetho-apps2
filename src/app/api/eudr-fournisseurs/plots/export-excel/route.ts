@@ -86,10 +86,12 @@ export async function GET(req: NextRequest) {
     // ── 1. Parcelles ───────────────────────────────────────────────────────────
     {
       const ws = wb.addWorksheet('1. Parcelles')
-      const heads = ['Référence', 'Fournisseur', 'Producteur', 'Fichier d’origine', 'Pays', 'Produit',
+      const heads = ['Référence', 'Fournisseur', 'Producteur', 'Fichier d’origine', 'Version du fichier',
+        'Fichier initial', 'Pays', 'Produit',
         'Géométrie', 'Surface (ha)', 'Surface déclarée (ha)', '> 4 ha', 'Polygone requis',
         'Signal', 'Analysée le', 'Latitude', 'Longitude', 'Relevé le', 'Source du relevé', 'Versée le', 'Versée par']
-      header(ws, `Référentiel des parcelles — ${orgNom}`, [18, 24, 20, 28, 10, 14, 14, 13, 16, 9, 14, 22, 13, 12, 12, 12, 18, 13, 22], heads)
+      header(ws, `Référentiel des parcelles — ${orgNom}`,
+        [18, 24, 20, 28, 18, 26, 10, 14, 14, 13, 16, 9, 14, 22, 13, 12, 12, 12, 18, 13, 22], heads)
 
       let row = 4
       if (!parcelles.length) {
@@ -104,37 +106,50 @@ export async function GET(req: NextRequest) {
         sc(ws, row, 2, txt(p.supplier_name), { sz: 9 })
         sc(ws, row, 3, txt(p.producer_name), { sz: 9 })
         sc(ws, row, 4, txt(p.attachment_name), { sz: 8 })
-        sc(ws, row, 5, txt(p.country), { sz: 9, ha: 'center' })
-        sc(ws, row, 6, txt(p.commodity), { sz: 9 })
-        sc(ws, row, 7, txt(p.geometry_type), { sz: 9, ha: 'center' })
-        sc(ws, row, 8, surface, { sz: 9, ha: 'right', bold: true, num: '0.0000' })
-        sc(ws, row, 9, p.declared_area_ha != null ? Number(p.declared_area_ha) : '—', { sz: 9, ha: 'right', num: '0.0000' })
-        sc(ws, row, 10, grande ? 'Oui' : 'Non', { sz: 9, ha: 'center' })
-        sc(ws, row, 11, manquement ? 'MANQUANT' : (grande ? 'Fourni' : 'Non requis'), {
+        // « En l'état » ou « version corrigée » : sans cette colonne, le classeur
+        // ne dit pas sur quelles géométries la déclaration peut porter.
+        const corrigee = p.version_fichier === 'corrigee'
+        sc(ws, row, 5, p.version_libelle, {
+          sz: 9, ha: 'center', bold: corrigee,
+          fg: corrigee ? C.orange : C.gray, bg: corrigee ? C.orangeL : undefined,
+        })
+        sc(ws, row, 6, corrigee ? txt(p.version_origine_nom) : '—', { sz: 8 })
+        sc(ws, row, 7, txt(p.country), { sz: 9, ha: 'center' })
+        sc(ws, row, 8, txt(p.commodity), { sz: 9 })
+        sc(ws, row, 9, txt(p.geometry_type), { sz: 9, ha: 'center' })
+        sc(ws, row, 10, surface, { sz: 9, ha: 'right', bold: true, num: '0.0000' })
+        sc(ws, row, 11, p.declared_area_ha != null ? Number(p.declared_area_ha) : '—', { sz: 9, ha: 'right', num: '0.0000' })
+        sc(ws, row, 12, grande ? 'Oui' : 'Non', { sz: 9, ha: 'center' })
+        sc(ws, row, 13, manquement ? 'MANQUANT' : (grande ? 'Fourni' : 'Non requis'), {
           sz: 9, ha: 'center', bold: manquement, fg: manquement ? C.red : C.gray, bg: manquement ? C.redL : undefined,
         })
         const etat = String(p.signal?.etat ?? 'non_analyse')
-        sc(ws, row, 12, SIGNAL_LABELS[etat] ?? etat, {
+        sc(ws, row, 14, SIGNAL_LABELS[etat] ?? etat, {
           sz: 9, ha: 'center',
           fg: etat === 'perturbation' ? C.red : etat === 'risque_eleve' ? C.orange : etat === 'sans_signal' ? C.green : C.gray,
           bg: etat === 'perturbation' ? C.redL : etat === 'risque_eleve' ? C.orangeL : etat === 'sans_signal' ? C.greenL : undefined,
         })
-        sc(ws, row, 13, dt(p.signal?.analyseLe), { sz: 9, ha: 'center' })
-        sc(ws, row, 14, p.centroid_lat != null ? Number(p.centroid_lat) : '—', { sz: 9, ha: 'right', num: '0.000000' })
-        sc(ws, row, 15, p.centroid_lon != null ? Number(p.centroid_lon) : '—', { sz: 9, ha: 'right', num: '0.000000' })
-        sc(ws, row, 16, dt(p.survey_date), { sz: 9, ha: 'center' })
-        sc(ws, row, 17, txt(p.survey_source), { sz: 8 })
-        sc(ws, row, 18, dt(p.created_at), { sz: 9, ha: 'center' })
-        sc(ws, row, 19, txt(p.created_by), { sz: 8 })
+        sc(ws, row, 15, dt(p.signal?.analyseLe), { sz: 9, ha: 'center' })
+        sc(ws, row, 16, p.centroid_lat != null ? Number(p.centroid_lat) : '—', { sz: 9, ha: 'right', num: '0.000000' })
+        sc(ws, row, 17, p.centroid_lon != null ? Number(p.centroid_lon) : '—', { sz: 9, ha: 'right', num: '0.000000' })
+        sc(ws, row, 18, dt(p.survey_date), { sz: 9, ha: 'center' })
+        sc(ws, row, 19, txt(p.survey_source), { sz: 8 })
+        sc(ws, row, 20, dt(p.created_at), { sz: 9, ha: 'center' })
+        sc(ws, row, 21, txt(p.created_by), { sz: 8 })
         row++
       }
 
       row++
       sc(ws, row, 1, 'Total', { bold: true, bg: C.grayL, sz: 10 })
-      sc(ws, row, 7, `${parcelles.length} parcelle(s)`, { bold: true, bg: C.grayL, sz: 10, ha: 'right' })
-      sc(ws, row, 8, totaux.surfaceHa, { bold: true, bg: C.greenL, fg: C.green, sz: 10, ha: 'right', num: '0.0000' })
-      sc(ws, row, 10, `${totaux.auDela4Ha} > ${totaux.seuilHa} ha`, { bold: true, bg: C.grayL, sz: 9, ha: 'center' })
-      sc(ws, row, 11, `${totaux.manquementsPolygone} manquement(s)`, {
+      sc(ws, row, 5, `${totaux.depuisVersionCorrigee} corrigée(s)`, {
+        bold: true, sz: 9, ha: 'center',
+        bg: totaux.depuisVersionCorrigee > 0 ? C.orangeL : C.grayL,
+        fg: totaux.depuisVersionCorrigee > 0 ? C.orange : C.gray,
+      })
+      sc(ws, row, 9, `${parcelles.length} parcelle(s)`, { bold: true, bg: C.grayL, sz: 10, ha: 'right' })
+      sc(ws, row, 10, totaux.surfaceHa, { bold: true, bg: C.greenL, fg: C.green, sz: 10, ha: 'right', num: '0.0000' })
+      sc(ws, row, 12, `${totaux.auDela4Ha} > ${totaux.seuilHa} ha`, { bold: true, bg: C.grayL, sz: 9, ha: 'center' })
+      sc(ws, row, 13, `${totaux.manquementsPolygone} manquement(s)`, {
         bold: true, sz: 9, ha: 'center',
         bg: totaux.manquementsPolygone > 0 ? C.redL : C.grayL,
         fg: totaux.manquementsPolygone > 0 ? C.red : C.gray,
@@ -142,7 +157,12 @@ export async function GET(req: NextRequest) {
 
       row += 2
       sc(ws, row, 1, `Surface exprimée au dix-millième d’hectare, telle que calculée à partir du contour déposé. `
-        + `Au-delà de ${totaux.seuilHa} hectares, l’article 9 du règlement (UE) 2023/1115 impose une géolocalisation en polygone.`,
+        + `Au-delà de ${totaux.seuilHa} hectares, l’article 9 du règlement (UE) 2023/1115 impose une géolocalisation en polygone. `
+        + (totaux.depuisVersionCorrigee > 0
+          ? `${totaux.depuisVersionCorrigee} parcelle(s) proviennent d’une version corrigée du fichier reçu : le fichier initial `
+            + `doit être remplacé partout où il a été transmis, notamment dans la déclaration de diligence raisonnée déposée à `
+            + `TRACES et auprès du fournisseur, faute de quoi la déclaration porterait sur d’autres géométries que celles-ci.`
+          : `Aucune parcelle ne provient d’une version corrigée : le référentiel porte les fichiers tels qu’ils ont été reçus.`),
         { it: true, sz: 9, fg: C.gray, wrap: true })
       ws.mergeCells(row, 1, row, heads.length)
       ws.getRow(row).height = 28
@@ -151,18 +171,20 @@ export async function GET(req: NextRequest) {
     // ── 2. Synthèse par fournisseur ────────────────────────────────────────────
     {
       const ws = wb.addWorksheet('2. Par fournisseur')
-      const heads = ['Fournisseur', 'Parcelles', 'Surface totale (ha)', 'Parcelles > 4 ha', 'Polygone manquant', 'Signaux de perturbation']
-      header(ws, `Surfaces par fournisseur — ${orgNom}`, [34, 12, 20, 16, 18, 22], heads)
+      const heads = ['Fournisseur', 'Parcelles', 'Surface totale (ha)', 'Parcelles > 4 ha', 'Polygone manquant',
+        'Signaux de perturbation', 'Issues d’une version corrigée']
+      header(ws, `Surfaces par fournisseur — ${orgNom}`, [34, 12, 20, 16, 18, 22, 26], heads)
 
-      const parF = new Map<string, { nom: string; n: number; ha: number; grandes: number; manq: number; sig: number }>()
+      const parF = new Map<string, { nom: string; n: number; ha: number; grandes: number; manq: number; sig: number; corr: number }>()
       for (const p of parcelles) {
         const cle = String(p.supplier_id ?? 'sans-fournisseur')
-        const acc = parF.get(cle) ?? { nom: p.supplier_name ?? '(non rattachée)', n: 0, ha: 0, grandes: 0, manq: 0, sig: 0 }
+        const acc = parF.get(cle) ?? { nom: p.supplier_name ?? '(non rattachée)', n: 0, ha: 0, grandes: 0, manq: 0, sig: 0, corr: 0 }
         acc.n += 1
         acc.ha += p.surface_retenue_ha
         if (p.polygone_requis) acc.grandes += 1
         if (p.polygone_manquant) acc.manq += 1
         if (p.signal?.etat === 'perturbation') acc.sig += 1
+        if (p.version_fichier === 'corrigee') acc.corr += 1
         parF.set(cle, acc)
       }
 
@@ -178,6 +200,7 @@ export async function GET(req: NextRequest) {
         sc(ws, row, 4, v.grandes, { sz: 9, ha: 'center' })
         sc(ws, row, 5, v.manq, { sz: 9, ha: 'center', bold: v.manq > 0, fg: v.manq > 0 ? C.red : C.gray, bg: v.manq > 0 ? C.redL : undefined })
         sc(ws, row, 6, v.sig, { sz: 9, ha: 'center', bold: v.sig > 0, fg: v.sig > 0 ? C.orange : C.gray, bg: v.sig > 0 ? C.orangeL : undefined })
+        sc(ws, row, 7, v.corr, { sz: 9, ha: 'center', bold: v.corr > 0, fg: v.corr > 0 ? C.orange : C.gray, bg: v.corr > 0 ? C.orangeL : undefined })
         row++
       }
     }

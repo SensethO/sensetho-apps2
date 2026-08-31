@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp } from '@/lib/sharepointMulti'
 import { trierGeojson } from '@/lib/eudr/screening'
-import { chargerReferentiel } from './_referentiel'
+import { chargerReferentiel, chargerAppariements } from './_referentiel'
 import { guard } from '../traces/_auth'
 
 export const dynamic = 'force-dynamic'
@@ -131,6 +131,36 @@ export async function POST(req: NextRequest) {
     await admin.from('eudr_plots')
       .update({ is_current: false }).eq('attachment_id', attachmentId).eq('is_current', true)
 
+    // … et l'autre version du même fichier avec elles. Original et version
+    // corrigée sont deux attachements distincts décrivant les mêmes terres :
+    // les laisser tous deux dans le périmètre courant compterait deux fois les
+    // mêmes surfaces et fausserait totaux comme contrôle du seuil de polygone.
+    // Le versement le plus récent fait foi.
+    const appariements = await chargerAppariements(orgId, admin)
+    const appariement = appariements.get(attachmentId) ?? null
+    const version = appariement?.version ?? 'en_etat'
+    const autreId = appariement?.autreVersionId ?? null
+
+    let autreVersion: {
+      id: string
+      name: string | null
+      role: 'fichier_initial' | 'version_corrigee'
+      parcellesRetirees: number
+    } | null = null
+
+    if (autreId) {
+      const { data: retirees } = await admin.from('eudr_plots')
+        .update({ is_current: false })
+        .eq('org_id', orgId).eq('attachment_id', autreId).eq('is_current', true)
+        .select('id')
+      autreVersion = {
+        id: autreId,
+        name: appariements.get(autreId)?.name ?? null,
+        role: version === 'corrigee' ? 'fichier_initial' : 'version_corrigee',
+        parcellesRetirees: (retirees ?? []).length,
+      }
+    }
+
     const lignes = rapport.fiches.map(f => ({
       org_id: orgId,
       supplier_id: row.entity_id ?? null,
@@ -163,9 +193,44 @@ export async function POST(req: NextRequest) {
       .select('*').eq('org_id', orgId)
     const inter = (doublons ?? []).filter(d => (d.fournisseurs ?? 0) > 1)
 
+    // Dire d'où viennent les parcelles versées : « en l'état » et « version
+    // corrigée » n'engagent pas la même chose vis-à-vis du fournisseur ni de la
+    // déclaration déjà déposée.
+    const surfaceHa = +lignes.reduce((s, l) => s + Number(l.computed_area_ha ?? 0), 0).toFixed(4)
+    const retirees = autreVersion?.parcellesRetirees ?? 0
+
+    let message: string
+    if (version === 'corrigee') {
+      message = `${lignes.length} parcelle(s) versée(s) depuis la version corrigée — ${surfaceHa} ha.`
+        + (retirees
+          ? ` Les ${retirees} parcelle(s) issues du fichier initial ont été retirées du périmètre courant.`
+          : ' Aucune parcelle du fichier initial n’était au périmètre courant.')
+    } else {
+      message = `${lignes.length} parcelle(s) versée(s) en l’état — ${surfaceHa} ha.`
+        + (retirees
+          ? ` Les ${retirees} parcelle(s) issues de la version corrigée ont été retirées du périmètre courant :`
+            + ' le référentiel porte désormais les géométries du fichier initial.'
+          : '')
+    }
+
+    // Rappel réglementaire : le référentiel n'est pas la déclaration. Si la
+    // géométrie retenue change, ce qui a déjà été transmis ne correspond plus.
+    const rappel = version === 'corrigee'
+      ? 'Le fichier initial doit être remplacé partout où il a été transmis — notamment dans la '
+        + 'déclaration de diligence raisonnée déposée à TRACES et auprès du fournisseur. À défaut, '
+        + 'la déclaration porterait sur des géométries différentes de celles du référentiel.'
+      : (retirees
+        ? 'Une version corrigée de ce fichier avait été versée : c’est désormais le fichier initial '
+          + 'qui fait référence. Vérifiez que c’est bien la version voulue avant toute déclaration.'
+        : null)
+
     return NextResponse.json({
       versees: lignes.length,
-      surfaceHa: +lignes.reduce((s, l) => s + Number(l.computed_area_ha ?? 0), 0).toFixed(4),
+      surfaceHa,
+      version,
+      autreVersion,
+      message,
+      rappel,
       doublonsInterFournisseurs: inter,
     })
   } catch (err) {

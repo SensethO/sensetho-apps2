@@ -638,9 +638,41 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
               <label className={labelCls}>Document GeoJSON</label>
               <select className={inputCls} value={geojsonAttachmentId} onChange={e => setGeojsonAttachmentId(e.target.value)} disabled={!geoSupplierId}>
                 <option value="">{geoSupplierId ? (geoDocs.length ? '— Choisir —' : 'Aucun GeoJSON pour ce fournisseur') : '—'}</option>
-                {geoDocs.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                {geoDocs.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {/^(.*)\s\(corrigé\)(\.[^.]*)?$/i.test(d.name) ? `${d.name} — version corrigée` : d.name}
+                  </option>
+                ))}
               </select>
               {geojsonAttachmentId && <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ GeoJSON du document utilisé (le champ texte est ignoré).</p>}
+              {/* Une déclaration engage la responsabilité de l'opérateur sur les
+                  géométries déposées : elle doit porter la version qui fait
+                  référence au référentiel, pas celle que la correction a écartée. */}
+              {geojsonAttachmentId && (() => {
+                const choisi = geoDocs.find(d => d.id === geojsonAttachmentId)
+                if (!choisi) return null
+                const estCorrige = /\(corrigé\)/i.test(choisi.name)
+                const base = choisi.name.replace(/\s\(corrigé\)/i, '')
+                const corrigeExiste = geoDocs.some(d => d.id !== choisi.id && /\(corrigé\)/i.test(d.name)
+                  && d.name.replace(/\s\(corrigé\)/i, '') === base)
+                if (!estCorrige && corrigeExiste) {
+                  return (
+                    <p className="text-xs mt-1 rounded-lg px-2 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                      ⚠️ Une version corrigée de ce fichier existe. Déclarer le fichier initial reviendrait à
+                      déposer les géométries que la correction a écartées.
+                    </p>
+                  )
+                }
+                if (estCorrige) {
+                  return (
+                    <p className="text-xs mt-1 rounded-lg px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                      Version corrigée sélectionnée. Si le fichier initial a déjà été déclaré, la déclaration
+                      correspondante doit être remplacée.
+                    </p>
+                  )
+                }
+                return null
+              })()}
             </div>
           </div>
         )}
