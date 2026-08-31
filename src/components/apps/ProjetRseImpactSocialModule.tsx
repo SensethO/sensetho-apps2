@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { ProjetRseModuleProps } from '@/lib/projetRseModules'
+import ProjetRseNotesPanel from '@/components/apps/ProjetRseNotesPanel'
 
 interface Impact {
   besoin: string | null; activites: string | null; extrants: string | null
@@ -203,6 +204,10 @@ export default function ProjetRseImpactSocialModule({ projetId, readOnly }: Proj
           </button>
         </div>
       )}
+
+      <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+        <ProjetRseNotesPanel projetId={projetId} actionKey="impact-social" readOnly={readOnly} />
+      </div>
     </div>
   )
 }

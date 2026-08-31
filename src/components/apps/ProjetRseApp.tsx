@@ -15,6 +15,7 @@ import type { RseContext } from '@/components/rse/RseAppShell'
 import { PROJET_RSE_MODULES } from '@/lib/projetRseModules'
 import ProjetRseValeurView from '@/components/apps/ProjetRseValeurView'
 import ProjetRseRegistreView from './ProjetRseRegistreView'
+import ProjetRseDocumentsView from './ProjetRseDocumentsView'
 import { FilAvancement } from './ProjetRseNiveaux'
 
 // ── Types (contrat API) ───────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Projet | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [vue, setVue] = useState<'projets' | 'valeur' | 'registre'>('projets')
+  const [vue, setVue] = useState<'projets' | 'valeur' | 'registre' | 'documents'>('projets')
 
   // ── Chargement des projets ──
   const loadProjets = useCallback(async (): Promise<Projet[]> => {
@@ -159,6 +160,7 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
               { id: 'projets' as const, label: '📁 Projets' },
               { id: 'valeur' as const, label: '🏛️ Création de valeur' },
               { id: 'registre' as const, label: '👥 Registre des parties prenantes' },
+              { id: 'documents' as const, label: '📎 Notes & documents' },
             ]).map(v => (
               <button key={v.id} onClick={() => setVue(v.id)}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${vue === v.id
@@ -181,6 +183,9 @@ export default function ProjetRseApp({ ctx }: { ctx: RseContext }) {
           )}
           {vue === 'registre' && (
             <ProjetRseRegistreView organisationId={orgId} readOnly={readOnly} />
+          )}
+          {vue === 'documents' && (
+            <ProjetRseDocumentsView organisationId={orgId} />
           )}
         </>
       )}

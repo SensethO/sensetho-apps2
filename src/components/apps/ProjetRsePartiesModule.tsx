@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ProjetRseModuleProps } from '@/lib/projetRseModules'
+import ProjetRseNotesPanel from '@/components/apps/ProjetRseNotesPanel'
 
 // ── Types (contrat API) ───────────────────────────────────────────────────────
 
@@ -581,6 +582,12 @@ export default function ProjetRsePartiesModule({ projetId, organisationId, phase
           partieById={partieById}
         />
       )}
+
+      {/* Le registre, la matrice et le plan d'engagement se documentent
+          ensemble : un seul panneau pour tout le volet parties prenantes. */}
+      <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+        <ProjetRseNotesPanel projetId={projetId} actionKey="parties" readOnly={readOnly} />
+      </div>
 
       {/* Fiche d'édition */}
       {form && (

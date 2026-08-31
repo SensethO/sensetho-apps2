@@ -144,7 +144,7 @@ export default function ProjetRseCycleModule({ projetId, organisationId, readOnl
       </div>
 
       {onglet === 'lots' && (
-        <OngletLots lots={lots} raci={raci} acteurs={acteurs} readOnly={readOnly}
+        <OngletLots lots={lots} raci={raci} acteurs={acteurs} readOnly={readOnly} projetId={projetId}
           nomActeur={nomActeur}
           onAjouter={(c) => envoyer(`${base}/lots`, 'POST', c)}
           onSupprimer={(id) => envoyer(`${base}/lots?id=${id}`, 'DELETE', { id })}
@@ -165,7 +165,7 @@ export default function ProjetRseCycleModule({ projetId, organisationId, readOnl
           onSupprimer={(id) => envoyer(`${base}/risques?id=${id}`, 'DELETE', { id })} />
       )}
       {onglet === 'indicateurs' && (
-        <OngletIndicateurs indicateurs={indicateurs} acteurs={acteurs} readOnly={readOnly}
+        <OngletIndicateurs indicateurs={indicateurs} acteurs={acteurs} readOnly={readOnly} projetId={projetId}
           nomActeur={nomActeur}
           onAjouter={(c) => envoyer(`${base}/indicateurs`, 'POST', c)}
           onSupprimer={(id) => envoyer(`${base}/indicateurs?id=${id}`, 'DELETE', { id })} />
@@ -176,7 +176,8 @@ export default function ProjetRseCycleModule({ projetId, organisationId, readOnl
 
 // ── Lots et responsabilités ─────────────────────────────────────────────────
 
-function OngletLots({ lots, raci, acteurs, readOnly, nomActeur, onAjouter, onSupprimer, onStatut, onRaci, onRaciSupprimer }: {
+function OngletLots({ lots, raci, acteurs, readOnly, projetId, nomActeur, onAjouter, onSupprimer, onStatut, onRaci, onRaciSupprimer }: {
+  projetId: string
   lots: Lot[]; raci: Raci[]; acteurs: Acteur[]; readOnly: boolean
   nomActeur: (id: string | null) => string
   onAjouter: (c: Record<string, unknown>) => Promise<boolean>
@@ -330,6 +331,10 @@ function OngletLots({ lots, raci, acteurs, readOnly, nomActeur, onAjouter, onSup
                 )}
               </div>
             )}
+
+            <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+              <ProjetRseNotesPanel projetId={projetId} actionKey={`lot_${l.id}`} readOnly={readOnly} />
+            </div>
           </div>
         )
       })}
@@ -611,7 +616,8 @@ const JEU_MINIMAL = [
     niveau: 'capacite', formule: 'à définir projet par projet', frequence: 'Semestrielle' },
 ]
 
-function OngletIndicateurs({ indicateurs, acteurs, readOnly, nomActeur, onAjouter, onSupprimer }: {
+function OngletIndicateurs({ indicateurs, acteurs, readOnly, projetId, nomActeur, onAjouter, onSupprimer }: {
+  projetId: string
   indicateurs: Indicateur[]; acteurs: Acteur[]; readOnly: boolean
   nomActeur: (id: string | null) => string
   onAjouter: (c: Record<string, unknown>) => Promise<boolean>
@@ -719,7 +725,17 @@ function OngletIndicateurs({ indicateurs, acteurs, readOnly, nomActeur, onAjoute
                   </td>
                 )}
               </tr>
-            ))}
+            )).flatMap((ligne, k) => [ligne, (
+              // La preuve d'un indicateur — extraction, note de méthode, relevé —
+              // se range avec l'indicateur, pas dans un dossier séparé.
+              <tr key={indicateurs[k].id + '-notes'} className="border-t"
+                style={{ borderColor: 'var(--border)' }}>
+                <td colSpan={readOnly ? 5 : 6} className="px-3 pb-2">
+                  <ProjetRseNotesPanel projetId={projetId}
+                    actionKey={`indicateur_${indicateurs[k].id}`} readOnly={readOnly} />
+                </td>
+              </tr>
+            )])}
             {!indicateurs.length && (
               <tr><td colSpan={6} className="px-3 py-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                 Aucun indicateur. Commencez par le jeu minimal.

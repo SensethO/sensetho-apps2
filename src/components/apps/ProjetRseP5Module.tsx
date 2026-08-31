@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ProjetRseModuleProps } from '@/lib/projetRseModules'
+import ProjetRseNotesPanel from '@/components/apps/ProjetRseNotesPanel'
 
 interface Cotation { id: string; code: string; note: number; commentaire: string | null }
 
@@ -255,6 +256,10 @@ export default function ProjetRseP5Module({ projetId, readOnly }: ProjetRseModul
           ))}
         </div>
       ))}
+
+      <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+        <ProjetRseNotesPanel projetId={projetId} actionKey="p5" readOnly={readOnly} />
+      </div>
     </div>
   )
 }
