@@ -23,23 +23,92 @@ async function readGeojson(orgId: string, attachmentId: string): Promise<{ text:
   return { text, name: (row.name as string) ?? 'geojson' }
 }
 
-/** GET ?org_id=xxx — liste des analyses de déforestation de l'org. */
+/**
+ * Conclusions d'instruction possibles pour un signal de perturbation du couvert.
+ * Whisp signale un changement de couvert, pas une déforestation : la qualification
+ * est un acte humain, consigné à part (cf. 20260831_eudr_signal_qualification.sql).
+ */
+const STATUTS = [
+  'a_instruire',
+  'deforestation_confirmee',
+  'ecartee_deja_en_production',
+  'ecartee_repousse_ou_naturel',
+  'ecartee_expertise_externe',
+] as const
+
+/** La table de qualification peut ne pas être encore appliquée (cf. MAINTENANCE §12). */
+function missingTable(err: { code?: string; message?: string } | null): boolean {
+  return !!err && (err.code === '42P01' || /does not exist|relation .* n'existe pas/i.test(err.message ?? ''))
+}
+
+/** GET ?org_id=xxx — analyses de couvert de l'org + qualifications des signaux. */
 export async function GET(req: NextRequest) {
   const orgId = new URL(req.url).searchParams.get('org_id')
   const auth = await guard(orgId)
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
   const admin = createAdminClient()
-  const [analyses, atts] = await Promise.all([
+  const [analyses, atts, quals] = await Promise.all([
     admin.from('eudr_deforestation').select('*').eq('org_id', orgId!).order('analyzed_at', { ascending: false }),
     admin.from('eudr_attachments').select('id, name, entity_type, entity_id, created_at').eq('org_id', orgId!).eq('doc_type', 'geojson').order('created_at', { ascending: false }),
+    admin.from('eudr_signal_qualifications').select('*').eq('org_id', orgId!),
   ])
   if (analyses.error) return NextResponse.json({ error: analyses.error.message }, { status: 500 })
-  return NextResponse.json({ data: analyses.data ?? [], attachments: atts.data ?? [] })
+  // Migration non appliquée : le panneau reste utilisable, la qualification est simplement
+  // indisponible — mieux vaut ça qu'une page en erreur.
+  const qualError = quals.error && !missingTable(quals.error) ? quals.error.message : null
+  return NextResponse.json({
+    data: analyses.data ?? [],
+    attachments: atts.data ?? [],
+    qualifications: quals.data ?? [],
+    qualificationsDisponibles: !quals.error,
+    qualificationsError: qualError,
+  })
+}
+
+/**
+ * PATCH { org_id, attachmentId, plotId, statut, commentaire?, source? }
+ * Consigne la conclusion d'instruction d'un signal de perturbation.
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json() as {
+      org_id?: string; attachmentId?: string; plotId?: string
+      statut?: string; commentaire?: string | null; source?: string | null
+    }
+    const auth = await guard(body.org_id ?? null, { requireEdit: true })
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!body.attachmentId || !body.plotId) {
+      return NextResponse.json({ error: 'attachmentId et plotId requis' }, { status: 400 })
+    }
+    const statut = body.statut ?? 'a_instruire'
+    if (!(STATUTS as readonly string[]).includes(statut)) {
+      return NextResponse.json({ error: 'Conclusion inconnue.' }, { status: 400 })
+    }
+
+    const { data: { user } } = await createUserClient().auth.getUser()
+    const admin = createAdminClient()
+    const { data, error } = await admin.from('eudr_signal_qualifications').upsert({
+      org_id: body.org_id!, attachment_id: body.attachmentId, plot_id: body.plotId,
+      statut,
+      commentaire: body.commentaire?.trim() ? body.commentaire.trim() : null,
+      source: body.source?.trim() ? body.source.trim() : null,
+      qualified_at: new Date().toISOString(), qualified_by: user?.email ?? null,
+    }, { onConflict: 'org_id,attachment_id,plot_id' }).select().single()
+    if (error) {
+      if (missingTable(error)) {
+        return NextResponse.json({ error: 'Qualification indisponible : migration 20260831_eudr_signal_qualification non appliquée.' }, { status: 503 })
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ data })
+  } catch (err) {
+    return NextResponse.json({ error: String((err as Error).message ?? err) }, { status: 500 })
+  }
 }
 
 /**
  * POST { org_id, attachmentId, entity_type?, entity_id? }
- * Analyse le GeoJSON via Whisp et stocke le verdict de risque déforestation.
+ * Analyse le GeoJSON via Whisp et stocke les signaux de perturbation du couvert.
  */
 export async function POST(req: NextRequest) {
   try {

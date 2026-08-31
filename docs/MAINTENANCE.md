@@ -267,8 +267,21 @@ Synthèse des leçons apprises — les garde-fous listés ici sont **actifs dans
 
 ### En attente
 
-**Aucune migration en attente au 30/08/2026** — vérifié en base par la méthode du
-§12 bis (présence des tables `projet_rse_acteurs`, `projet_rse_p5`, `projet_rse_notes`).
+| Migration | Objet | Committée le |
+|---|---|---|
+| `20260831_eudr_signal_qualification.sql` | Table `eudr_signal_qualifications` : conclusion d'instruction (à instruire / déforestation confirmée / écartée…) par parcelle signalée par Whisp, onglet « Perturbation du couvert » de l'app EUDR | 31/08/2026 |
+| `20260831_eudr_plots_supplier.sql` | `eudr_plots` : garantit `supplier_id` + sa clé étrangère, ajoute `supplier_assigned_at` / `supplier_assigned_by` (provenance d'un rattachement manuel), index des parcelles orphelines, politique RLS d'écriture — onglet « 🗺️ Parcelles » de l'app EUDR | 31/08/2026 |
+
+> Tant qu'elle n'est pas appliquée, le panneau « Perturbation du couvert » reste utilisable :
+> il affiche « Qualification des signaux indisponible » et n'écrit rien. Repère du §12 bis :
+> présence de la table `eudr_signal_qualifications`.
+
+> Idem pour l'onglet « 🗺️ Parcelles » : `supplier_id` existe déjà depuis
+> `20260806_eudr_plots.sql`, le rattachement fonctionne donc sans cette migration —
+> seule sa provenance (qui, quand) n'est pas consignée, la route retombant
+> automatiquement sur une écriture sans trace. Repère du §12 bis : présence de la
+> colonne `eudr_plots.supplier_assigned_at`.
+
 Toute nouvelle migration committée vient s'ajouter ici jusqu'à son application.
 
 Application (une par une, dans l'ordre des noms de fichiers, cf. §4) :

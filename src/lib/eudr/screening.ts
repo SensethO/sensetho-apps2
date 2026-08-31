@@ -94,7 +94,9 @@ function codePays(saisie: string | undefined): string | null {
   return CODES_PAYS[cle] ?? null
 }
 
-const SEUIL_POLYGONE_HA = 4      // au-delà, le polygone est obligatoire (art. 9)
+// Exporté : le référentiel des parcelles applique le même seuil que le tri,
+// une règle de droit ne pouvant pas exister en deux exemplaires divergents.
+export const SEUIL_POLYGONE_HA = 4      // au-delà, le polygone est obligatoire (art. 9)
 // Plancher de recouvrement : en deçà, contiguïté ou imprécision de numérisation.
 const SEUIL_RECOUVREMENT_HA = 0.01
 const DECIMALES_MINIMUM = 6      // précision exigée (art. 9)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp } from '@/lib/sharepointMulti'
 import { trierGeojson } from '@/lib/eudr/screening'
+import { chargerReferentiel } from './_referentiel'
 import { guard } from '../traces/_auth'
 
 export const dynamic = 'force-dynamic'
@@ -23,33 +24,57 @@ export async function GET(req: NextRequest) {
   const auth = await guard(orgId)
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
   const supplierId = req.nextUrl.searchParams.get('supplier_id')
+  try {
+    return NextResponse.json(await chargerReferentiel(orgId!, supplierId))
+  } catch (err) {
+    return NextResponse.json({ error: String((err as Error).message ?? err) }, { status: 502 })
+  }
+}
+
+/**
+ * PATCH { org_id, plotIds[], supplier_id | null } → rattache un lot de parcelles
+ * à un fournisseur. Le versement hérite du fournisseur du fichier d'origine ; ce
+ * rattachement manuel rattrape les fichiers déposés sans rattachement d'entité.
+ */
+export async function PATCH(req: NextRequest) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null
+  const orgId = String(body?.org_id ?? '')
+  const auth = await guard(orgId, { requireEdit: true })
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+  const plotIds = Array.isArray(body?.plotIds) ? (body!.plotIds as unknown[]).map(String).filter(Boolean) : []
+  if (!plotIds.length) return NextResponse.json({ error: 'plotIds requis' }, { status: 400 })
+  const supplierId = body?.supplier_id ? String(body.supplier_id) : null
 
   const admin = createAdminClient()
-  let q = admin.from('eudr_plots').select('*').eq('org_id', orgId!).eq('is_current', true)
-  if (supplierId) q = q.eq('supplier_id', supplierId)
-  const { data: parcelles, error } = await q.order('created_at', { ascending: false })
-  if (error) return NextResponse.json({ error: error.message }, { status: 502 })
-
-  const { data: doublons } = await admin.from('eudr_plots_doublons').select('*').eq('org_id', orgId!)
-
-  // Surface par fournisseur : c'est cette base qui plafonnera les volumes
-  // achetables lors de la réconciliation volumétrique.
-  const parFournisseur = new Map<string, { parcelles: number; surfaceHa: number }>()
-  for (const p of parcelles ?? []) {
-    const cle = p.supplier_id ?? 'sans-fournisseur'
-    const acc = parFournisseur.get(cle) ?? { parcelles: 0, surfaceHa: 0 }
-    acc.parcelles += 1
-    acc.surfaceHa += Number(p.computed_area_ha ?? 0)
-    parFournisseur.set(cle, acc)
+  if (supplierId) {
+    const { data: f } = await admin.from('eudr_suppliers')
+      .select('id').eq('id', supplierId).eq('org_id', orgId).maybeSingle()
+    if (!f) return NextResponse.json({ error: 'Fournisseur introuvable dans cette organisation.' }, { status: 404 })
   }
 
-  return NextResponse.json({
-    parcelles: parcelles ?? [],
-    doublons: doublons ?? [],
-    parFournisseur: Object.fromEntries(
-      [...parFournisseur].map(([k, v]) => [k, { ...v, surfaceHa: +v.surfaceHa.toFixed(4) }]),
-    ),
-  })
+  const { data: profil } = await admin.from('profiles')
+    .select('email').eq('id', auth.userId!).maybeSingle()
+  const auteur = profil?.email ?? auth.userId ?? null
+
+  // Qui a rattaché, et quand : un rattachement manuel n'a pas la même valeur
+  // probante qu'un rattachement hérité du fichier, il doit se distinguer.
+  const trace = {
+    supplier_id: supplierId,
+    supplier_assigned_at: new Date().toISOString(),
+    supplier_assigned_by: auteur,
+  }
+  let res = await admin.from('eudr_plots').update(trace)
+    .in('id', plotIds).eq('org_id', orgId).select('id')
+  // Colonnes de traçabilité absentes (migration 20260831 non appliquée, cf. §12) :
+  // le rattachement reste possible, seule sa provenance n'est pas consignée.
+  if (res.error && (res.error.code === '42703' || /column .* does not exist/i.test(res.error.message))) {
+    res = await admin.from('eudr_plots').update({ supplier_id: supplierId })
+      .in('id', plotIds).eq('org_id', orgId).select('id')
+  }
+  if (res.error) return NextResponse.json({ error: res.error.message }, { status: 502 })
+
+  return NextResponse.json({ modifiees: (res.data ?? []).length })
 }
 
 /** POST { org_id, attachmentId } → verse les parcelles du fichier au référentiel. */

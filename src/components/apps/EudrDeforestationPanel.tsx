@@ -1,9 +1,16 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 
-// Analyse de risque déforestation EUDR (via Whisp / Open Foris) par document GeoJSON.
-// Pour chaque parcelle : perturbation après le 31/12/2020 + verdict de risque (cultures / bois).
+// Détection de perturbation du couvert (Whisp / Open Foris) par document GeoJSON.
+//
+// ⚠️ Vocabulaire : Whisp détecte un CHANGEMENT du couvert, pas une déforestation au
+// sens EUDR. Ce panneau ne rend donc aucun verdict de « risque » : il désigne des
+// SIGNAUX À INSTRUIRE, que l'utilisateur qualifie ensuite lui-même (table
+// eudr_signal_qualifications). Une comparaison du 31/08/2026 avec un prestataire de
+// télédétection spécialisé, sur le même jeu de 24 parcelles ivoiriennes, a donné
+// 2 parcelles « à risque élevé » côté Whisp et 0 ha de déforestation côté expert :
+// l'écart tient à la nature de la donnée, pas à une erreur de l'un ou de l'autre.
 
 interface Plot {
   plotId: string; area: number | null; unit: string | null
@@ -18,15 +25,55 @@ interface Analysis {
 }
 interface Att { id: string; name: string; entity_type: string | null; entity_id: string | null; created_at: string }
 
+/** Conclusion d'instruction consignée pour une parcelle signalée. */
+interface Qual {
+  attachment_id: string; plot_id: string; statut: Statut
+  commentaire: string | null; source: string | null
+  qualified_at: string | null; qualified_by: string | null
+}
+type Statut =
+  | 'a_instruire' | 'deforestation_confirmee'
+  | 'ecartee_deja_en_production' | 'ecartee_repousse_ou_naturel' | 'ecartee_expertise_externe'
+
+/**
+ * `actif` = le signal compte encore comme à traiter. Une parcelle écartée sort des
+ * compteurs : c'est tout l'intérêt de l'instruction.
+ */
+const STATUTS: { v: Statut; label: string; court: string; actif: boolean }[] = [
+  { v: 'a_instruire', label: 'À instruire (défaut)', court: '🟠 À instruire', actif: true },
+  { v: 'deforestation_confirmee', label: 'Déforestation confirmée', court: '🔴 Déforestation confirmée', actif: true },
+  { v: 'ecartee_deja_en_production', label: 'Écartée : parcelle déjà en production', court: '✅ Écartée — déjà en production', actif: false },
+  { v: 'ecartee_repousse_ou_naturel', label: 'Écartée : repousse ou événement naturel', court: '✅ Écartée — repousse ou événement naturel', actif: false },
+  { v: 'ecartee_expertise_externe', label: 'Écartée : expertise externe négative', court: '✅ Écartée — expertise externe négative', actif: false },
+]
+const statutInfo = (s?: Statut | null) => STATUTS.find(x => x.v === s) ?? STATUTS[0]
+
 const card = 'rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/40 p-5 space-y-4'
 const btn = 'px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50'
-const riskBadge = (r?: string | null) => {
-  const v = (r ?? '').toLowerCase()
-  if (v === 'high') return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-  if (v === 'low') return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-  return 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+const field = 'w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-gray-800 dark:text-gray-200'
+
+const AMBER = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+const RED = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+const GREEN = 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+const GRAY = 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+
+/** Whisp n'a pas de niveau intermédiaire : « high » veut dire « quelque chose est détecté ». */
+const isHigh = (r?: string | null) => (r ?? '').trim().toLowerCase() === 'high'
+const signalBadge = (r?: string | null) => {
+  const v = (r ?? '').trim().toLowerCase()
+  if (v === 'high') return AMBER
+  if (v === 'low') return GRAY
+  return GRAY
 }
-const riskLabel = (r?: string | null) => ({ high: '🔴 Risque élevé', low: '🟢 Risque faible' } as Record<string, string>)[(r ?? '').toLowerCase()] ?? '⚪ Non analysé'
+const signalCell = (r?: string | null) => {
+  const v = (r ?? '').trim().toLowerCase()
+  if (v === 'high') return 'Signal'
+  if (v === 'low') return 'Aucun'
+  return '—'
+}
+/** Une parcelle est « signalée » dès qu'un indicateur Whisp remonte quelque chose. */
+const isSignalled = (p: Plot) =>
+  p.disturbanceAfter2020 || isHigh(p.riskPcrop) || isHigh(p.riskAcrop) || isHigh(p.riskTimber)
 
 /**
  * Vignette satellite : charge l'image via fetch pour pouvoir afficher le motif exact
@@ -333,6 +380,10 @@ function SatImage({ url, label, overlay, osm, view, onView }: {
 export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: string; canWrite: boolean }) {
   const [analyses, setAnalyses] = useState<Analysis[]>([])
   const [atts, setAtts] = useState<Att[]>([])
+  const [quals, setQuals] = useState<Qual[]>([])
+  // La migration de qualification peut ne pas être appliquée : on le dit au lieu de laisser
+  // croire que l'enregistrement a fonctionné.
+  const [qualOn, setQualOn] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -407,12 +458,74 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
     try {
       const r = await fetch(`/api/eudr-fournisseurs/deforestation?org_id=${orgId}`)
       const j = await r.json()
-      if (r.ok) { setAnalyses(j.data ?? []); setAtts(j.attachments ?? []) }
+      if (r.ok) {
+        setAnalyses(j.data ?? []); setAtts(j.attachments ?? [])
+        setQuals(j.qualifications ?? []); setQualOn(j.qualificationsDisponibles !== false)
+      }
     } catch { /* ignore */ }
   }, [orgId])
   useEffect(() => { load() }, [load])
 
   const byAtt = (id: string) => analyses.find(a => a.attachment_id === id)
+
+  const qualMap = useMemo(() => {
+    const m = new Map<string, Qual>()
+    for (const q of quals) m.set(`${q.attachment_id}|${q.plot_id}`, q)
+    return m
+  }, [quals])
+  const qualOf = useCallback((attId: string, plotId: string) => qualMap.get(`${attId}|${plotId}`) ?? null, [qualMap])
+
+  /**
+   * État d'un fichier APRÈS instruction : ce n'est pas un verdict de risque mais le
+   * décompte des signaux qui restent à traiter. Une parcelle écartée n'y figure plus.
+   */
+  const fileState = useCallback((a: Analysis | undefined) => {
+    if (!a) return { texte: '⚪ Non analysé', cls: GRAY }
+    const plots = a.plots ?? []
+    if (plots.length === 0) return { texte: '⚪ Non analysé', cls: GRAY }
+    const signalled = plots.filter(isSignalled)
+    let confirmees = 0, aInstruire = 0, ecartees = 0
+    for (const p of signalled) {
+      const st = qualOf(a.attachment_id, p.plotId)?.statut ?? 'a_instruire'
+      if (st === 'deforestation_confirmee') confirmees++
+      else if (st === 'a_instruire') aInstruire++
+      else ecartees++
+    }
+    if (confirmees > 0) return { texte: `🔴 ${confirmees} parcelle(s) en déforestation confirmée`, cls: RED }
+    if (aInstruire > 0) return { texte: `🟠 ${aInstruire} parcelle(s) à instruire`, cls: AMBER }
+    if (ecartees > 0) return { texte: `✅ ${ecartees} signal(aux) écarté(s)`, cls: GREEN }
+    return { texte: '✅ Aucun signal', cls: GREEN }
+  }, [qualOf])
+
+  // Éditeur de qualification ouvert : clé `attachmentId|plotId`.
+  const [editKey, setEditKey] = useState<string | null>(null)
+  const [draft, setDraft] = useState<{ statut: Statut; commentaire: string; source: string }>(
+    { statut: 'a_instruire', commentaire: '', source: '' })
+  const [saving, setSaving] = useState(false)
+
+  function openEditor(attId: string, plotId: string) {
+    const key = `${attId}|${plotId}`
+    if (editKey === key) { setEditKey(null); return }
+    const q = qualOf(attId, plotId)
+    setDraft({ statut: q?.statut ?? 'a_instruire', commentaire: q?.commentaire ?? '', source: q?.source ?? '' })
+    setEditKey(key)
+  }
+
+  async function saveQual(attId: string, plotId: string) {
+    setSaving(true); setError(null)
+    try {
+      const r = await fetch('/api/eudr-fournisseurs/deforestation', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, attachmentId: attId, plotId, ...draft }),
+      })
+      const j = await r.json()
+      if (!r.ok) { setError(j.error ?? 'Échec de l’enregistrement'); return }
+      // Remplacement local immédiat : les compteurs se recalculent sans attendre le rechargement.
+      setQuals(prev => [...prev.filter(q => !(q.attachment_id === attId && q.plot_id === plotId)), j.data as Qual])
+      setEditKey(null)
+    } catch (e) { setError(String((e as Error).message ?? e)) }
+    finally { setSaving(false) }
+  }
 
   async function analyze(att: Att) {
     setBusy(att.id); setError(null)
@@ -433,8 +546,35 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   return (
     <div className="space-y-5 max-w-5xl">
       <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
-        🌳 Analyse de risque déforestation via <strong>Whisp</strong> (FAO / Open Foris) : pour chaque parcelle GeoJSON, détection d’une perturbation <strong>après le 31/12/2020</strong> (date-butoir EUDR) et verdict de risque. Indicatif — complète votre évaluation, ne la remplace pas juridiquement.
+        🌳 Détection de <strong>perturbation du couvert</strong> via <strong>Whisp</strong> (FAO / Open Foris) : pour chaque parcelle GeoJSON, présence d’une perturbation <strong>après le 31/12/2020</strong> (date-butoir EUDR).
       </div>
+
+      {/* Ce qu'un signal veut dire — et ce qu'il ne veut pas dire. Sans cet encart, un
+          simple changement de couvert se lit comme une déforestation avérée. */}
+      <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-900 dark:text-amber-200 space-y-2">
+        <p className="m-0 font-semibold">⚠️ Ce que dit — et ne dit pas — un signal</p>
+        <p className="m-0">
+          Whisp détecte un <strong>changement du couvert</strong>, pas une déforestation. Un signal peut correspondre
+          à une récolte, à une repousse, à un événement naturel (feu, chablis, sécheresse) ou à une parcelle
+          <strong> déjà en production avant la date-butoir</strong>.
+        </p>
+        <p className="m-0">
+          Qualifier une déforestation au sens EUDR suppose de connaître la <strong>nature du couvert d’origine</strong>
+          {' '}— forêt primaire, forêt dégradée, repousse, culture — ce qu’établit une expertise spécialisée en
+          télédétection, pas un indicateur de changement.
+        </p>
+        <p className="m-0">
+          Ce tri sert donc à <strong>cibler les parcelles à instruire</strong>, jamais à conclure. Consignez la
+          conclusion parcelle par parcelle dans la colonne « Instruction » : les parcelles écartées sortent des
+          compteurs.
+        </p>
+      </div>
+
+      {!qualOn && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">
+          ⚠️ Qualification des signaux indisponible : la migration <code>20260831_eudr_signal_qualification</code> n’est pas appliquée en base.
+        </p>
+      )}
       {error && <p className="text-sm text-red-600 dark:text-red-400">❌ {error}</p>}
 
       <div className={card}>
@@ -455,7 +595,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {a && <span className={`text-xs px-2 py-1 rounded-full ${riskBadge(a.overall_risk)}`}>{riskLabel(a.overall_risk)}</span>}
+                      {a && (() => { const s = fileState(a); return <span className={`text-xs px-2 py-1 rounded-full ${s.cls}`}>{s.texte}</span> })()}
                       {a && <button className="text-xs text-gray-500 hover:underline" onClick={() => setOpen(open === att.id ? null : att.id)}>{open === att.id ? 'Masquer' : 'Détail'}</button>}
                       <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline" onClick={() => { setSat(sat === att.id ? null : att.id); setSatPlot(null) }}>{sat === att.id ? 'Masquer satellite' : '🛰️ Satellite'}</button>
                       {canWrite && <button className={btn} onClick={() => analyze(att)} disabled={busy === att.id}>{busy === att.id ? 'Analyse…' : (a ? 'Ré-analyser' : 'Analyser')}</button>}
@@ -510,28 +650,46 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                   )}
                   {a && open === att.id && a.plots && (
                     <div className="mt-3 overflow-x-auto">
-                      {a.summary && (
-                        <p className="text-xs text-gray-600 dark:text-gray-300 mb-2">
-                          {a.summary.high > 0
-                            ? <span className="text-red-600 dark:text-red-400">⚠️ {a.summary.high} parcelle(s) à risque élevé, dont {a.summary.disturbedAfter2020} avec perturbation après 2020.</span>
-                            : <span className="text-green-700 dark:text-green-400">✓ Toutes les parcelles à risque faible, aucune perturbation détectée après 2020.</span>}
-                        </p>
-                      )}
+                      {(() => {
+                        const plots = a.plots ?? []
+                        const signalled = plots.filter(isSignalled)
+                        const actifs = signalled.filter(p => statutInfo(qualOf(att.id, p.plotId)?.statut).actif)
+                        const ecartes = signalled.length - actifs.length
+                        const perturb = actifs.filter(p => p.disturbanceAfter2020).length
+                        return (
+                          <p className="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                            {actifs.length > 0
+                              ? <span className="text-amber-700 dark:text-amber-400">🟠 {actifs.length} parcelle(s) à instruire sur {plots.length}, dont {perturb} avec perturbation du couvert après 2020.</span>
+                              : signalled.length > 0
+                                ? <span className="text-green-700 dark:text-green-400">✅ Aucun signal actif — les {signalled.length} signal(aux) détecté(s) ont été écartés à l’instruction.</span>
+                                : <span className="text-green-700 dark:text-green-400">✅ Aucun signal — aucune perturbation du couvert détectée après 2020.</span>}
+                            {actifs.length > 0 && ecartes > 0 && <span className="text-gray-500 dark:text-gray-400"> ({ecartes} déjà écarté(s).)</span>}
+                          </p>
+                        )
+                      })()}
                       <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
                         Cliquez sur une ligne pour situer la parcelle sur l’image satellite (recliquez pour revenir à l’ensemble).
+                        Un signal n’est pas une déforestation : utilisez « Instruire » pour consigner votre conclusion.
                       </p>
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                             <th className="py-1 pr-3">Parcelle</th><th className="py-1 pr-3">Surface</th>
                             <th className="py-1 pr-3">Perturbation &gt; 2020</th>
-                            <th className="py-1 pr-3">Cultures pérennes</th><th className="py-1 pr-3">Cultures annuelles</th><th className="py-1 pr-3">Bois</th>
+                            <th className="py-1 pr-3">Signal cultures pérennes</th><th className="py-1 pr-3">Signal cultures annuelles</th><th className="py-1 pr-3">Signal bois</th>
+                            <th className="py-1 pr-3">Instruction</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {a.plots.map((p, i) => (
+                          {a.plots.map((p, i) => {
+                            const q = qualOf(att.id, p.plotId)
+                            const info = statutInfo(q?.statut)
+                            const signalled = isSignalled(p)
+                            const key = `${att.id}|${p.plotId}`
+                            return (
+                            <Fragment key={i}>
                             <tr
-                              key={i}
+
                               onClick={() => { setSat(att.id); setSatPlot(satPlot === i ? null : i) }}
                               title="Cliquer pour voir cette parcelle sur l’image satellite"
                               className={`border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${
@@ -544,12 +702,65 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                                 {p.plotId}
                               </td>
                               <td className="py-1 pr-3">{p.area != null ? `${p.area.toFixed(2)} ${p.unit ?? 'ha'}` : '—'}</td>
-                              <td className="py-1 pr-3">{p.disturbanceAfter2020 ? <span className="text-red-600 dark:text-red-400 font-medium">Oui</span> : <span className="text-green-700 dark:text-green-400">Non</span>}</td>
-                              <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${riskBadge(p.riskPcrop)}`}>{p.riskPcrop ?? '—'}</span></td>
-                              <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${riskBadge(p.riskAcrop)}`}>{p.riskAcrop ?? '—'}</span></td>
-                              <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${riskBadge(p.riskTimber)}`}>{p.riskTimber ?? '—'}</span></td>
+                              <td className="py-1 pr-3">{p.disturbanceAfter2020 ? <span className="text-amber-700 dark:text-amber-400 font-medium">Oui</span> : <span className="text-gray-500 dark:text-gray-400">Non</span>}</td>
+                              <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${signalBadge(p.riskPcrop)}`}>{signalCell(p.riskPcrop)}</span></td>
+                              <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${signalBadge(p.riskAcrop)}`}>{signalCell(p.riskAcrop)}</span></td>
+                              <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${signalBadge(p.riskTimber)}`}>{signalCell(p.riskTimber)}</span></td>
+                              {/* La qualification n'a de sens que sur une parcelle signalée. */}
+                              <td className="py-1 pr-3" onClick={e => e.stopPropagation()}>
+                                {!signalled ? <span className="text-gray-400 dark:text-gray-500">—</span> : (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs">{info.court}</span>
+                                    {canWrite && qualOn && (
+                                      <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                                        onClick={() => openEditor(att.id, p.plotId)}>
+                                        {editKey === key ? 'Fermer' : 'Instruire'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
                             </tr>
-                          ))}
+                            {signalled && editKey === key && (
+                              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/60">
+                                <td colSpan={7} className="py-3 px-2">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-3xl">
+                                    <label className="text-xs text-gray-600 dark:text-gray-300 space-y-1">
+                                      <span>Conclusion de l’instruction</span>
+                                      <select className={field} value={draft.statut}
+                                        onChange={e => setDraft(d => ({ ...d, statut: e.target.value as Statut }))}>
+                                        {STATUTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                                      </select>
+                                    </label>
+                                    <label className="text-xs text-gray-600 dark:text-gray-300 space-y-1">
+                                      <span>Source (prestataire, rapport…)</span>
+                                      <input className={field} value={draft.source} placeholder="ex. expertise télédétection — nom du prestataire"
+                                        onChange={e => setDraft(d => ({ ...d, source: e.target.value }))} />
+                                    </label>
+                                    <label className="text-xs text-gray-600 dark:text-gray-300 space-y-1 sm:col-span-2">
+                                      <span>Commentaire</span>
+                                      <textarea className={field} rows={2} value={draft.commentaire}
+                                        placeholder="Ce qui fonde la conclusion : nature du couvert d’origine, date de mise en production, référence du rapport…"
+                                        onChange={e => setDraft(d => ({ ...d, commentaire: e.target.value }))} />
+                                    </label>
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-2">
+                                    <button className={btn} disabled={saving} onClick={() => saveQual(att.id, p.plotId)}>
+                                      {saving ? 'Enregistrement…' : 'Enregistrer'}
+                                    </button>
+                                    <button className="text-xs text-gray-500 hover:underline" onClick={() => setEditKey(null)}>Annuler</button>
+                                    {q?.qualified_at && (
+                                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                                        Dernière instruction : {fmt(q.qualified_at)}{q.qualified_by ? ' · ' + q.qualified_by : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            </Fragment>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
