@@ -6,6 +6,8 @@ import { submitDdsV3, amendDdsV3, DdsStatement } from '@/lib/eudr/tracesV3'
 import { toIso2 } from '@/lib/eudr/countries'
 import { SanitizeReport } from '@/lib/eudr/geoSanitize'
 import { geojsonFromAttachment } from '../_geojson'
+import { journaliser } from '@/lib/eudr/fichiers'
+import { createAdminClient as adminPourNom } from '@/lib/supabase/admin'
 import { guard } from '../_auth'
 
 /** Normalise en ISO2 tous les pays de la déclaration (pays d'activité, transit, producteurs). */
@@ -43,12 +45,20 @@ export async function POST(req: NextRequest) {
     const statement = body.statement
     let geoReport: SanitizeReport | null = null
     let geoSha: string | null = null
+    let geoNom: string | null = null
+    let geoVersion: number | null = null
     const geoSimplify = body.simplifyGeometry !== false
     // GeoJSON depuis un document SharePoint : on lit le fichier, on le nettoie et on l'injecte dans le 1er producteur.
     if (body.geojsonAttachmentId) {
       const { base64, sha256, report } = await geojsonFromAttachment(body.org_id!, body.geojsonAttachmentId, geoSimplify)
       geoReport = report
       geoSha = sha256
+      // Nom versionné figé dans la déclaration : un dossier d'audit se lit à l'œil,
+      // un identifiant technique ne dit rien à un inspecteur.
+      const { data: att } = await adminPourNom().from('eudr_attachments')
+        .select('name, version_num').eq('id', body.geojsonAttachmentId).eq('org_id', body.org_id!).maybeSingle()
+      geoNom = (att?.name as string | null) ?? null
+      geoVersion = (att?.version_num as number | null) ?? null
       const c0 = statement.commodities?.[0]
       if (c0) {
         const producers = Array.isArray(c0.producers) ? c0.producers : c0.producers ? [c0.producers] : []
@@ -71,6 +81,7 @@ export async function POST(req: NextRequest) {
       // Empreinte des octets transmis : sans elle, un fichier modifié après coup
       // sur SharePoint passerait le contrôle a posteriori sans un mot.
       geojson_sha256: geoSha,
+      geojson_nom: geoNom,
       geojson_simplify: body.geojsonAttachmentId ? geoSimplify : null,
     }
     const admin = createAdminClient()
@@ -81,6 +92,12 @@ export async function POST(req: NextRequest) {
       if (body.ddsId) {
         try { await admin.from('eudr_dds').update({ ...meta, status: null, last_checked_at: null }).eq('id', body.ddsId).eq('org_id', body.org_id!) } catch { /* sans effet sur l'amend */ }
       }
+      if (body.geojsonAttachmentId) await journaliser({
+        orgId: body.org_id!, attachmentId: body.geojsonAttachmentId, nom: geoNom, versionNum: geoVersion,
+        evenement: 'depot_dds', sha256: geoSha,
+        detail: { declaration: body.amendUuid, amendement: true, environnement: creds.environment, simplification: geoSimplify },
+        acteur: auth.userId,
+      })
       return NextResponse.json({ ok: true, environment: creds.environment, ddsIdentifier: body.amendUuid, amended: true, geoSanitized: geoReport })
     }
 
@@ -100,6 +117,14 @@ export async function POST(req: NextRequest) {
           submitted_by: user?.email ?? null,
         })
       } catch { /* table absente ou doublon : sans effet sur le dépôt */ }
+      // Trace du rattachement version ↔ déclaration, indépendante de eudr_dds :
+      // c'est elle qui répond, des années plus tard, à « quelle version est partie ? ».
+      if (body.geojsonAttachmentId) await journaliser({
+        orgId: body.org_id!, attachmentId: body.geojsonAttachmentId, nom: geoNom, versionNum: geoVersion,
+        evenement: 'depot_dds', sha256: geoSha,
+        detail: { declaration: result.uuid, environnement: creds.environment, simplification: geoSimplify },
+        acteur: auth.userId,
+      })
     }
 
     return NextResponse.json({ ok: true, environment: creds.environment, ddsIdentifier: result.uuid, geoSanitized: geoReport })

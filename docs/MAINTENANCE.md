@@ -277,6 +277,8 @@ sur le projet Paris `pjrwjfozzynmjvbygqev`, et vérifiées par lecture de
 | `20260831_eudr_plots_supplier.sql` | `eudr_plots` : garantit `supplier_id` + sa clé étrangère, ajoute `supplier_assigned_at` / `supplier_assigned_by` (provenance d'un rattachement manuel), index des parcelles orphelines, politique RLS d'écriture — onglet « 🗺️ Parcelles » | 31/08/2026 |
 | `20260831_eudr_attachment_origine.sql` | `eudr_attachments.corrige_de` : lien d'une version corrigée vers le fichier dont elle est issue. Empêche le double comptage des mêmes terres au référentiel, et rattrape le cas d'un fichier renommé à la main | 31/08/2026 |
 | `20260831_eudr_dds_empreinte.sql` | `eudr_dds.geojson_sha256` / `geojson_simplify` : empreinte du GeoJSON **assaini** réellement transmis à TRACES au dépôt — voir §12 ter | 31/08/2026 |
+| `20260901_eudr_fichiers_immuables.sql` | Versions suffixées, retrait logique, `eudr_dds.geojson_nom`, table `eudr_fichiers_journal` — voir §12 quater | 01/09/2026 |
+| `20260901_eudr_fichiers_rattrapage.sql` | Renseigne `base_name` / `version_num` pour les fichiers déposés avant le versionnage (sans les renommer) | 01/09/2026 |
 
 Les replis décrits ci-dessous restent en place dans le code : ils ne coûtent rien
 et couvrent une base restaurée depuis une sauvegarde antérieure, ou un déploiement
@@ -299,6 +301,100 @@ de l'application sur un autre projet Supabase.
 
 > Sans `20260831_eudr_dds_empreinte`, le contrôle de contenu (§12 ter) ne s'exprime
 > jamais ; le contrôle de version continue de s'appliquer.
+
+### §12 quater — Fichiers EUDR : immuables, versionnés, journalisés
+
+**Décision du 01/09/2026 : le dépôt passe exclusivement par l'application.** Plus
+aucune action directe sur SharePoint pour déposer un fichier. L'application peut
+donc imposer le nom — et le nom cesse d'être un libellé de confort pour devenir
+une donnée probante.
+
+#### Où sont les fichiers
+
+Site : `https://scdbpro.sharepoint.com/sites/WebApp-Partage`, bibliothèque
+« Documents partages ». Chaque application a son dossier, réglé en base dans
+`sp_app_routes` (colonne `folder_name`) — voir §5. Pour l'EUDR :
+
+```
+Documents partages/EUDR-FOURNISSEURS/{org_id}/{supplier|contract}/{entity_id}/{base}__v{NNN}{ext}
+```
+
+`org_id` et `entity_id` sont les UUID Supabase : le classement est celui de la
+base, pas celui d'un humain. Cherchez par l'application, pas dans l'arborescence.
+
+#### Les trois règles
+
+1. **Un dépôt crée une version, il n'écrase jamais.** Le serveur calcule le
+   numéro suivant (`prochaineVersion`) et impose `{base}__v{NNN}{ext}`.
+   `conflictBehavior` est passé de `rename` à **`fail`** : SharePoint n'a plus le
+   droit d'inventer « fichier 1.geojson » en silence — l'ancien réglage a laissé
+   des doublons du type `COA OT039  (2).pdf`, où le nom en base et le nom réel
+   pouvaient diverger. Une collision est désormais une anomalie, et se voit.
+2. **Rien ne se supprime.** `DELETE /api/eudr-fournisseurs/documents` ne touche
+   plus SharePoint : c'est un **retrait logique** (`retire_le`), qui masque le
+   document de l'usage courant en conservant fichier et trace. Un document déjà
+   transmis dans une DDS ne peut même pas être retiré — la tentative est refusée
+   et journalisée (`suppression_refusee`).
+3. **Rien ne se renomme.** Aucune route ne l'offre. L'explorateur générique
+   `/api/sharepoint/files` refuse PATCH et DELETE sur tout item situé sous
+   `EUDR-FOURNISSEURS` (`zoneImmuable`) — la protection est côté serveur, pas
+   dans l'interface : une protection qui ne vit que dans l'UI n'en est pas une.
+   Un renommage exceptionnel relève d'une intervention technique consciente,
+   à consigner en `renommage_technique` avec son motif.
+
+Le nom est vérifié **à la source** : `upload-confirm` ne croit pas le client, il
+relit `name` et `parentReference` sur SharePoint à partir du `spItemId` et
+enregistre ce qu'il y trouve, plus `sp_path`. Un client qui se tromperait — ou
+mentirait — ne peut pas décaler la traçabilité.
+
+#### Quelle version est partie dans une déclaration
+
+Trois informations, chacune nécessaire, figées au dépôt dans `eudr_dds` :
+
+| Colonne | Rôle |
+|---|---|
+| `geojson_attachment_id` | **pointe** — quel document |
+| `geojson_nom` | **se lit** — « X__v003.geojson », lisible par un inspecteur |
+| `geojson_sha256` | **prouve** — empreinte des octets réellement transmis (§12 ter) |
+
+Un identifiant technique ne se lit pas dans un dossier d'audit ; une empreinte ne
+dit pas de quel fichier elle est l'empreinte. Les trois sont affichées dans la
+colonne « Fichier déclaré » de l'onglet TRACES.
+
+En parallèle, `eudr_fichiers_journal` conserve un événement `depot_dds` portant le
+nom, la version, l'empreinte et l'UUID de la déclaration. C'est la trace qui
+répond, des années plus tard, à « quelle version est partie ? » — indépendamment
+de `eudr_dds`, et elle survit à la disparition de la ligne d'attachement.
+
+#### Le journal
+
+`eudr_fichiers_journal` est **append-only** : aucune route n'expose de mise à jour
+ni de suppression, et la RLS n'accorde que le SELECT. Événements : `depot`,
+`versement`, `retrait_referentiel`, `depot_dds`, `retrait_logique`,
+`renommage_technique`, `suppression_refusee`.
+
+`journaliser()` n'échoue jamais l'action appelante : un journal indisponible ne
+doit pas bloquer un dépôt réglementaire. Le compromis est assumé — une trace
+manquante se rattrape au rapprochement, un dépôt bloqué ne se rattrape pas.
+
+#### Portée, et ce qui reste ouvert
+
+Cette règle couvre **l'application EUDR uniquement**. Les autres apps conservent
+la suppression de pièces jointes, qui y est un usage normal (notes et documents).
+L'étendre supposerait de décider app par app ce qui relève de la conservation
+probante — à faire si le besoin s'en présente, pas par symétrie.
+
+Deux limites subsistent :
+
+- **Un administrateur SharePoint garde la main.** Le garde-fou couvre les routes
+  de l'application, pas l'interface Microsoft 365 ni les clients de
+  synchronisation. Le verrouiller vraiment demanderait une stratégie de rétention
+  Purview côté tenant — décision d'administration, hors application. En attendant,
+  `sp_path` permet de détecter après coup un fichier déplacé ou renommé.
+- **Les fichiers antérieurs au 01/09/2026 gardent leur nom**, sans suffixe : les
+  renommer serait précisément l'acte que la règle interdit. Leur `base_name` a été
+  renseigné par rattrapage, leur `version_num` reste nul et compte pour 1 ; la
+  première version déposée après eux prend donc le numéro 2.
 
 ### §12 ter — Ce que le contrôle des déclarations voit, et ce qu'il ne voit pas
 

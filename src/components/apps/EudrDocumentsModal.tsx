@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 // Documents d'une entité EUDR (fournisseur / contrat). Fichiers stockés DANS SharePoint
 // (upload navigateur → SharePoint direct, zéro transit serveur) ; métadonnées en base.
 
-interface Doc { id: string; name: string; doc_type: string; mime?: string | null; size?: number | null; created_at?: string }
+interface Doc { id: string; name: string; base_name?: string | null; version_num?: number | null; doc_type: string; mime?: string | null; size?: number | null; created_at?: string }
 
 const DOC_TYPES: { value: string; label: string }[] = [
   { value: 'geojson', label: 'Géolocalisation (GeoJSON)' },
@@ -88,11 +88,23 @@ export default function EudrDocumentsModal({ orgId, entityType, entityId, entity
     } catch (e) { setError(String((e as Error).message ?? e)) }
   }
 
-  async function remove(id: string) {
+  // Retrait, pas suppression : les fichiers EUDR sont conservés cinq ans
+  // (art. 33 du règlement UE 2023/1115). Le document sort de la liste courante,
+  // le fichier reste sur SharePoint et la trace en base.
+  async function remove(id: string, nom: string) {
+    if (!confirm(
+      `Retirer « ${nom} » de la liste ?
+
+`
+      + 'Le fichier n’est pas supprimé : il reste conservé sur SharePoint et dans le journal, '
+      + 'comme l’exige la conservation de cinq ans. Il cesse simplement d’apparaître ici.'
+    )) return
     try {
-      await fetch(`/api/eudr-fournisseurs/documents?org_id=${orgId}&id=${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/eudr-fournisseurs/documents?org_id=${orgId}&id=${id}`, { method: 'DELETE' })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(j.error ?? 'Retrait impossible'); return }
       await load()
-    } catch { /* ignore */ }
+    } catch (e) { setError(String((e as Error).message ?? e)) }
   }
 
   return (
@@ -126,11 +138,14 @@ export default function EudrDocumentsModal({ orgId, entityType, entityId, entity
                 <div key={d.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/40 text-sm">
                   <span className="min-w-0">
                     <span className="truncate text-gray-800 dark:text-gray-100 block">{d.name}</span>
-                    <span className="text-xs text-gray-400">{typeLabel(d.doc_type)}</span>
+                    <span className="text-xs text-gray-400">
+                      {typeLabel(d.doc_type)}
+                      {d.version_num ? ` · version ${String(d.version_num).padStart(3, '0')}` : ''}
+                    </span>
                   </span>
                   <span className="flex items-center gap-2 shrink-0">
                     <button onClick={() => download(d.id)} title="Télécharger" className="text-gray-500 hover:text-green-600">⬇</button>
-                    {canEdit && <button onClick={() => remove(d.id)} title="Supprimer" className="text-gray-400 hover:text-red-500">✕</button>}
+                    {canEdit && <button onClick={() => remove(d.id, d.name)} title="Retirer de la liste (le fichier est conservé)" className="text-gray-400 hover:text-amber-600">✕</button>}
                   </span>
                 </div>
               ))}

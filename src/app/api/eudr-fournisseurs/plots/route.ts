@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { journaliser } from '@/lib/eudr/fichiers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp } from '@/lib/sharepointMulti'
 import { trierGeojson } from '@/lib/eudr/screening'
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminClient()
     const { data: row } = await admin.from('eudr_attachments')
-      .select('sharepoint_item_id, entity_id').eq('id', attachmentId).eq('org_id', orgId).maybeSingle()
+      .select('sharepoint_item_id, entity_id, name, version_num').eq('id', attachmentId).eq('org_id', orgId).maybeSingle()
     if (!row) return NextResponse.json({ error: 'Document introuvable' }, { status: 404 })
 
     let pays: string | null = null
@@ -159,6 +160,12 @@ export async function POST(req: NextRequest) {
         role: version === 'corrigee' ? 'fichier_initial' : 'version_corrigee',
         parcellesRetirees: (retirees ?? []).length,
       }
+      await journaliser({
+        orgId: orgId!, attachmentId: autreId, nom: autreVersion.name,
+        evenement: 'retrait_referentiel',
+        detail: { au_profit_de: (row.name as string | null) ?? attachmentId,
+                  parcelles_retirees: autreVersion.parcellesRetirees },
+      })
     }
 
     const lignes = rapport.fiches.map(f => ({
@@ -186,6 +193,15 @@ export async function POST(req: NextRequest) {
     const { error } = await admin.from('eudr_plots')
       .upsert(lignes, { onConflict: 'attachment_id,feature_index' })
     if (error) return NextResponse.json({ error: error.message }, { status: 502 })
+
+    await journaliser({
+      orgId: orgId!, attachmentId,
+      nom: (row.name as string | null) ?? null,
+      versionNum: (row.version_num as number | null) ?? null,
+      evenement: 'versement',
+      detail: { parcelles: lignes.length, version_retiree: autreVersion?.name ?? null,
+                parcelles_retirees: autreVersion?.parcellesRetirees ?? 0 },
+    })
 
     // Le contrôle qui justifie l'existence du référentiel : un même contour
     // déclaré par deux fournisseurs différents ne se voit qu'ici.

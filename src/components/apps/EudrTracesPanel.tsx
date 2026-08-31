@@ -29,6 +29,10 @@ interface DdsRow {
   submitted_by: string | null; submitted_at: string; last_checked_at: string | null
   form_json: Record<string, string> | null; geojson_attachment_id: string | null
   controle_referentiel?: ControleReferentiel | null
+  /** Nom versionné du fichier transmis, figé au dépôt (« X__v003.geojson »). */
+  geojson_nom?: string | null
+  /** Empreinte SHA-256 du GeoJSON assaini réellement transmis à TRACES. */
+  geojson_sha256?: string | null
 }
 
 /**
@@ -478,7 +482,19 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
                         <td className="py-2 pr-3 max-w-xs">
                           {(() => {
                             const c = d.controle_referentiel
-                            if (!c) return <span className="text-xs text-gray-400">—</span>
+                            // Nom versionné et empreinte : ce qui répond, des années plus tard,
+                            // à « quelle version du fichier est partie dans cette déclaration ? »
+                            const identite = d.geojson_nom ? (
+                              <div className="mb-1">
+                                <div className="font-mono text-[11px] text-gray-700 dark:text-gray-300 break-all">{d.geojson_nom}</div>
+                                {d.geojson_sha256 && (
+                                  <div className="font-mono text-[10px] text-gray-400" title={`Empreinte SHA-256 du GeoJSON transmis : ${d.geojson_sha256}`}>
+                                    empreinte {d.geojson_sha256.slice(0, 12)}…
+                                  </div>
+                                )}
+                              </div>
+                            ) : null
+                            if (!c) return identite ?? <span className="text-xs text-gray-400">—</span>
                             const badge = c.ecart
                               ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
                               : c.etat === 'conforme'
@@ -486,6 +502,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
                                 : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
                             return (
                               <>
+                                {identite}
                                 <span className={`text-xs px-2 py-0.5 rounded-full ${badge}`}>{c.libelle}</span>
                                 {c.etat !== 'conforme' && (
                                   <div className="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">{c.message}</div>
