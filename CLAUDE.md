@@ -52,11 +52,15 @@ src/
 ### 1. Toute app RSE DOIT utiliser `RseAppShell`
 
 ```tsx
-// ✅ CORRECT
+// ✅ CORRECT — le shell DEHORS, la barrière d'abonnement DEDANS
 export default function MaPageRse() {
   return (
     <RseAppShell appSlug="mon-slug" title="Titre">
-      {(ctx) => <MonComposant ctx={ctx} />}
+      {(ctx) => (
+        <RequireSubscription appSlug="mon-slug" appName="Nom">
+          <MonComposant ctx={ctx} />
+        </RequireSubscription>
+      )}
     </RseAppShell>
   )
 }
@@ -65,7 +69,17 @@ export default function MaPageRse() {
 export default function MaPageRse() {
   return <AppShell>...</AppShell>
 }
+
+// ❌ INTERDIT — la barrière à l'extérieur : elle remplace tout ce qu'elle enveloppe
+//    pendant la vérification et en cas de refus, donc elle emporte la barre latérale
+//    et l'utilisateur ne peut plus quitter l'application (31 pages, 2026-08-30).
+export default function MaPageRse() {
+  return <RequireSubscription><RseAppShell>…</RseAppShell></RequireSubscription>
+}
 ```
+
+> **Ordre d'imbrication : `RseAppShell` → `RequireSubscription` → composant.** Règle gravée
+> au marbre (`docs/RSE_APP_PATTERN.md §4`), expliquée dans `docs/HANDOVER.md §6 bis`.
 
 ### 2. Interface `RseContext` — contrat immuable
 
@@ -73,6 +87,7 @@ export default function MaPageRse() {
 export interface RseContext {
   org: Organisation | null
   year: number
+  isShared: boolean
   setActions: (node: React.ReactNode) => void
   setYearShiftHandler: (fn: ((delta: number) => Promise<void>) | null) => void
 }
@@ -81,10 +96,19 @@ export interface RseContext {
 **Règles** :
 - `org` : organisation sélectionnée (null si aucune)
 - `year` : année active (toujours un entier ≥ 2000)
+- `isShared` : vrai si l'organisation sélectionnée est partagée avec l'utilisateur (non propriétaire)
 - `setActions` : injecter des boutons dans le header RSE (ex: Enregistrer)
 - `setYearShiftHandler` : **OBLIGATOIRE** si l'app stocke des données par année
 
 > ⚠️ Ne jamais supprimer ni renommer ces champs. Ajouter uniquement.
+
+> ⚠️ **`ctx` est mémoïsé (`useMemo`) dans `RseAppShell`, et doit le rester.** Plusieurs apps
+> placent `ctx` dans les dépendances de l'effet qui appelle `ctx.setActions` : un objet littéral
+> recréé à chaque rendu déclenche une **boucle de rendu infinie** — la page sature le navigateur et
+> ne répond plus aux clics (constaté sur 4 apps le 2026-08-30). `setYearShiftHandler` est stabilisé
+> par `useCallback` sur une ref ; `setActions` est un setter `useState`, donc déjà stable.
+> **Tout champ ajouté à `RseContext` doit être intégré aux dépendances du `useMemo`** — sinon le bug
+> revient. Explication complète : `docs/HANDOVER.md §6 bis`.
 
 ### 3. Gestion des années — règles strictes
 
@@ -166,13 +190,14 @@ fetch(`/api/mon-app?org_id=${org.id}&year=${year}`)
 - Toujours utiliser `<Icon name="..." size={n} />` — jamais d'SVG inline ad hoc
 - Pour ajouter une icône : l'ajouter dans le `icons` object de `Icon.tsx`
 - Mettre à jour `ALL_ICONS` dans `CategoriesManager.tsx` en conséquence
-- Icônes disponibles (2025-05) : `app`, `alertTriangle`, `arrowDown`, `arrowUp`, `barChart`, `bell`, `calendarDays`, `check`, `chevronDown`, `chevronLeft`, `chevronRight`, `clock`, `creditCard`, `download`, `edit`, `eye`, `eyeOff`, `file`, `fileText`, `folder`, `folderOpen`, `folderPlus`, `grid`, `home`, `image`, `infinity`, `info`, `key`, `list`, `lock`, `logout`, `menu`, `monitor`, `moon`, `moreVertical`, `move`, `pencil`, `plus`, `search`, `send`, `settings`, `share`, `shield`, `shieldCheck`, `star`, `starFilled`, `sun`, `tag`, `ticket`, `trash`, `upload`, `user`, `video`, `x`
+- ⚠️ **Une clé d'icône ne doit pas servir deux apps** : le doublon rend deux entrées de menu indiscernables. Dédoublonnages successifs (2026-07-13, puis `admin-sso` passée de `shieldCheck` à `lock` le 2026-08-30, migration `20260830_icone_admin_sso.sql`). Avant d'attribuer une icône : `select icon, count(*) from apps group by 1 having count(*) > 1;`
+- Liste ci-dessous **indicative** (relevé de 2025-05) : la source de vérité reste `Icon.tsx`, qui a été enrichi depuis. Icônes : `app`, `alertTriangle`, `arrowDown`, `arrowUp`, `barChart`, `bell`, `calendarDays`, `check`, `chevronDown`, `chevronLeft`, `chevronRight`, `clock`, `creditCard`, `download`, `edit`, `eye`, `eyeOff`, `file`, `fileText`, `folder`, `folderOpen`, `folderPlus`, `grid`, `home`, `image`, `infinity`, `info`, `key`, `list`, `lock`, `logout`, `menu`, `monitor`, `moon`, `moreVertical`, `move`, `pencil`, `plus`, `search`, `send`, `settings`, `share`, `shield`, `shieldCheck`, `star`, `starFilled`, `sun`, `tag`, `ticket`, `trash`, `upload`, `user`, `video`, `x`
 
 ---
 
 ## Sidebar & Menu — règles
 
-- Le menu est chargé par `useApps(isAdmin)` dans `AppShell` et `RseAppShell`
+- Le menu est chargé par **`useApps(isAdmin, authReady)`** dans `AppShell`, `RseAppShell` et `FavoritesBoard`. Le second argument (`!authLoading`) est **obligatoire** : appelé avant la résolution de l'authentification, le hook voit `isAdmin = false`, calcule une liste filtrée par abonnement et la range dans son **cache module** partagé par toute la navigation — des catégories entières disparaissaient de la barre latérale (2026-08-30). Ne jamais le rendre facultatif : c'est le garde-fou.
 - Après toute modification admin (save/delete/move), appeler `broadcastAppsUpdate()` de `@/hooks/useApps`
 - Les favoris sont gérés par `useFavorites(profile?.id)` **à l'intérieur de `Sidebar.tsx`** — ne pas le déplacer
 - Stockage favoris : `localStorage` clé `fav_apps_{userId}`, synchronisé via `BroadcastChannel`
@@ -228,13 +253,20 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 ```
 src/lib/sharepoint.ts                        ← client Graph API (DriveID-based)
-src/app/api/sharepoint/files/route.ts        ← CRUD fichiers/dossiers
-src/app/api/sharepoint/upload-session/route.ts ← upload chunké
-src/app/api/sharepoint/download/route.ts     ← proxy download authentifié
+src/app/api/sharepoint/files/route.ts        ← CRUD fichiers/dossiers (métadonnées)
+src/app/api/sharepoint/upload-session/route.ts ← crée la session ; le PUT va du navigateur à SharePoint
+src/app/api/sharepoint/image/route.ts        ← URL signée (+ embedUrl Graph /preview pour les PDF)
+src/app/api/sharepoint/download/route.ts     ← proxy download — ⚠️ proxifie encore les octets (dette)
 src/hooks/useSharePointFolder.ts             ← auto-création chemins
 src/components/ui/SharePointBrowser.tsx      ← browser UI
 src/components/ui/FileUpload.tsx             ← widget drag-and-drop
 ```
+
+> **Règle** : aucun octet de fichier ne doit traverser Vercel. Upload = navigateur → SharePoint
+> direct ; téléchargement et aperçu = URL signée Graph. Seules exemptions : le serveur *lit* un
+> fichier pour le **traiter** (géodonnées EUDR, DDS TRACES, analyse COA, imagerie Copernicus,
+> outil `supabase-migrator`). La route `download` est une dette identifiée, pas un précédent —
+> voir `docs/RSE_APP_PATTERN.md §11`.
 
 Variables d'environnement requises :
 ```
@@ -253,6 +285,9 @@ SHAREPOINT_DRIVE_ID, SHAREPOINT_BASE_FOLDER_NAME
 | ESLint `'Interface' is defined but never used` | CRLF + interface utilisée comme type générique | Ajouter `// eslint-disable-next-line` sur la ligne d'interface |
 | App RSE affiche contenu sans organisation | Pas de guard sur `org === null` | `RseAppShell` gère ça, les enfants reçoivent `ctx.org` potentiellement null |
 | Données année N+1 chargées sur N | `useEffect` avec mauvaises deps | Dépendre de `[org?.id, year]` explicitement |
+| Plus de barre latérale, impossible de quitter l'app | `RequireSubscription` placé **autour** de `RseAppShell` | Shell dehors, barrière dedans (§1) |
+| Applications entières absentes du menu | `useApps` appelé sans `authReady` | `useApps(isAdmin, !authLoading)` |
+| La page se fige, ne répond plus aux clics | `ctx` recréé à chaque rendu → boucle effet ↔ `setActions` | `ctx` mémoïsé dans `RseAppShell` (§2) |
 
 ---
 
@@ -397,7 +432,11 @@ if (shared) return NextResponse.json({ data: shared, isOwner: false })
 
 ---
 
-## App « Projet RSE » — modèle de données
+## App « Plan Stratégique » (ex « Projet RSE », slug `projet-rse`) — modèle de données
+
+> Renommée au catalogue le 2026-08-30 (migration `20260830_rename_plan_strategique.sql`, appliquée).
+> **Le slug, la route `/business/projet-rse`, les tables `projet_rse_*` et les préfixes de code restent
+> `projet-rse`** — ne pas les renommer (mêmes raisons que l'alias `diagnostic-initial`/`guided-diagnostic`).
 
 **Cinq niveaux**, conformes au référentiel de gestion de programme :
 `projet_rse_portefeuilles` → `projet_rse_programmes` → `projet_rse_sous_programmes` → `projet_rse_projets` → lots de travail (dans le WBS, à venir).
@@ -424,7 +463,9 @@ Le champ `type` de l'acteur (`personne`, `fonction`, `collectif`, `entite`, `san
 
 ### Les six sous-applications
 
-Toutes disponibles depuis le 31 août 2026. Le registre `src/lib/projetRseModules.tsx` déclare un onglet par module ; un module s'y ajoute sans toucher au cœur.
+Le code des six est livré. Le registre `src/lib/projetRseModules.tsx` déclare un onglet par module ; un module s'y ajoute sans toucher au cœur.
+
+> ⚠️ Leurs tables viennent de la migration `20260831_projet_rse_modules.sql`, **non appliquée à ce jour** (cf. `docs/MAINTENANCE.md §12`). Tant qu'elle ne l'est pas, les onglets affichent un message « migration manquante » au lieu de tomber en panne. Vérifier l'état réel en base avant de conclure quoi que ce soit : `docs/MAINTENANCE.md §12 bis`.
 
 | Module | Portée | Table |
 |---|---|---|

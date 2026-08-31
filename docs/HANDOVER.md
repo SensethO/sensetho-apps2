@@ -2,7 +2,7 @@
 
 > **But** : permettre à un développeur de reprendre et faire évoluer le code sans l'auteur d'origine.
 > Prérequis : avoir lu [MAINTENANCE.md](MAINTENANCE.md) (faire tourner + déployer).
-> *Dernière mise à jour : 30 août 2026.*
+> *Dernière mise à jour : 31 août 2026.*
 
 ---
 
@@ -81,7 +81,7 @@ Le patron **marbre** (obligatoire pour les diagnostics RSE) est décrit dans **[
 1. Suivre **RSE_APP_PATTERN.md** de bout en bout (c'est un mode d'emploi).
 2. Migration : tables `<slug>_diagnostics/_reponses/_actions/_notes` + RLS + fonction compteur d'annexes.
 3. Routes `/api/<slug>/…` (voir un exemple conforme récent : `collecte-rse`).
-4. Page `/rse/<slug>/page.tsx` (RequireSubscription → RseAppShell → composant).
+4. Page `/rse/<slug>/page.tsx` : **`RseAppShell` → `RequireSubscription` → composant**, dans cet ordre (le shell dehors, la barrière dedans — §6 bis et marbre §4).
 5. Composant `src/components/apps/<Nom>DiagnosticApp.tsx` (5 onglets).
 6. Déclarer la table `<slug>_actions` dans `rseActionSources.ts`.
 7. Insérer la ligne catalogue dans `apps` (+ éventuel abonnement).
@@ -101,6 +101,76 @@ Modèle : **`eudr-fournisseurs`** ou **`strategie-partagee`**. Page `RseAppShell
 - **EUDR** : V1/V2 SOAP désactivées côté Commission → utiliser **V3** (`tracesV3.ts`). Le username Web Service = identifiant EU Login (pas l'email).
 - **RequireSubscription** ne reçoit **jamais** de render prop (page blanche) — la render prop va dans `RseAppShell`.
 - **Fichiers** : jamais via Vercel/Supabase — toujours SharePoint (cf. MAINTENANCE §5).
+
+## 6 bis. La famille de bugs du shell — à savoir reconnaître
+
+`RseAppShell` est traversé par une quarantaine d'applications. Une erreur d'imbrication ou de référence
+n'y produit pas un bug local : elle produit une **panne de navigation** sur toute la plateforme. Le
+2026-08-30, trois pannes de cette famille ont été trouvées et corrigées le même jour. Elles se
+ressemblent au point qu'un repreneur doit pouvoir les nommer de mémoire.
+
+Le point commun : **l'utilisateur reste bloqué dans l'application ouverte**, sans erreur, sans page
+blanche, sans rien dans les journaux serveur. Tout se joue dans l'état React du navigateur. Si un
+utilisateur signale « je n'arrive plus à sortir de l'application », c'est ici qu'il faut chercher, et
+nulle part ailleurs.
+
+### 1. L'ordre d'imbrication — la barrière d'abonnement emporte la navigation
+
+```tsx
+// ❌ la barrière DEHORS : pendant la vérification (spinner) et en cas de refus,
+//    RequireSubscription remplace TOUT ce qu'il enveloppe — barre latérale comprise
+<RequireSubscription appSlug="x"><RseAppShell appSlug="x">{(ctx) => …}</RseAppShell></RequireSubscription>
+
+// ✅ le shell DEHORS, la barrière DEDANS : la navigation survit à tout
+<RseAppShell appSlug="x">{(ctx) => <RequireSubscription appSlug="x"><App ctx={ctx} /></RequireSubscription>}</RseAppShell>
+```
+
+**Symptôme** : l'écran « Accès requis » (ou le spinner) occupe la fenêtre entière, sans barre latérale.
+**Diagnostic** : lire `src/app/rse|business/<slug>/page.tsx`, regarder qui enveloppe qui.
+**Portée constatée** : 31 pages. Règle désormais gravée au marbre — **RSE_APP_PATTERN §4**.
+
+### 2. L'état d'authentification — un cache rempli trop tôt
+
+`useApps` filtre le catalogue selon les abonnements **sauf si l'utilisateur est admin**. Appelé avant
+que l'authentification soit résolue, il voit `isAdmin = false`, calcule une liste amputée, et la range
+dans un **cache au niveau du module** — partagé par toute la navigation, donc durable.
+
+**Symptôme** : des catégories entières disparaissent de la barre latérale (Business entière, 8 apps RSE
+sur 24), sans erreur.
+**Correction** : `useApps(isAdmin, !authLoading)` — `authReady` est un **paramètre obligatoire** depuis
+le 2026-08-30. L'omettre ne compile plus. Ne jamais le rendre facultatif « pour simplifier » : c'est le
+garde-fou lui-même.
+
+### 3. La mémoïsation du contexte — la boucle de rendu
+
+```
+effet de l'app (deps: [ctx]) → ctx.setActions(bouton) → nouvel état du shell
+→ nouveau rendu du shell → nouveau ctx (nouvelle référence) → effet…
+```
+
+Tant que `ctx` était un objet littéral recréé à chaque rendu, ce cycle ne s'arrêtait jamais : la page
+saturait le navigateur et **cessait de répondre aux clics** (4 apps touchées : Plan Stratégique, EUDR
+fournisseurs, Stratégie Partagée, Veille Sindup). Même famille que la boucle satellite du 30/07/2026 qui
+avait épuisé les quotas Vercel et Supabase (MAINTENANCE §11).
+
+**Correction, une fois pour toutes les apps** : dans `RseAppShell`, `ctx` est produit par `useMemo`
+(dépendances : organisation, année, statut partagé) et `setYearShiftHandler` par `useCallback` écrivant
+dans une ref. `setActions` est un setter `useState`, donc déjà stable.
+
+> **Règle** : rien de ce que le shell passe aux apps ne doit changer de référence à chaque rendu.
+> Ajouter un champ à `RseContext` sans l'inclure correctement dans le `useMemo` rouvre exactement ce
+> bug. Un commentaire d'avertissement garde le passage dans le code — ne pas le retirer.
+
+**Comment le reconnaître sans outils** : l'onglet chauffe, le ventilateur part, la page ne réagit plus.
+Avec les outils : le profileur React montre un rendu en continu ; l'onglet Réseau, lui, est calme —
+c'est ce qui distingue cette panne d'une boucle de requêtes.
+
+### Ce qu'il faut vérifier avant de livrer une page d'app
+
+1. La page suit l'ordre `RseAppShell` → `RequireSubscription` → composant.
+2. Aucun appel à `useApps` sans son second argument.
+3. Un effet qui appelle `ctx.setActions` dépend de valeurs stables — au moindre doute, ouvrir la page,
+   la laisser vivre dix secondes et cliquer sur une autre application dans la barre latérale.
 
 ## 7. Modules vendorisés du Catalogue-App
 
@@ -140,17 +210,29 @@ Collecte : bouton dans l'UI (`POST /api/veille-sindup/collect`) et **cron 3×/jo
 
 ## 10. Plan Stratégique (ex « Projet RSE », slug `projet-rse`)
 
-App Business de gestion de projet selon la méthode du cours (PRiSM). **Renommée « Plan Stratégique » le 2026-08-30** — le nom change au catalogue (migration `20260830_rename_plan_strategique.sql`, cf. MAINTENANCE §12), mais le **slug, la route `/business/projet-rse`, les tables `projet_rse_*` et les préfixes de code restent `projet-rse`** (aucune rupture de liens ni d'abonnements — même logique que l'alias `diagnostic-initial`/`guided-diagnostic` du §1).
+App Business de gestion de projet selon la méthode du cours (PRiSM). **Renommée « Plan Stratégique » le 2026-08-30** — le nom change au catalogue (migration `20260830_rename_plan_strategique.sql`, **appliquée le 30/08/2026**), mais le **slug, la route `/business/projet-rse`, les tables `projet_rse_*` et les préfixes de code restent `projet-rse`** (aucune rupture de liens ni d'abonnements — même logique que l'alias `diagnostic-initial`/`guided-diagnostic` du §1).
 
-La documentation détaillée vit dans **`CLAUDE.md` (section « Projet RSE »)** : les **six sous-applications** (cadrage & business case durable, parties prenantes, analyse d'impact P5, plan de management de la durabilité, WBS/RACI/risques/jalons, théorie du changement & SROI), la règle du **registre** `src/lib/projetRseModules.tsx` (un onglet par module, une sous-app s'ajoute sans toucher au cœur `ProjetRseApp.tsx`), la règle « toute personne pointe vers `projet_rse_acteurs` » (succession suivie partout), la fabrique de routes `routesDeProjet()`/`ficheDeProjet()` (`src/lib/projet-rse/crud.ts`) et le piège des query strings sur routes dynamiques (`lireIdentifiant()`).
+**Notes & documents** : tout item porteur d'avancement (cadrage, jalon, risque…) offre le panneau Notes & documents — sections Tiptap en `jsonb` dans `projet_rse_notes` (migration `20260830_projet_rse_notes.sql`, **appliquée le 30/08/2026**), pièces jointes dans SharePoint, jamais en base. C'est la règle universelle des apps RSE, appliquée ici à une app Business.
+
+La documentation détaillée vit dans **`CLAUDE.md` (section « Plan Stratégique »)** : les **six sous-applications** (cadrage & business case durable, parties prenantes, analyse d'impact P5, plan de management de la durabilité, WBS/RACI/risques/jalons, théorie du changement & SROI), la règle du **registre** `src/lib/projetRseModules.tsx` (un onglet par module, une sous-app s'ajoute sans toucher au cœur `ProjetRseApp.tsx`), la règle « toute personne pointe vers `projet_rse_acteurs` » (succession suivie partout), la fabrique de routes `routesDeProjet()`/`ficheDeProjet()` (`src/lib/projet-rse/crud.ts`) et le piège des query strings sur routes dynamiques (`lireIdentifiant()`).
 
 ## 11. Pages publiques
 
 Toute page accessible sans compte doit être déclarée dans `PUBLIC_ROUTES` (`src/middleware.ts`). Pages éditoriales : `/hebergement-responsable` (indicateurs **mesurés** — entretien : MAINTENANCE §9 bis), `/engagements-rse`, `/politique-de-confidentialite` (date de révision **manuelle** — MAINTENANCE §9 ter). Règle éditoriale commune : jamais de chiffre sans méthode, jamais une déclaration de fournisseur présentée comme une mesure.
 
 ## 12. Vérifier une modification
-Le projet n'a pas de suite de tests. Vérifier ainsi :
-1. `npm run build` (doit compiler).
+
+Le projet **n'a pas de suite de tests** — c'est un fait à connaître avant de toucher quoi que ce soit :
+la seule barrière automatique est le build (compilation TypeScript + `scripts/check-polling.mjs` en
+`prebuild`). Tout le reste est manuel. Vérifier ainsi :
+
+1. `npm run build` (doit compiler ; le garde anti-polling s'exécute d'abord).
 2. Déployer et tester l'endpoint : sans session → `401` (routes protégées), page protégée → `307` vers login.
 3. Test fonctionnel connecté sur `apps.sensetho.com` (l'admin bypass l'abonnement).
+4. **Si la modification touche une page d'app ou le shell** : ouvrir la page, vérifier que la barre
+   latérale est complète (toutes les catégories), laisser la page vivre dix secondes, puis cliquer sur
+   une autre application. Ce test de trente secondes aurait détecté les trois pannes du 2026-08-30 (§6 bis).
+5. **Si la modification touche le schéma** : la migration est-elle appliquée ? Vérifier en base, pas de
+   mémoire — MAINTENANCE §12 bis.
+
 Pour la logique pure (ex. `coaConformity.ts`), un petit script Node (Node 24 exécute le TS) suffit à valider les cas.

@@ -2,7 +2,7 @@
 
 > **But** : permettre à un exploitant/mainteneur de faire tourner, comprendre, déployer et dépanner la plateforme **sans l'auteur d'origine**.
 > Voir aussi [HANDOVER.md](HANDOVER.md) (reprise du code) et [README de la doc](README.md) (carte code ↔ doc).
-> *Dernière mise à jour : 30 août 2026.*
+> *Dernière mise à jour : 31 août 2026.*
 
 ---
 
@@ -45,7 +45,61 @@ Portail web multi-tenant. Un utilisateur se connecte (Supabase Auth), sélection
 | `QONTO_CRED_SECRET` | Secret de chiffrement AES-256-GCM des identifiants Qonto par organisation. **Repli** : si absente, `EUDR_CRED_SECRET` est utilisée (`src/lib/qonto/crypto.ts`). ⚠️ Une fois des secrets chiffrés avec le repli, introduire `QONTO_CRED_SECRET` **casse le déchiffrement** existant — prévoir un re-chiffrement (re-saisie des connexions) si on la crée après coup |
 | `ANTHROPIC_API_KEY` | Clé API Claude (analyse COA + ventilation comptable Qonto) |
 | `CRON_SECRET` | Protège les endpoints cron (`Authorization: Bearer …`) : récap actions RSE, collecte Sindup |
-| `ALPHA_VANTAGE_API_KEY` | Données météo (app AgriTracker) |
+| `SINDUP_CRED_SECRET` | Secret de chiffrement des identifiants Sindup par organisation. **Repli** : `EUDR_CRED_SECRET` si absente (`src/lib/sindup/crypto.ts`) — même avertissement que pour Qonto : l'introduire après coup casse le déchiffrement des secrets déjà chiffrés avec le repli |
+| `SENTINEL_CLIENT_ID` / `SENTINEL_CLIENT_SECRET` | Copernicus Data Space (Sentinel Hub) — imagerie satellite Sentinel-2 des parcelles EUDR (`src/lib/eudr/sentinel.ts`). Absentes : la fonctionnalité renvoie une erreur explicite, le reste de l'app fonctionne |
+| `WHISP_API_KEY` | API Whisp — analyse de déforestation des parcelles EUDR (`/api/eudr-fournisseurs/deforestation`). Absente : la route renvoie 400 avec un message clair |
+| `ALPHA_VANTAGE_API_KEY` | Cours des matières premières (`/api/agri/marches`, app AgriTracker). ⚠️ **Pas** la météo : la météo vient d'Open-Meteo, qui ne demande aucune clé |
+| `NEXT_PUBLIC_APP_URL` | Base des liens absolus dans les courriels d'invitation Le Miroir. **Repli** : l'origine de la requête. À définir en production pour que les liens ne dépendent pas de l'URL de déploiement Vercel |
+
+### Modèle de `.env.local`
+
+Le dépôt ne contient **volontairement aucun `.env.example`** (risque de le remplir par mégarde et de le committer). Modèle à recopier, valeurs à récupérer dans la console Vercel :
+
+```bash
+# --- Indispensables : sans elles l'application ne démarre pas ---
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# --- Indispensables dès qu'on touche aux fichiers (toutes les apps ou presque) ---
+MS_TENANT_ID=
+MS_CLIENT_ID=
+MS_CLIENT_SECRET=
+SHAREPOINT_DRIVE_ID=
+SHAREPOINT_BASE_FOLDER_ID=
+SHAREPOINT_BASE_FOLDER_NAME=
+
+# --- Par fonctionnalité : absentes, seule la fonctionnalité concernée est inerte ---
+ANTHROPIC_API_KEY=
+EUDR_CRED_SECRET=
+QONTO_CRED_SECRET=
+SINDUP_CRED_SECRET=
+SENTINEL_CLIENT_ID=
+SENTINEL_CLIENT_SECRET=
+WHISP_API_KEY=
+ALPHA_VANTAGE_API_KEY=
+CRON_SECRET=
+DATABASE_URL=
+NEXT_PUBLIC_APP_URL=http://localhost:3002
+```
+
+> Les trois premières suffisent à ouvrir le portail, se connecter et naviguer. Les autres
+> n'ouvrent que leur propre fonctionnalité : le code de chaque intégration teste sa variable
+> et renvoie un message explicite plutôt que de tomber en panne.
+
+### Installer et lancer en local
+
+```bash
+npm install
+npm run dev      # http://localhost:3002
+npm run build    # build de production (exécute d'abord scripts/check-polling.mjs)
+npm run lint
+```
+
+- **Node 18.17 minimum** (exigence de Next.js 14) ; **Node 20 ou plus recommandé**. Le dépôt ne fixe aucune version (pas de `.nvmrc`, pas de champ `engines`) et Vercel construit avec la version réglée dans les paramètres du projet — à vérifier dans la console si le build diverge du local.
+- Le port **3002** est figé dans le script `dev` — ne pas le changer sans raison, plusieurs procédures et captures y renvoient.
+- Le dépôt vit dans un dossier **OneDrive synchronisé** : si le build échoue avec `EINVAL readlink`, supprimer `.next` (parfois deux fois) — cf. §11.
+- Il n'y a **pas de base locale ni d'environnement de recette** : un seul projet Supabase est documenté (§2), donc un `.env.local` renseigné avec ces valeurs fait écrire le développement **dans la base de production**. Travailler sur une organisation de test, ou créer un projet Supabase séparé et y rejouer `supabase/migrations/*.sql` dans l'ordre des noms de fichiers.
 
 ## 4. Base de données (Supabase)
 
@@ -80,7 +134,11 @@ Pattern universel :
 3. Une route `.../upload-confirm` enregistre les **métadonnées** en base (jamais le contenu).
 4. Téléchargement : le serveur renvoie une **URL signée Graph**, le navigateur télécharge directement.
 
+5. Aperçu inline : `/api/sharepoint/image` renvoie une **URL signée** (et un `embedUrl` Graph `/preview` pour les PDF en iframe) — jamais les octets. Mise en conformité du 2026-08-30, cf. [RSE_APP_PATTERN.md](RSE_APP_PATTERN.md) §11.
+
 Helper central : `src/lib/sharepointMulti.ts` (`spGraphForApp`, `getConfigForApp`). Sécurité des IDs : `src/lib/sharepointSecurity.ts`.
+
+> ⚠️ **Exception résiduelle connue** : `src/app/api/sharepoint/download/route.ts` proxifie encore le corps du fichier à travers Vercel (appelée par `SharePointBrowser` et `FileUpload`). À convertir en URL signée comme les autres. Détail et raisonnement : RSE_APP_PATTERN §11.
 
 ## 6. Intégrations externes
 
@@ -89,7 +147,10 @@ Helper central : `src/lib/sharepointMulti.ts` (`spGraphForApp`, `getConfigForApp
 - **Anthropic (Claude)** — analyse des COA (`src/lib/eudr/coaAnalyze.ts`, modèle `claude-opus-4-8`, vision). Le fichier COA est lu depuis SharePoint et **transmis à l'API le temps de l'analyse** (rien stocké ailleurs). Également : ventilation comptable Qonto (voir ci-dessous).
 - **Qonto (banque en ligne)** — lecture des transactions bancaires pour les apps budget. Connexion **par organisation** : identifiants (login + secret key) stockés chiffrés AES-256-GCM dans `qonto_connections` (`src/lib/qonto/crypto.ts`, secret `QONTO_CRED_SECRET`, repli `EUDR_CRED_SECRET` — cf. §3). Routes `/api/qonto/credentials|accounts|transactions|suggest-comptes`, garde `requireOrgOwner` (`src/lib/qonto/connections.ts`). Aucun ordre de paiement n'est jamais émis (lecture seule). **Ventilation IA** : `/api/qonto/suggest-comptes` propose un compte du plan comptable par transaction (modèle `claude-haiku-4-5`, sortie structurée) — les transactions sont découpées en **lots de 50 traités en parallèle** car 180 transactions séquentielles dépassaient les 60 s de la fonction Vercel (**504 constaté en production**). Rien n'est stocké côté IA.
 - **Sindup (veille stratégique)** — double connecteur (`src/lib/sindup/`) : **RSS opérationnel** (parseur RSS 2.0/Atom fait main `rss.ts` — volontairement tolérant, aucune dépendance XML ajoutée) et **API préparée mais en attente** de la documentation client Sindup (`sindup_connections`, `type = 'api'` refusé par `collect.ts` tant que non branché). Collecte : à la demande (`POST /api/veille-sindup/collect`) et par cron (cf. §7). Tables `sindup_sources` / `sindup_mentions` / `sindup_connections` (migration `20260807_sindup_tables.sql`).
-- **Alpha Vantage** — météo pour AgriTracker.
+- **Copernicus Data Space (Sentinel Hub)** — imagerie satellite Sentinel-2 des parcelles EUDR (`src/lib/eudr/sentinel.ts`). OAuth client_credentials, jeton mis en cache en mémoire. Le serveur *lit* l'image pour la traiter : c'est l'une des exemptions admises à la règle « aucun octet par Vercel » (marbre §11).
+- **Whisp** — analyse de risque de déforestation d'un GeoJSON de parcelles (`/api/eudr-fournisseurs/deforestation`, clé `WHISP_API_KEY`).
+- **Open-Meteo** — météo d'AgriTracker (`/api/agri/weather/sync`, cron quotidien). **Aucune clé** : API publique.
+- **Alpha Vantage** — cours des matières premières d'AgriTracker (`/api/agri/marches`, clé `ALPHA_VANTAGE_API_KEY`).
 
 ## 7. Tâches planifiées (Vercel Cron — `vercel.json`)
 
@@ -113,6 +174,9 @@ Helper central : `src/lib/sharepointMulti.ts` (`spGraphForApp`, `getConfigForApp
 | Build échoue `EINVAL readlink .next/…` | Cache `.next` corrompu (dossier sur OneDrive) | `rm -rf .next` puis rebuild |
 | `violates check constraint "…_check"` à l'insert | Valeur hors liste autorisée d'une contrainte CHECK | Étendre la contrainte via migration (ex. `eudr_attachments` doc_type/entity_type) |
 | Page blanche sur une app RSE | Render prop passée à `RequireSubscription` au lieu de `RseAppShell` | Voir RSE_APP_PATTERN §4 |
+| **Plus de barre latérale** dans une app (impossible d'en sortir) | `RequireSubscription` placé **autour** de `RseAppShell` : il remplace tout ce qu'il enveloppe | Rétablir l'ordre shell dehors / barrière dedans — RSE_APP_PATTERN §4, HANDOVER §6 bis |
+| **Des applications entières manquent** dans la barre latérale | `useApps` appelé avant la fin de l'authentification : la liste filtrée par abonnement est mise en cache module | Passer `authReady` (`!authLoading`) — HANDOVER §6 bis |
+| **La page se fige, ne répond plus aux clics** (onglet qui chauffe) | Boucle de rendu : un effet dépend de `ctx` et appelle `ctx.setActions` | `ctx` doit rester mémoïsé dans `RseAppShell` — HANDOVER §6 bis |
 | Upload fichier échoue | Config SharePoint (`sp_configs`) manquante pour l'app, ou secret Azure expiré | Vérifier `sp_app_routes`/`sp_configs` + `MS_CLIENT_SECRET` |
 | Dépôt DDS EUDR rejeté « use V3 » | V1/V2 désactivées côté Commission | Déjà géré : client V3 (`tracesV3.ts`) |
 | Analyse COA en erreur | `ANTHROPIC_API_KEY` absente/invalide en prod | Vérifier la variable Vercel |
@@ -125,7 +189,7 @@ La page publie des chiffres **mesurés**, avec la méthode affichée sous chacun
 | Indicateur | Source | Entretien |
 |---|---|---|
 | Lignes de données + nombre de tables | Mesure **automatique** : RPC `list_public_tables` via `src/lib/impactMetrics.ts`, cache 24 h (`unstable_cache`) | Aucun — se met à jour seul. Si la mesure échoue, la page n'affiche rien (jamais d'approximation) |
-| Taille du schéma public | RPC `public_schema_size_bytes` (migration `20260829_public_schema_size.sql`) | **À appliquer une fois** via l'API de gestion (§4). Non appliquée = indicateur masqué proprement |
+| Taille du schéma public | RPC `public_schema_size_bytes` (migration `20260829_public_schema_size.sql`, **appliquée le 30/08/2026**) | Aucun. Si la RPC venait à disparaître, l'indicateur se masque proprement au lieu d'approximer |
 | Pages vues sur 30 jours (+ cumul) | Mesure **automatique** : comptage exact `app_logs` (robots exclus) via PostgREST en HEAD, même cache 24 h | Aucun. Périmètre affiché sur la page : ni appels d'API ni ressources statiques. Les agrégats SQL sont refusés par PostgREST (`PGRST123`) — toute somme/moyenne demanderait une RPC |
 | Poids transféré de la page d'accueil | Constante `PAGE_WEIGHT` **datée** dans `src/app/hebergement-responsable/page.tsx` | À re-mesurer quand le bundle change sensiblement, puis mettre à jour la date |
 
@@ -175,23 +239,35 @@ Synthèse des leçons apprises — les garde-fous listés ici sont **actifs dans
 | Idem | Un garde-fou humain ne suffit pas : il faut échouer le **build** | `scripts/check-polling.mjs` exécuté en **`prebuild`** (donc aussi sur Vercel) : refuse tout `setInterval` < 8 s ou sans garde `document.hidden` dans un composant client (allowlist explicite dans le script) |
 | Idem | Couper le coût **avant** les appels Supabase | Coupe-circuit dans `src/middleware.ts` : rate-limit en mémoire par IP (300 req/min glissant), best-effort par isolate |
 | **08/2026** — pannes répétées du projet Supabase de Londres | — | **Migration vers Paris** le 01/08/2026 : projet actuel `pjrwjfozzynmjvbygqev` (eu-west-3). L'ancien projet londonien est **en veille et reste à supprimer** (vérifier qu'aucune donnée n'y manque avant). Les variables `NEXT_PUBLIC_SUPABASE_*` sont figées au build : tout changement de projet exige un redéploiement |
+| **30/08/2026** — trois pannes de navigation coup sur coup (barre latérale emportée par la barrière d'abonnement sur 31 pages ; applications manquantes par cache d'auth prématuré ; boucle de rendu infinie figeant 4 apps) | Une même famille : l'**état et la mémoïsation React dans le shell**. Un shell partagé par 40 apps transforme chaque erreur d'imbrication ou de référence en panne de plateforme | Ordre d'imbrication gravé au marbre §4 ; `authReady` devenu **paramètre obligatoire** de `useApps` (l'oubli est une erreur de compilation) ; `ctx` mémoïsé et `setYearShiftHandler` stabilisé dans `RseAppShell`, avec commentaire d'avertissement dans le code. Explication pédagogique : **HANDOVER §6 bis** |
 | Latence transatlantique base ↔ fonctions | Exécuter les fonctions près de la base | `vercel.json` : `"regions": ["cdg1"]` (Paris) — **ne pas retirer** |
 | Versions divergentes du Catalogue-App | Le numéro de version de `@sensetho/catalogue-app` est **bumpé automatiquement par la CI** du dépôt Catalogue-App | **Ne jamais bumper la version à la main** (ni dans Catalogue-App, ni en épinglant ici une version inventée) |
 | **08/2026** — PAT Supabase révoqués à répétition (2 jetons collés en clair dans un chat, révoqués par précaution) | Un secret exposé se révoque, sans discussion | Recréer un PAT : dashboard Supabase → compte → **Access Tokens** → Generate new token. Le garder hors dépôt et hors chat ; les migrations en attente (cf. §12) ne peuvent être appliquées qu'avec un jeton valide |
 | Le dépôt vit dans un dossier **OneDrive** synchronisé | OneDrive corrompt/dématérialise des fichiers que Node et Git veulent lire en local | Trois parades éprouvées : `rm -rf .next` (parfois **deux fois** de suite) si `EINVAL readlink` au build ; `attrib +P -U /S /D` sur `.git` si Git échoue avec `mmap failed` (fichiers passés « cloud-only ») ; ne jamais laisser `node_modules` passer cloud-only (réinstaller au besoin) |
 
-## 12. Migrations non appliquées
+## 12. Registre des migrations récentes
 
-Les migrations suivantes sont **committées mais pas encore appliquées** en production — elles attendent un **PAT Supabase valide** (cf. §11, révocations d'août 2026). Le code est écrit pour rester fonctionnel tant qu'elles ne sont pas passées (messages explicites côté UI), mais les fonctionnalités correspondantes sont inertes d'ici là.
+`supabase/migrations/*.sql` est la trace du schéma, **pas un journal d'application** : rien dans le dépôt ne dit si un fichier a été joué en production. Ce registre tient donc l'état à la main, et le §12 bis donne le moyen de le vérifier en base plutôt que de le croire.
 
-| Migration | Objet |
-|---|---|
-| `20260830_rename_plan_strategique.sql` | Renommage catalogue « Projet RSE » → « Plan Stratégique » (slug `projet-rse` inchangé) |
-| `20260830_projet_rse_sous_programmes_et_acteurs.sql` | Niveau sous-programme + registre d'acteurs référencés |
-| `20260831_projet_rse_modules.sql` | Tables des sous-applications (cadrage, P5, SMP, WBS/RACI/jalons/risques/indicateurs, impact social) |
-| `20260830_projet_rse_notes.sql` | Notes de projet (`ProjetRseNotesPanel`) — créée par un chantier parallèle du 2026-08-30 |
+### Appliquées en production
 
-Application (une par une, cf. §4) :
+| Migration | Objet | Appliquée le |
+|---|---|---|
+| `20260829_public_schema_size.sql` | RPC `public_schema_size_bytes` (indicateur de taille de base, §9 bis) | 30/08/2026 |
+| `20260830_rename_plan_strategique.sql` | Renommage catalogue « Projet RSE » → « Plan Stratégique » (slug `projet-rse` inchangé) | 30/08/2026 |
+| `20260830_projet_rse_notes.sql` | Notes de projet (`ProjetRseNotesPanel`) | 30/08/2026 |
+| `20260830_icone_admin_sso.sql` | Icône de l'app `admin-sso` : `shieldCheck` (doublon) → `lock` | 30/08/2026 |
+
+### En attente
+
+Committées mais **pas encore appliquées**. Le code est écrit pour rester fonctionnel sans elles (messages explicites côté interface), mais les fonctionnalités correspondantes sont inertes d'ici là.
+
+| Migration | Objet | Effet visible tant qu'elle n'est pas passée |
+|---|---|---|
+| `20260830_projet_rse_sous_programmes_et_acteurs.sql` | Niveau sous-programme + registre d'acteurs référencés (`projet_rse_acteurs`, `projet_rse_acteur_liens`, `_historique`, `_journal`) | Plan Stratégique : niveau sous-programme et registre d'acteurs annoncés comme indisponibles |
+| `20260831_projet_rse_modules.sql` | Tables des six sous-applications (cadrage, P5, SMP, WBS/RACI/jalons/risques/indicateurs, impact social) | Plan Stratégique : les onglets de modules affichent le message « migration manquante » |
+
+Application (une par une, dans l'ordre des noms de fichiers, cf. §4) :
 
 ```bash
 curl -s -X POST "https://api.supabase.com/v1/projects/pjrwjfozzynmjvbygqev/database/query" \
@@ -199,4 +275,27 @@ curl -s -X POST "https://api.supabase.com/v1/projects/pjrwjfozzynmjvbygqev/datab
   --data-binary "$(jq -Rs '{query: .}' < supabase/migrations/<fichier>.sql)"
 ```
 
-> Après application, **retirer la ligne de ce tableau** (et vérifier dans l'app que le message « migration manquante » a disparu).
+> Après application : **déplacer la ligne** dans le tableau « Appliquées » avec sa date, et vérifier dans l'app que le message « migration manquante » a disparu. Un PAT Supabase valide est nécessaire (cf. §11, révocations d'août 2026).
+
+## 12 bis. Vérifier ce qui est réellement appliqué
+
+À faire **avant de croire le tableau du §12** — après une reprise, après une absence, ou au moindre doute. La requête liste les tables et fonctions attendues par les migrations récentes ; ce qui manque n'est pas appliqué.
+
+```bash
+curl -s -X POST "https://api.supabase.com/v1/projects/pjrwjfozzynmjvbygqev/database/query" \
+  -H "Authorization: Bearer <SUPABASE_PAT>" -H "Content-Type: application/json" \
+  --data-binary '{"query": "select table_name from information_schema.tables where table_schema = '"'"'public'"'"' and table_name like '"'"'projet_rse_%'"'"' order by 1;"}'
+```
+
+Repères de lecture :
+
+| Ce qu'on cherche | Présent ⇒ migration appliquée |
+|---|---|
+| Table `projet_rse_acteurs` | `20260830_projet_rse_sous_programmes_et_acteurs.sql` |
+| Table `projet_rse_cadrage` (ou `projet_rse_lots`) | `20260831_projet_rse_modules.sql` |
+| Table `projet_rse_notes` | `20260830_projet_rse_notes.sql` |
+| Fonction `public_schema_size_bytes` (`select proname from pg_proc where proname = 'public_schema_size_bytes';`) | `20260829_public_schema_size.sql` |
+| `select name from apps where slug = 'projet-rse';` → « Plan Stratégique » | `20260830_rename_plan_strategique.sql` |
+| `select icon from apps where slug = 'admin-sso';` → `lock` | `20260830_icone_admin_sso.sql` |
+
+> Le même raisonnement vaut pour toute migration future : elle doit laisser derrière elle **une trace vérifiable en une requête** (une table, une fonction, une valeur), et cette trace doit être écrite ici.

@@ -3,6 +3,7 @@
 > Document de référence pour la création de toute nouvelle application RSE sur la plateforme Sens'ethO.
 > Validé sur : EcoVadis, Devoir de Vigilance, EUDR, Label Engagé RSE AFNOR.
 > **Ne pas dévier de ce pattern sans validation explicite.**
+> *Dernière mise à jour : 31 août 2026.*
 
 ---
 
@@ -417,22 +418,7 @@ Informations légales/réglementaires (si applicable) :
 
 | Règle | Détail |
 |---|---|
-| **Aucun fichier via Vercel/Supabase** | Upload : navigateur → SharePoint direct. Download : URL signée Graph API → navigateur. **Aperçu inline compris** : `/api/sharepoint/image` renvoie une URL signée (+ `embedUrl` Graph `/preview` pour les PDF en iframe), jamais les octets |
-
-### La règle vaut aussi pour les aperçus et les routes « legacy »
-
-Mise en conformité du 2026-08-30 : quatre routes héritées de mai 2026 la violaient encore.
-`/api/sharepoint/image` bufferisait le fichier entier (`arrayBuffer`) pour le réémettre —
-convertie en fournisseur d'URL signée. Trois routes d'upload AgriTracker streamaient le
-corps de la requête (`runtime: 'edge'` + `body: req.body` + `duplex: 'half'`) : les octets
-ne s'accumulaient pas en mémoire, mais **traversaient Vercel** — elles étaient de surcroît
-mortes (leurs clients utilisaient déjà `upload-session`), donc supprimées.
-
-**Seules exemptions admises** — le serveur *lit* un fichier depuis SharePoint pour le
-**traiter**, sans jamais le servir au navigateur ni le stocker : tri et correction des
-géodonnées EUDR, soumission DDS à TRACES, analyse COA par IA, imagerie Copernicus, et
-l'outil d'administration `supabase-migrator`. Tout le reste — upload, téléchargement,
-aperçu, vignette — passe par le navigateur et Microsoft, jamais par nous.
+| **Aucun fichier via Vercel/Supabase** | Upload : navigateur → SharePoint direct. Download : URL signée Graph API → navigateur. **Aperçu inline compris** : `/api/sharepoint/image` renvoie une URL signée (+ `embedUrl` Graph `/preview` pour les PDF en iframe), jamais les octets. Exemptions et point ouvert : voir sous le tableau |
 | **RLS sur TOUTES les tables** | Immédiatement à la création |
 | **createAdminClient()** | Dans TOUTES les routes API (bypass RLS côté serveur) |
 | **eslint-disable en haut** | `/* eslint-disable @typescript-eslint/no-explicit-any */` si `as any` utilisé |
@@ -446,6 +432,33 @@ aperçu, vignette — passe par le navigateur et Microsoft, jamais par nous.
 | **Route `members`** | `GET /api/<slug>/[id]/members` protégée par `canAccessDiagnostic` (lecture), PAS `canManage` (cf. §14.A) |
 | **Highlight actions** | Action sans responsable ET sans échéance → anneau ambre + pastille « À compléter » (couleur + texte) (cf. §14.B) |
 | **Registry récap** | Toute table `<slug>_actions` DOIT être déclarée dans `src/lib/rseActionSources.ts` (cf. §14.C) |
+
+### La règle vaut aussi pour les aperçus et les routes « legacy »
+
+Mise en conformité du 2026-08-30 : quatre routes héritées de mai 2026 la violaient encore.
+`/api/sharepoint/image` bufferisait le fichier entier (`arrayBuffer`) pour le réémettre —
+convertie en fournisseur d'URL signée, les PDF gardant leur aperçu inline grâce à l'`embedUrl`
+de l'action Graph `/preview` (une `downloadUrl` brute en iframe forcerait le téléchargement).
+Trois routes d'upload AgriTracker streamaient le corps de la requête (`runtime: 'edge'` +
+`body: req.body` + `duplex: 'half'`) : les octets ne s'accumulaient pas en mémoire, mais
+**traversaient Vercel** — elles étaient de surcroît mortes (leurs clients utilisaient déjà
+`upload-session`), donc supprimées.
+
+**Seules exemptions admises** — le serveur *lit* un fichier depuis SharePoint pour le
+**traiter**, sans jamais le servir au navigateur ni le stocker : tri et correction des
+géodonnées EUDR, soumission DDS à TRACES, analyse COA par IA, imagerie Copernicus, et
+l'outil d'administration `supabase-migrator`. Tout le reste — upload, téléchargement,
+aperçu, vignette — passe par le navigateur et Microsoft, jamais par nous.
+
+> ⚠️ **Point ouvert, à traiter (constaté le 2026-08-31 en relisant la doc)** :
+> `src/app/api/sharepoint/download/route.ts` **proxifie encore le corps du fichier**
+> (`new NextResponse(fileRes.body, …)`), donc les octets traversent Vercel. La route est
+> vivante : `SharePointBrowser.tsx` et `FileUpload.tsx` l'appellent pour le bouton
+> Télécharger. Elle n'entre dans aucune des exemptions ci-dessus — le serveur ne traite
+> rien, il sert le fichier au navigateur. La correction est celle déjà appliquée à
+> `/api/sharepoint/image` : renvoyer l'URL signée (`@microsoft.graph.downloadUrl`) et
+> laisser le navigateur aller la chercher. Tant que ce n'est pas fait, la formule
+> « plus aucun octet ne transite par Vercel » est **inexacte pour cette route**.
 
 ---
 
@@ -475,6 +488,8 @@ gh run list --limit 1  # Doit être "success"
 ---
 
 ## 13. Applications créées (historique)
+
+> Ce tableau ne recense que les **diagnostics conformes au marbre**, et il n'est pas tenu à jour à chaque livraison. La **source de vérité du catalogue est la table `apps` en base** (`select slug, name, is_active from apps order by slug;`) : les apps RSE spécialisées et les apps Business/Métier (EUDR fournisseurs, Stratégie Partagée, budgets, Veille Sindup, Plan Stratégique…) n'y figurent pas.
 
 | App | Slug | Route | Référentiel | Date |
 |---|---|---|---|---|
