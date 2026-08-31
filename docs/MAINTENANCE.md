@@ -290,6 +290,16 @@ Synthèse des leçons apprises — les garde-fous listés ici sont **actifs dans
 > et rattrape le cas d'un fichier renommé à la main. Repère du §12 bis : présence de la
 > colonne `eudr_attachments.corrige_de`.
 
+> **Aucune migration nouvelle** pour les trois contrôles de version ajoutés ensuite
+> (analyse de couvert, conclusions d'instruction, DDS déposée) : ils lisent le même
+> appariement (`src/app/api/eudr-fournisseurs/plots/_referentiel.ts`,
+> `chargerEtatVersions`) et fonctionnent donc avec ou sans `corrige_de`. Sans elle,
+> l'appariement repose sur le nom : **un fichier renommé à la main n'est plus apparié**,
+> et les trois contrôles se taisent alors au lieu de se tromper — un fichier isolé est
+> traité comme un fichier sans autre version. La reprise des conclusions
+> (`/api/eudr-fournisseurs/deforestation/reprise`) exige en plus
+> `20260831_eudr_signal_qualification` : sans elle, elle répond 503 avec le motif.
+
 Toute nouvelle migration committée vient s'ajouter ici jusqu'à son application.
 
 Application (une par une, dans l'ordre des noms de fichiers, cf. §4) :

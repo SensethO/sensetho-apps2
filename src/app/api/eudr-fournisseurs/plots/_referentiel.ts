@@ -134,6 +134,67 @@ export async function chargerAppariements(
   return map
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Quelle version porte le périmètre courant ?
+ *
+ * Le versement au référentiel retire l'autre version du périmètre courant : à un
+ * instant donné, une seule des deux versions d'un fichier porte les terres
+ * déclarées. Plusieurs tables restent pourtant clés par `attachment_id` seul
+ * (analyse de couvert, conclusions d'instruction, DDS déposée) et supposent donc
+ * « un fichier = un attachement ». Cette table dit, pour chaque attachement, s'il
+ * porte le périmètre courant ou si c'est son autre version qui le porte — de quoi
+ * signaler l'écart sans jamais reporter de données d'une version à l'autre.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export interface EtatVersion {
+  attachmentId: string
+  nom: string | null
+  version: VersionFichier
+  libelleVersion: string
+  /** L'autre version du même fichier, dans un sens comme dans l'autre. */
+  autreVersionId: string | null
+  autreVersionNom: string | null
+  /** Rôle de l'autre version, vu depuis celui-ci. */
+  autreVersionRole: 'fichier_initial' | 'version_corrigee' | null
+  /** Ce fichier porte-t-il des parcelles au périmètre courant du référentiel ? */
+  auPerimetre: boolean
+  /** L'autre version porte-t-elle le périmètre courant à sa place ? */
+  autreAuPerimetre: boolean
+  /** Faux si le rapprochement s'est fait par nom, la colonne `corrige_de` étant absente. */
+  colonneOrigineDisponible: boolean
+}
+
+export async function chargerEtatVersions(
+  orgId: string,
+  client?: SupabaseAdmin,
+): Promise<Map<string, EtatVersion>> {
+  const admin = client ?? createAdminClient()
+  const [appariements, courantes] = await Promise.all([
+    chargerAppariements(orgId, admin),
+    admin.from('eudr_plots').select('attachment_id').eq('org_id', orgId).eq('is_current', true),
+  ])
+  const auPerimetre = new Set((courantes.data ?? []).map(r => String(r.attachment_id)))
+
+  const map = new Map<string, EtatVersion>()
+  for (const a of Array.from(appariements.values())) {
+    map.set(a.id, {
+      attachmentId: a.id,
+      nom: a.name,
+      version: a.version,
+      libelleVersion: LIBELLE_VERSION[a.version],
+      autreVersionId: a.autreVersionId,
+      autreVersionNom: a.autreVersionId ? (appariements.get(a.autreVersionId)?.name ?? null) : null,
+      autreVersionRole: a.autreVersionId
+        ? (a.version === 'corrigee' ? 'fichier_initial' : 'version_corrigee')
+        : null,
+      auPerimetre: auPerimetre.has(a.id),
+      autreAuPerimetre: !!a.autreVersionId && auPerimetre.has(a.autreVersionId),
+      colonneOrigineDisponible: a.colonneOrigineDisponible,
+    })
+  }
+  return map
+}
+
 export interface ParcelleEnrichie {
   id: string
   org_id: string

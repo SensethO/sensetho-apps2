@@ -28,6 +28,23 @@ interface DdsRow {
   official_date: string | null; official_updated_by: string | null
   submitted_by: string | null; submitted_at: string; last_checked_at: string | null
   form_json: Record<string, string> | null; geojson_attachment_id: string | null
+  controle_referentiel?: ControleReferentiel | null
+}
+
+/**
+ * Contrôle a posteriori du fichier déclaré, calculé côté serveur (route `dds`).
+ *
+ * `eudr_dds.geojson_attachment_id` fige l'attachement déposé ; la correction d'un
+ * fichier en crée un second, et le versement au référentiel bascule le périmètre
+ * courant de l'un à l'autre. Une DDS peut donc porter une version qui n'est plus
+ * celle de référence. On le constate et on le dit ; aucun dépôt, aucune
+ * modification de DDS n'est automatisé.
+ */
+interface ControleReferentiel {
+  etat: 'conforme' | 'version_perimee' | 'hors_perimetre' | 'non_rattachee' | 'fichier_absent'
+  ecart: boolean
+  libelle: string
+  message: string
 }
 
 interface SupplierLite { id: string; company?: string; country_origin?: string }
@@ -408,6 +425,18 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
             </div>
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400">Vision officielle TRACES : statut, date et auteur de chaque dépôt. « Actualiser » interroge le registre EUDR.</p>
+          {/* Constat de version, en tête de liste : le détail reste dans la colonne « Fichier déclaré ». */}
+          {(() => {
+            const ecarts = ddsList.filter(d => d.controle_referentiel?.ecart).length
+            if (!ecarts) return null
+            return (
+              <p className="text-sm rounded-lg px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 m-0">
+                {ecarts} déclaration(s) portent un fichier de géolocalisation qui n’est plus la version au périmètre
+                courant du référentiel. Les géométries déclarées diffèrent de celles du référentiel ; une déclaration
+                rectificative peut être nécessaire.
+              </p>
+            )
+          })()}
           <div className="flex items-center gap-2">
             <input className={`${inputCls} max-w-md`} value={importUuid} onChange={e => setImportUuid(e.target.value)} placeholder="UUID (URL TRACES après /edit/) ou référence interne (n° de contrat)" />
             <button className={btnGhost} onClick={importDds} disabled={ddsBusy || !importUuid.trim()}>+ Importer</button>
@@ -422,6 +451,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
                   <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                     <th className="py-2 pr-3">Réf. interne / produit</th>
                     <th className="py-2 pr-3">Statut officiel</th>
+                    <th className="py-2 pr-3">Fichier déclaré</th>
                     <th className="py-2 pr-3">N° référence / vérification</th>
                     <th className="py-2 pr-3">Date officielle · auteur</th>
                     <th className="py-2 pr-3">Déposée par</th>
@@ -443,6 +473,26 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
                           <div className="text-xs text-gray-500 dark:text-gray-400">{[d.commodity, d.activity_type].filter(Boolean).join(' · ') || '—'}{d.environment === 'production' ? '' : ' · acceptance'}</div>
                         </td>
                         <td className="py-2 pr-3"><span className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>{d.status ?? 'non actualisé'}</span></td>
+                        {/* Contrôle a posteriori : constat, pas injonction. */}
+                        <td className="py-2 pr-3 max-w-xs">
+                          {(() => {
+                            const c = d.controle_referentiel
+                            if (!c) return <span className="text-xs text-gray-400">—</span>
+                            const badge = c.ecart
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                              : c.etat === 'conforme'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+                            return (
+                              <>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${badge}`}>{c.libelle}</span>
+                                {c.etat !== 'conforme' && (
+                                  <div className="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">{c.message}</div>
+                                )}
+                              </>
+                            )
+                          })()}
+                        </td>
                         <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{d.reference_number ? <><div className="font-mono">{d.reference_number}</div><div className="font-mono text-gray-400">{d.verification_number}</div></> : '—'}</td>
                         <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{fmt(d.official_date)}{d.official_updated_by ? <div className="text-gray-400">{d.official_updated_by}</div> : null}</td>
                         <td className="py-2 pr-3 text-xs text-gray-600 dark:text-gray-300">{d.submitted_by || '—'}<div className="text-gray-400">{fmt(d.submitted_at)}</div></td>

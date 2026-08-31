@@ -25,6 +25,34 @@ interface Analysis {
 }
 interface Att { id: string; name: string; entity_type: string | null; entity_id: string | null; created_at: string }
 
+/**
+ * Versions d'un même fichier de géolocalisation (« X.geojson » / « X (corrigé).geojson »).
+ *
+ * L'analyse de couvert est clé par attachement seul : elle ne suit donc PAS la
+ * correction. Une parcelle versée depuis la version corrigée apparaîtrait « non
+ * analysée » alors que l'original l'a été. On ne reporte surtout pas le résultat —
+ * la correction a modifié les géométries, un calcul Whisp fait sur l'original ne
+ * vaut plus — on se contente de le dire, et de mettre l'analyse en avant.
+ */
+interface EtatVersion {
+  attachmentId: string; nom: string | null
+  version: 'en_etat' | 'corrigee'; libelleVersion: string
+  autreVersionId: string | null; autreVersionNom: string | null
+  autreVersionRole: 'fichier_initial' | 'version_corrigee' | null
+  auPerimetre: boolean; autreAuPerimetre: boolean
+  colonneOrigineDisponible: boolean
+}
+
+/** Résultat d'une reprise de conclusions d'une version vers l'autre. */
+interface Reprise {
+  reprises: number
+  candidates: number
+  appariees: { plotIdSource: string; plotIdCible: string; mode: 'plot_id' | 'rang' }[]
+  nonAppariables: { plotIdSource: string; motif: string }[]
+  dejaInstruites: string[]
+  error?: string
+}
+
 /** Conclusion d'instruction consignée pour une parcelle signalée. */
 interface Qual {
   attachment_id: string; plot_id: string; statut: Statut
@@ -381,6 +409,10 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   const [analyses, setAnalyses] = useState<Analysis[]>([])
   const [atts, setAtts] = useState<Att[]>([])
   const [quals, setQuals] = useState<Qual[]>([])
+  const [versions, setVersions] = useState<Record<string, EtatVersion>>({})
+  // Compte rendu de la dernière reprise de conclusions, par fichier cible.
+  const [reprise, setReprise] = useState<Record<string, Reprise>>({})
+  const [repriseBusy, setRepriseBusy] = useState<string | null>(null)
   // La migration de qualification peut ne pas être appliquée : on le dit au lieu de laisser
   // croire que l'enregistrement a fonctionné.
   const [qualOn, setQualOn] = useState(true)
@@ -461,6 +493,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
       if (r.ok) {
         setAnalyses(j.data ?? []); setAtts(j.attachments ?? [])
         setQuals(j.qualifications ?? []); setQualOn(j.qualificationsDisponibles !== false)
+        setVersions(j.versions ?? {})
       }
     } catch { /* ignore */ }
   }, [orgId])
@@ -474,6 +507,19 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
     return m
   }, [quals])
   const qualOf = useCallback((attId: string, plotId: string) => qualMap.get(`${attId}|${plotId}`) ?? null, [qualMap])
+
+  /**
+   * Conclusions réellement instruites par fichier. Une ligne « à instruire » sans
+   * commentaire ni source ne conclut rien : la compter gonflerait l'offre de reprise.
+   */
+  const conclusionsPar = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const q of quals) {
+      if (!(q.statut !== 'a_instruire' || q.commentaire?.trim() || q.source?.trim())) continue
+      m.set(q.attachment_id, (m.get(q.attachment_id) ?? 0) + 1)
+    }
+    return m
+  }, [quals])
 
   /**
    * État d'un fichier APRÈS instruction : ce n'est pas un verdict de risque mais le
@@ -525,6 +571,38 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
       setEditKey(null)
     } catch (e) { setError(String((e as Error).message ?? e)) }
     finally { setSaving(false) }
+  }
+
+  /**
+   * Reprise EXPLICITE des conclusions d'instruction de l'autre version.
+   *
+   * Jamais automatique : une conclusion humaine garde sa valeur documentaire quand
+   * le contour est nettoyé, mais c'est à l'opérateur de dire qu'elle vaut encore
+   * pour la géométrie corrigée. La reprise est tracée dans le champ « Source ».
+   */
+  async function reprendreConclusions(sourceId: string, cibleId: string, nb: number, roleSource: string) {
+    const ok = window.confirm(
+      `Reprendre ${nb} conclusion(s) instruite(s) sur ${roleSource} vers ce fichier ?\n\n`
+      + 'La correction a modifié les géométries (trous retirés, contours refermés, auto-intersections '
+      + 'résolues). Une conclusion reste un fait établi sur le terrain, mais il vous appartient de '
+      + 'vérifier qu’elle vaut encore pour les contours corrigés.\n\n'
+      + 'Chaque conclusion reprise portera la mention de sa provenance dans le champ « Source ». '
+      + 'Les conclusions déjà instruites sur ce fichier ne sont pas écrasées ; les parcelles non '
+      + 'appariables sont signalées, jamais rattachées au hasard.',
+    )
+    if (!ok) return
+    setRepriseBusy(cibleId); setError(null)
+    try {
+      const r = await fetch('/api/eudr-fournisseurs/deforestation/reprise', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, sourceAttachmentId: sourceId, cibleAttachmentId: cibleId }),
+      })
+      const j = await r.json()
+      if (!r.ok) { setError(j.error ?? 'Échec de la reprise'); return }
+      setReprise(prev => ({ ...prev, [cibleId]: j as Reprise }))
+      await load()
+    } catch (e) { setError(String((e as Error).message ?? e)) }
+    finally { setRepriseBusy(null) }
   }
 
   async function analyze(att: Att) {
@@ -585,6 +663,21 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
           <div className="space-y-2">
             {atts.map(att => {
               const a = byAtt(att.id)
+              // Ce que l'autre version du même fichier apporte au diagnostic.
+              const v = versions[att.id] ?? null
+              const autreId = v?.autreVersionId ?? null
+              const autreAnalyse = autreId ? byAtt(autreId) : undefined
+              const autreNom = v?.autreVersionNom ?? null
+              const roleAutre = v?.autreVersionRole === 'fichier_initial' ? 'le fichier initial'
+                : v?.autreVersionRole === 'version_corrigee' ? 'la version corrigée' : 'l’autre version'
+              // Analyse manquante ici alors que l'autre version a été analysée :
+              // on le SIGNALE, on ne reporte rien — les géométries ont changé.
+              const analyseAttendue = !a && !!autreAnalyse
+              // Analyse affichée sur une version qui n'est plus celle du référentiel.
+              const horsPerimetre = !!a && !!v && !v.auPerimetre && v.autreAuPerimetre
+              const conclusionsAutre = autreId ? (conclusionsPar.get(autreId) ?? 0) : 0
+              const repriseOffrable = !!a && !!autreId && conclusionsAutre > 0 && canWrite && qualOn
+              const cr = reprise[att.id] ?? null
               return (
                 <div key={att.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                   <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -598,9 +691,66 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                       {a && (() => { const s = fileState(a); return <span className={`text-xs px-2 py-1 rounded-full ${s.cls}`}>{s.texte}</span> })()}
                       {a && <button className="text-xs text-gray-500 hover:underline" onClick={() => setOpen(open === att.id ? null : att.id)}>{open === att.id ? 'Masquer' : 'Détail'}</button>}
                       <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline" onClick={() => { setSat(sat === att.id ? null : att.id); setSatPlot(null) }}>{sat === att.id ? 'Masquer satellite' : '🛰️ Satellite'}</button>
-                      {canWrite && <button className={btn} onClick={() => analyze(att)} disabled={busy === att.id}>{busy === att.id ? 'Analyse…' : (a ? 'Ré-analyser' : 'Analyser')}</button>}
+                      {canWrite && <button className={`${btn}${analyseAttendue ? ' ring-2 ring-amber-400 dark:ring-amber-500' : ''}`} onClick={() => analyze(att)} disabled={busy === att.id}>{busy === att.id ? 'Analyse…' : (a ? 'Ré-analyser' : 'Analyser')}</button>}
                     </div>
                   </div>
+
+                  {/* Ce que l'autre version du même fichier change — sans jamais reporter son analyse. */}
+                  {analyseAttendue && (
+                    <p className="mt-2 text-xs rounded-lg px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200">
+                      ⚠️ {roleAutre.charAt(0).toUpperCase() + roleAutre.slice(1)}
+                      {autreNom ? <> (<span className="font-medium">{autreNom}</span>)</> : null}
+                      {' '}a été analysé le {fmt(autreAnalyse?.analyzed_at ?? null)}. La correction a modifié les
+                      géométries (trous retirés, contours refermés, auto-intersections résolues) : ce résultat ne
+                      vaut pas pour cette version. <strong>Relancez l’analyse sur ce fichier.</strong>
+                    </p>
+                  )}
+                  {horsPerimetre && (
+                    <p className="mt-2 text-xs rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300">
+                      ℹ️ L’analyse affichée porte sur <strong>{v?.libelleVersion?.toLowerCase()}</strong> de ce fichier,
+                      qui ne porte plus le périmètre courant du référentiel : c’est {roleAutre}
+                      {autreNom ? <> (<span className="font-medium">{autreNom}</span>)</> : null} qui le porte depuis
+                      le dernier versement.
+                    </p>
+                  )}
+                  {repriseOffrable && autreId && (
+                    <div className="mt-2 text-xs rounded-lg px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 space-y-1">
+                      <p className="m-0">
+                        {conclusionsAutre} conclusion(s) d’instruction ont été consignées sur {roleAutre}
+                        {autreNom ? <> (<span className="font-medium">{autreNom}</span>)</> : null}. Une conclusion
+                        humaine reste un fait établi sur le terrain : elle peut être reprise ici, à condition de
+                        vérifier qu’elle vaut encore pour les géométries corrigées.
+                      </p>
+                      <button
+                        className="text-xs font-medium text-blue-700 dark:text-blue-300 hover:underline disabled:opacity-50"
+                        disabled={repriseBusy === att.id}
+                        onClick={() => reprendreConclusions(autreId, att.id, conclusionsAutre, roleAutre)}>
+                        {repriseBusy === att.id ? 'Reprise…' : `Reprendre les ${conclusionsAutre} conclusion(s) instruites sur ${roleAutre}`}
+                      </button>
+                    </div>
+                  )}
+                  {cr && (
+                    <div className="mt-2 text-xs rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 space-y-1">
+                      <p className="m-0">
+                        {cr.reprises} conclusion(s) reprise(s) sur {cr.candidates} — chacune porte la mention de sa
+                        provenance dans « Source ». À vérifier parcelle par parcelle.
+                        {cr.dejaInstruites.length > 0 && <> {cr.dejaInstruites.length} parcelle(s) déjà instruites ici n’ont pas été écrasées.</>}
+                        {cr.appariees.some(x => x.mode === 'rang') && <> {cr.appariees.filter(x => x.mode === 'rang').length} appariement(s) faits par rang, faute d’identifiant commun.</>}
+                      </p>
+                      {cr.nonAppariables.length > 0 && (
+                        <div>
+                          <p className="m-0 font-medium text-amber-700 dark:text-amber-400">
+                            {cr.nonAppariables.length} conclusion(s) non reprises, faute d’appariement fiable :
+                          </p>
+                          <ul className="m-0 pl-4 list-disc">
+                            {cr.nonAppariables.slice(0, 8).map(x => (
+                              <li key={x.plotIdSource}>Parcelle {x.plotIdSource} — {x.motif}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {sat === att.id && (
                     <div className="mt-3">
                       <div className="flex items-center justify-between gap-3 flex-wrap mb-2">

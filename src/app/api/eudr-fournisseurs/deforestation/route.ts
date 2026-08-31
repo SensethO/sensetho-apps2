@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { spGraphForApp } from '@/lib/sharepointMulti'
 import { analyzeDeforestation } from '@/lib/eudr/whisp'
 import { guard } from '../traces/_auth'
+import { chargerEtatVersions, type EtatVersion } from '../plots/_referentiel'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -47,10 +48,14 @@ export async function GET(req: NextRequest) {
   const auth = await guard(orgId)
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
   const admin = createAdminClient()
-  const [analyses, atts, quals] = await Promise.all([
+  const [analyses, atts, quals, versions] = await Promise.all([
     admin.from('eudr_deforestation').select('*').eq('org_id', orgId!).order('analyzed_at', { ascending: false }),
     admin.from('eudr_attachments').select('id, name, entity_type, entity_id, created_at').eq('org_id', orgId!).eq('doc_type', 'geojson').order('created_at', { ascending: false }),
     admin.from('eudr_signal_qualifications').select('*').eq('org_id', orgId!),
+    // Versions d'un même fichier : l'analyse est clé par attachement seul, elle ne
+    // suit donc pas la correction. Le panneau a besoin de savoir quel attachement
+    // est l'autre version, et laquelle porte le périmètre courant, pour le SIGNALER.
+    chargerEtatVersions(orgId!, admin).catch(() => new Map<string, EtatVersion>()),
   ])
   if (analyses.error) return NextResponse.json({ error: analyses.error.message }, { status: 500 })
   // Migration non appliquée : le panneau reste utilisable, la qualification est simplement
@@ -62,6 +67,7 @@ export async function GET(req: NextRequest) {
     qualifications: quals.data ?? [],
     qualificationsDisponibles: !quals.error,
     qualificationsError: qualError,
+    versions: Object.fromEntries(versions),
   })
 }
 

@@ -479,7 +479,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
         <div className="text-center py-16 text-gray-400 dark:text-gray-500 text-sm">Chargement…</div>
       ) : (
         <>
-          {tab === 'dashboard' && <Dashboard buyers={buyers} suppliers={suppliers} contracts={contracts} />}
+          {tab === 'dashboard' && <Dashboard orgId={orgId} buyers={buyers} suppliers={suppliers} contracts={contracts} onOpenTraces={() => setTab('traces')} />}
           {tab === 'buyers' && (
             <BuyersTab
               buyers={buyers}
@@ -603,7 +603,31 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
 
 // ─── Tableau de bord ──────────────────────────────────────────────────────────
 
-function Dashboard({ buyers, suppliers, contracts }: { buyers: Buyer[]; suppliers: Supplier[]; contracts: Contract[] }) {
+function Dashboard({ orgId, buyers, suppliers, contracts, onOpenTraces }: {
+  orgId: string; buyers: Buyer[]; suppliers: Supplier[]; contracts: Contract[]
+  onOpenTraces: () => void
+}) {
+  /**
+   * Contrôle a posteriori des déclarations déposées : une DDS peut porter un fichier
+   * de géolocalisation qui n'est plus la version au périmètre courant du référentiel
+   * (la correction d'un fichier crée un second attachement, le versement bascule le
+   * périmètre de l'un à l'autre). Le constat est calculé par la route `traces/dds` ;
+   * l'indicateur ne s'affiche que s'il y a quelque chose à constater.
+   */
+  const [ddsEcarts, setDdsEcarts] = useState<{ ecarts: number; total: number }>({ ecarts: 0, total: 0 })
+  useEffect(() => {
+    let alive = true
+    fetch(`/api/eudr-fournisseurs/traces/dds?org_id=${orgId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (!alive || !j?.data) return
+        const rows = j.data as { controle_referentiel?: { ecart?: boolean } | null }[]
+        setDdsEcarts({ ecarts: rows.filter(d => d.controle_referentiel?.ecart).length, total: rows.length })
+      })
+      .catch(() => { /* le tableau de bord ne dépend pas de TRACES */ })
+    return () => { alive = false }
+  }, [orgId])
+
   const total = suppliers.length || 1
   const riskCounts = {
     low: suppliers.filter(s => s.eudr_risk_level === 'low').length,
@@ -641,6 +665,23 @@ function Dashboard({ buyers, suppliers, contracts }: { buyers: Buyer[]; supplier
           </div>
         ))}
       </div>
+
+      {/* Déclarations portant une version périmée du fichier de géolocalisation */}
+      {ddsEcarts.ecarts > 0 && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+          <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">
+            Déclarations DDS et référentiel des parcelles
+          </h3>
+          <p className="text-xs text-amber-900 dark:text-amber-200 m-0">
+            {ddsEcarts.ecarts} déclaration(s) sur {ddsEcarts.total} portent un fichier de géolocalisation qui n’est
+            plus la version au périmètre courant du référentiel. Les géométries déclarées diffèrent de celles du
+            référentiel ; une déclaration rectificative peut être nécessaire.
+          </p>
+          <button className="mt-2 text-xs text-amber-800 dark:text-amber-300 underline" onClick={onOpenTraces}>
+            Voir le détail dans « TRACES »
+          </button>
+        </div>
+      )}
 
       {/* Répartition par risque */}
       <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
