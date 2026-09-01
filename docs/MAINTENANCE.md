@@ -396,6 +396,74 @@ Deux limites subsistent :
   renseigné par rattrapage, leur `version_num` reste nul et compte pour 1 ; la
   première version déposée après eux prend donc le numéro 2.
 
+### §12 quinquies — Calcul des surfaces : écart connu et assumé
+
+**Ne « corrigez » pas `aireAnneauHa()` sans lire ce qui suit.** L'écart décrit ici
+est constaté, chiffré, et le statu quo est une décision prise le 01/09/2026.
+
+#### Le constat
+
+`src/lib/eudr/screening.ts` calcule l'aire par la formule de l'excès sphérique
+avec `R_TERRE_M = 6 378 137 m`, qui est le demi-grand axe de WGS84 — le rayon
+**équatorial**, donc le rayon maximal de la Terre. Whisp calcule sur l'ellipsoïde.
+Il en résulte une **surestimation systématique** de nos surfaces.
+
+Mesuré le 01/09/2026 sur les 11 parcelles du fichier `DDR 12 NAVA SCOOPS.geojson`
+(Côte d'Ivoire, ~7° N), en rapprochant l'onglet « Parcelles » et l'onglet
+« Perturbation du couvert » :
+
+| Référentiel | Whisp | Écart |
+|---|---|---|
+| 4,90 ha | 4,86 ha | +0,82 % |
+| 4,01 ha | 3,98 ha | +0,75 % |
+| 3,92 ha | 3,89 ha | +0,77 % |
+| 3,73 ha | 3,71 ha | +0,54 % |
+
+À cette latitude, le rayon de courbure gaussien vaut ≈ 6 357 400 m ; le rapport
+des carrés prédit **+0,65 %**. La théorie et la mesure concordent : la cause est
+bien le choix du rayon, pas un défaut de géométrie ni un désaccord de contours.
+
+#### Pourquoi ce n'est pas neutre
+
+Le seuil de **4 hectares** de l'article 9 (au-delà, le polygone est obligatoire)
+se joue à la deuxième décimale. Une parcelle mesurée 4,01 ha chez nous vaut 3,98 ha
+chez Whisp : nous la classons au-dessus du seuil, elle est probablement en dessous.
+L'erreur mord donc exactement là où elle compte — sur les parcelles limites.
+
+#### La décision (01/09/2026)
+
+**Statu quo.** L'écart va dans le sens de la **sur-déclaration** : nous exigeons un
+polygone là où un point aurait suffi, jamais l'inverse. C'est le sens le moins
+risqué au regard du règlement, et corriger imposerait de recalculer des surfaces
+déjà versées au référentiel — dont certaines sont parties dans des déclarations
+TRACES, où elles sont désormais figées (§12 quater).
+
+Deux options avaient été écartées : recalculer tout l'existant (déclarations
+déposées à revoir au cas par cas) et corriger pour les seuls nouveaux versements
+(deux méthodes coexistantes dans un même référentiel, pire que l'écart lui-même).
+
+#### Si la décision change
+
+Remplacer `R_TERRE_M` par le rayon de courbure gaussien à la latitude du centroïde :
+
+```
+R(φ) = a·√(1−e²) / (1 − e²·sin²φ)     avec a = 6 378 137, e² = 0.00669438
+```
+
+Il faudra alors re-verser les fichiers concernés, et **contrôler les DDS déjà
+déposées** dont une parcelle bascule sous les 4 ha.
+
+#### Point ouvert : les trous ne sont pas retranchés
+
+Dans `extraire()`, seul l'anneau extérieur de chaque polygone est mesuré
+(`polys.map(p => p[0])`) : le nombre de trous est compté, leur surface n'est
+jamais déduite. Sans effet sur les fichiers traités jusqu'ici, qui n'en comportent
+pas — mais sur un fichier à trous l'écart dépasserait largement les 0,7 % ci-dessus,
+et cette fois sans compensation possible par la prudence du sens.
+
+Ce défaut est **indépendant** du choix du rayon et n'est pas couvert par la
+décision de statu quo. À traiter quand un fichier à trous se présentera, ou avant.
+
 ### §12 ter — Ce que le contrôle des déclarations voit, et ce qu'il ne voit pas
 
 Deux contrôles distincts s'appliquent à une DDS déjà déposée, tous deux dans

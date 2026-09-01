@@ -113,7 +113,21 @@ interface Parcelle {
   bbox: [number, number, number, number]
 }
 
-/** Aire géodésique d'un anneau, en hectares (excès sphérique). */
+/**
+ * Aire géodésique d'un anneau, en hectares (excès sphérique).
+ *
+ * ⚠️ NE PAS « CORRIGER » SANS LIRE docs/MAINTENANCE.md §12 quinquies.
+ *
+ * `R_TERRE_M` est le rayon ÉQUATORIAL de WGS84, donc le rayon maximal : nos
+ * surfaces sont systématiquement supérieures d'environ 0,65 % à celles calculées
+ * sur l'ellipsoïde (écart constaté le 01/09/2026 sur 11 parcelles ivoiriennes,
+ * conforme à la théorie). Le statu quo est une DÉCISION, pas un oubli : l'écart
+ * va dans le sens de la sur-déclaration au seuil des 4 ha de l'article 9, et
+ * corriger imposerait de recalculer des surfaces déjà parties dans des DDS.
+ *
+ * Autre limite connue, indépendante de celle-ci : les trous ne sont pas
+ * retranchés (voir `extraire()`).
+ */
 function aireAnneauHa(anneau: Anneau): number {
   if (anneau.length < 4) return 0
   const rad = (d: number) => (d * Math.PI) / 180
@@ -242,6 +256,12 @@ function extraire(features: unknown[]): Parcelle[] {
       : type === 'MultiPolygon' ? (g.coordinates as Anneau[][]) : []
     if (!polys.length) return vide
 
+    // ⚠️ Seul l'anneau EXTÉRIEUR de chaque polygone est mesuré : les trous sont
+    // comptés (`trous`) mais leur surface n'est jamais déduite de `aireHa`.
+    // Sans effet sur les fichiers traités jusqu'ici, qui n'en comportent pas ;
+    // sur un fichier à trous, la surestimation serait importante. Point ouvert,
+    // non couvert par la décision du §12 quinquies. Le corriger suppose de
+    // soustraire `aireAnneauHa` de chaque anneau intérieur `p[1..]`.
     const anneaux = polys.map(p => p[0]).filter(Array.isArray)
     const trous = polys.reduce((n, p) => n + Math.max(0, p.length - 1), 0)
     const aireHa = anneaux.reduce((s, a) => s + aireAnneauHa(a), 0)
