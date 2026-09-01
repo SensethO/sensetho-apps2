@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   const auth = await guard(orgId)
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
   const admin = createAdminClient()
-  const [analyses, atts, quals, versions] = await Promise.all([
+  const [analyses, atts, quals, versions, plots, fournisseurs] = await Promise.all([
     admin.from('eudr_deforestation').select('*').eq('org_id', orgId!).order('analyzed_at', { ascending: false }),
     admin.from('eudr_attachments').select('id, name, entity_type, entity_id, created_at').eq('org_id', orgId!).eq('doc_type', 'geojson').order('created_at', { ascending: false }),
     admin.from('eudr_signal_qualifications').select('*').eq('org_id', orgId!),
@@ -56,13 +56,51 @@ export async function GET(req: NextRequest) {
     // suit donc pas la correction. Le panneau a besoin de savoir quel attachement
     // est l'autre version, et laquelle porte le périmètre courant, pour le SIGNALER.
     chargerEtatVersions(orgId!, admin).catch(() => new Map<string, EtatVersion>()),
+    // Référentiel des parcelles du même fichier : c'est lui qui porte l'identité
+    // (référence, producteur, fournisseur) que l'analyse de couvert n'a pas.
+    admin.from('eudr_plots')
+      .select('attachment_id, feature_index, plot_ref, producer_name, computed_area_ha, supplier_id')
+      .eq('org_id', orgId!).eq('is_current', true).order('feature_index'),
+    admin.from('eudr_suppliers').select('id, name').eq('org_id', orgId!),
   ])
   if (analyses.error) return NextResponse.json({ error: analyses.error.message }, { status: 500 })
   // Migration non appliquée : le panneau reste utilisable, la qualification est simplement
   // indisponible — mieux vaut ça qu'une page en erreur.
   const qualError = quals.error && !missingTable(quals.error) ? quals.error.message : null
+  /* ── Lien entre l'analyse de couvert et le référentiel des parcelles ──────
+   * L'analyse Whisp ne connaît que des index (« parcelle 1 »), le référentiel
+   * connaît les références (« 03DA1574 P1 »). Les deux décrivent les mêmes
+   * géométries du même fichier, dans le même ordre : `feature_index` est la
+   * clé commune. L'appariement n'est publié QUE si les cardinaux concordent —
+   * un fichier réanalysé après modification donnerait sinon des références
+   * décalées d'un rang, c'est-à-dire un faux plus dangereux qu'une absence.
+   */
+  const nomFournisseur = new Map((fournisseurs.data ?? []).map(f => [String(f.id), (f.name as string) ?? null]))
+  const parRattachement = new Map<string, Array<Record<string, unknown>>>()
+  for (const p of (plots.data ?? [])) {
+    const cle = String(p.attachment_id)
+    const liste = parRattachement.get(cle) ?? []
+    liste.push({
+      index: p.feature_index as number,
+      ref: (p.plot_ref as string | null) ?? null,
+      producteur: (p.producer_name as string | null) ?? null,
+      fournisseur: p.supplier_id ? (nomFournisseur.get(String(p.supplier_id)) ?? null) : null,
+      surfaceReferentielHa: p.computed_area_ha != null ? Number(p.computed_area_ha) : null,
+    })
+    parRattachement.set(cle, liste)
+  }
+  const referentiel: Record<string, Array<Record<string, unknown>>> = {}
+  for (const a of (analyses.data ?? [])) {
+    const liste = parRattachement.get(String(a.attachment_id))
+    if (!liste) continue
+    const attendu = (a.plot_count as number | null) ?? (Array.isArray(a.plots) ? a.plots.length : null)
+    if (attendu != null && liste.length !== attendu) continue // cardinaux discordants : on se tait
+    referentiel[String(a.attachment_id)] = liste
+  }
+
   return NextResponse.json({
     data: analyses.data ?? [],
+    referentiel,
     attachments: atts.data ?? [],
     qualifications: quals.data ?? [],
     qualificationsDisponibles: !quals.error,

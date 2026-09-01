@@ -12,6 +12,15 @@ import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'rea
 // 2 parcelles « à risque élevé » côté Whisp et 0 ha de déforestation côté expert :
 // l'écart tient à la nature de la donnée, pas à une erreur de l'un ou de l'autre.
 
+/** Identité d'une parcelle, venue du référentiel (l'analyse de couvert ne l'a pas). */
+interface ParcelleRef {
+  index: number
+  ref: string | null
+  producteur: string | null
+  fournisseur: string | null
+  surfaceReferentielHa: number | null
+}
+
 interface Plot {
   plotId: string; area: number | null; unit: string | null
   riskPcrop: string | null; riskAcrop: string | null; riskTimber: string | null
@@ -409,6 +418,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
   const [analyses, setAnalyses] = useState<Analysis[]>([])
   const [atts, setAtts] = useState<Att[]>([])
   const [quals, setQuals] = useState<Qual[]>([])
+  const [referentiel, setReferentiel] = useState<Record<string, ParcelleRef[]>>({})
   const [versions, setVersions] = useState<Record<string, EtatVersion>>({})
   // Compte rendu de la dernière reprise de conclusions, par fichier cible.
   const [reprise, setReprise] = useState<Record<string, Reprise>>({})
@@ -494,6 +504,7 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
         setAnalyses(j.data ?? []); setAtts(j.attachments ?? [])
         setQuals(j.qualifications ?? []); setQualOn(j.qualificationsDisponibles !== false)
         setVersions(j.versions ?? {})
+        setReferentiel(j.referentiel ?? {})
       }
     } catch { /* ignore */ }
   }, [orgId])
@@ -849,9 +860,50 @@ export default function EudrDeforestationPanel({ orgId, canWrite }: { orgId: str
                             >
                               <td className="py-1 pr-3">
                                 {sat === att.id && satPlot === i && <span className="mr-1">🛰️</span>}
-                                {p.plotId}
+                                {(() => {
+                                  // Identité venue du référentiel. Absente quand les cardinaux
+                                  // ne concordent pas : on affiche alors l'index seul plutôt
+                                  // qu'une référence peut-être décalée d'un rang.
+                                  const pr = referentiel[att.id]?.[i]
+                                  if (!pr?.ref) return <span className="text-gray-500 dark:text-gray-400">{p.plotId}</span>
+                                  return (
+                                    <>
+                                      <span className="font-medium text-gray-800 dark:text-gray-200">{pr.ref}</span>
+                                      <span className="block text-[10px] text-gray-400">
+                                        parcelle {p.plotId}{pr.producteur ? ` · ${pr.producteur}` : ''}
+                                      </span>
+                                    </>
+                                  )
+                                })()}
                               </td>
-                              <td className="py-1 pr-3">{p.area != null ? `${p.area.toFixed(2)} ${p.unit ?? 'ha'}` : '—'}</td>
+                              <td className="py-1 pr-3">
+                                {(() => {
+                                  const ref = referentiel[att.id]?.[i]?.surfaceReferentielHa ?? null
+                                  const whisp = p.area
+                                  if (ref == null && whisp == null) return '—'
+                                  // Le référentiel fait foi dans l'application : c'est lui qui
+                                  // alimente le seuil des 4 ha et les totaux. La valeur Whisp
+                                  // n'est montrée que lorsqu'elle s'en écarte nettement — un
+                                  // petit écart tient au modèle de Terre, un gros écart tient
+                                  // aux géométries, et seul le second doit alerter.
+                                  const affichee = ref ?? whisp!
+                                  const ecart = ref != null && whisp != null && ref > 0
+                                    ? Math.abs(ref - whisp) / ref : 0
+                                  return (
+                                    <>
+                                      <span className={ecart > 0.02 ? 'text-amber-700 dark:text-amber-400' : ''}>
+                                        {affichee.toFixed(2)} ha
+                                      </span>
+                                      {ecart > 0.02 && (
+                                        <span className="block text-[10px] text-amber-600 dark:text-amber-500"
+                                              title="Surface mesurée par Whisp sur les mêmes contours. Un écart de cette ampleur ne s'explique pas par la méthode de calcul : vérifiez que le fichier analysé est bien celui du référentiel.">
+                                          Whisp : {whisp!.toFixed(2)} ha
+                                        </span>
+                                      )}
+                                    </>
+                                  )
+                                })()}
+                              </td>
                               <td className="py-1 pr-3">{p.disturbanceAfter2020 ? <span className="text-amber-700 dark:text-amber-400 font-medium">Oui</span> : <span className="text-gray-500 dark:text-gray-400">Non</span>}</td>
                               <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${signalBadge(p.riskPcrop)}`}>{signalCell(p.riskPcrop)}</span></td>
                               <td className="py-1 pr-3"><span className={`text-xs px-1.5 py-0.5 rounded-full ${signalBadge(p.riskAcrop)}`}>{signalCell(p.riskAcrop)}</span></td>
