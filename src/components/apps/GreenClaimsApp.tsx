@@ -469,7 +469,28 @@ function EditeurView({
   const [editTitre, setEditTitre] = useState(false)
   const [titreVal, setTitreVal] = useState(diag.titre)
   const [allegToDelete, setAllegToDelete] = useState<string | null>(null)
+  const [showScan, setShowScan] = useState(false)
+  const [suggestion, setSuggestion] = useState<string | null>(null)
+  const [loadingSuggest, setLoadingSuggest] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { setSuggestion(null) }, [selected])
+
+  async function handleScanImport(claims: ScannedClaim[]) {
+    for (const c of claims) {
+      await onAddAllegation({ allegation_text: c.text, type: c.type, domain: c.domain, scope: c.scope, notes: c.source_context ? `Source (scan) : ${c.source_context}` : null })
+    }
+  }
+  async function handleSuggest(a: Allegation) {
+    setLoadingSuggest(true); setSuggestion(null)
+    try {
+      const res = await fetch(`/api/green-claims/${diag.id}/suggest-text`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allegation: a }),
+      })
+      const json = await res.json()
+      setSuggestion(res.ok ? json.data.suggestion : (json.error || 'Suggestion indisponible'))
+    } catch { setSuggestion('Erreur réseau') }
+    setLoadingSuggest(false)
+  }
 
   const scores = allegations.map(a => computeScore(a))
   const nbConformes = scores.filter(s => s >= 75).length
@@ -521,6 +542,7 @@ function EditeurView({
             {nbNonConformes > 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 font-medium">{nbNonConformes} NC</span>}
             {nbRisque > 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 font-medium">{nbRisque} risque</span>}
             {nbConformes > 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400 font-medium">{nbConformes} ✓</span>}
+            <button onClick={() => setShowScan(true)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">🌐 Scanner un site</button>
             <button onClick={onExport} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">⬇ Excel</button>
           </div>
         </div>
@@ -591,10 +613,24 @@ function EditeurView({
                 onCancel={() => setSelected(null)}
                 saving={saving}
               />
+              {computeScore(selectedAllegation) < 75 && (
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <button onClick={() => handleSuggest(selectedAllegation)} disabled={loadingSuggest}
+                    className="text-xs px-3 py-2 rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 font-medium disabled:opacity-50">
+                    {loadingSuggest ? '💡 Génération…' : '💡 Suggérer un texte alternatif conforme'}
+                  </button>
+                  {suggestion && (
+                    <div className="mt-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">
+                      {suggestion}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
+      {showScan && <WebScanModal diagId={diag.id} onImport={handleScanImport} onClose={() => setShowScan(false)} />}
       <ConfirmModal
         open={!!allegToDelete}
         title="Supprimer cette allégation ?"
@@ -663,14 +699,180 @@ function CorrespondancesView() {
   )
 }
 
+// ─── Scan de site web (IA) ────────────────────────────────────────────────────
+
+interface ScannedClaim { text: string; type: string; domain: string; scope: string; source_context: string }
+
+function WebScanModal({ diagId, onImport, onClose }: {
+  diagId: string
+  onImport: (claims: ScannedClaim[]) => Promise<void>
+  onClose: () => void
+}) {
+  const [url, setUrl] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [results, setResults] = useState<ScannedClaim[] | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [importing, setImporting] = useState(false)
+
+  async function handleScan() {
+    if (!url.trim()) return
+    setScanning(true); setError(null); setResults(null)
+    try {
+      const res = await fetch(`/api/green-claims/${diagId}/scan-website`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setError(json.error || 'Échec du scan'); setScanning(false); return }
+      const claims: ScannedClaim[] = json.data?.claims ?? []
+      setResults(claims); setSelected(new Set(claims.map((_, i) => i)))
+    } catch { setError('Erreur réseau') }
+    setScanning(false)
+  }
+
+  async function handleImport() {
+    if (!results) return
+    setImporting(true)
+    await onImport(results.filter((_, i) => selected.has(i)))
+    setImporting(false); onClose()
+  }
+
+  function toggle(i: number) {
+    setSelected(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className={card('p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto')} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">🌐 Scanner un site web</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">L&apos;IA analyse la page et détecte les allégations environnementales, prêtes à importer dans ce diagnostic.</p>
+        <div className="flex gap-2 mb-3">
+          <input className={inputCls()} placeholder="https://exemple.com/notre-engagement" value={url}
+            onChange={e => setUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleScan() }} />
+          <button onClick={handleScan} disabled={scanning || !url.trim()} className={btnP('whitespace-nowrap')}>
+            {scanning ? 'Analyse…' : '🔍 Scanner'}
+          </button>
+        </div>
+        {error && <div className="text-xs text-red-600 dark:text-red-400 mb-2">{error}</div>}
+
+        {results && (
+          <div className="space-y-2">
+            {results.length === 0 ? (
+              <div className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Aucune allégation environnementale détectée sur cette page.</div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <span>{results.length} allégation{results.length > 1 ? 's' : ''} détectée{results.length > 1 ? 's' : ''} · {selected.size} sélectionnée{selected.size > 1 ? 's' : ''}</span>
+                  <button onClick={() => setSelected(selected.size === results.length ? new Set() : new Set(results.map((_, i) => i)))}
+                    className="underline hover:text-green-600">{selected.size === results.length ? 'Tout décocher' : 'Tout cocher'}</button>
+                </div>
+                {results.map((c, i) => {
+                  const preview = computeScore({ type: c.type, evidence_method: 'aucune', third_party_verified: 'nsp', scope_clear: 'nsp', no_compensation_only: 'nsp', no_hidden_impact: 'nsp' })
+                  const st = getStatut(preview)
+                  return (
+                    <label key={i} className="flex items-start gap-2 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                      <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} className="mt-0.5 w-4 h-4 rounded accent-green-600" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-gray-900 dark:text-white">&ldquo;{c.text}&rdquo;</div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ color: st.color, background: st.bg }}>{st.label} (est.)</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{c.type}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{c.domain}</span>
+                          {c.source_context && <span className="text-[9px] text-gray-400 truncate">— {c.source_context}</span>}
+                        </div>
+                      </div>
+                    </label>
+                  )
+                })}
+                <div className="flex gap-2 pt-2">
+                  <button onClick={handleImport} disabled={importing || selected.size === 0} className={btnP()}>
+                    {importing ? 'Import…' : `↓ Importer ${selected.size} allégation${selected.size > 1 ? 's' : ''}`}
+                  </button>
+                  <button onClick={onClose} className={btnS()}>Fermer</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Vue Analyse IA ─────────────────────────────────────────────────────────────
+
+function AnalyseView({ diag, allegations }: { diag: Diagnostic; allegations: Allegation[] }) {
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analysis, setAnalysis] = useState<string | null>(null)
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = useCallback(async (force: boolean) => {
+    setAnalyzing(true); setError(null)
+    try {
+      const res = await fetch(`/api/green-claims/${diag.id}/analyze`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force }),
+      })
+      const json = await res.json()
+      if (!res.ok) setError(json.error || 'Analyse indisponible pour le moment.')
+      else { setAnalysis(json.data.ai_analysis); setGeneratedAt(json.data.ai_generated_at) }
+    } catch { setError('Erreur réseau') }
+    setAnalyzing(false)
+  }, [diag.id])
+
+  useEffect(() => { if (allegations.length > 0) run(false) }, [run, allegations.length])
+
+  if (allegations.length === 0) {
+    return (
+      <div className={card('p-12 text-center')}>
+        <div className="text-4xl mb-3">🤖</div>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Ajoutez au moins une allégation pour lancer l&apos;analyse IA.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4 max-w-3xl mx-auto">
+      <div className={card('p-4 flex items-center justify-between flex-wrap gap-2')}>
+        <div>
+          <div className="font-bold text-gray-900 dark:text-white flex items-center gap-2">🤖 Analyse IA — {diag.titre}</div>
+          <div className="text-xs text-gray-400 mt-0.5">
+            Conformité à la Directive UE 2024/825{generatedAt ? ` · générée le ${new Date(generatedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}` : ''}
+          </div>
+        </div>
+        <button onClick={() => run(true)} disabled={analyzing} className={btnP('flex items-center gap-1.5')}>
+          {analyzing ? 'Analyse…' : '↻ Régénérer'}
+        </button>
+      </div>
+
+      {error && <div className={card('p-4 text-sm text-red-600 dark:text-red-400')}>{error}</div>}
+
+      {analyzing && !analysis ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-gray-400">L&apos;IA analyse vos {allegations.length} allégation{allegations.length > 1 ? 's' : ''}…</p>
+        </div>
+      ) : analysis ? (
+        <div className={card('p-5')}>
+          <div className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{analysis}</div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 // ─── Composant principal ──────────────────────────────────────────────────────
 
-type View = 'presentation' | 'diagnostics' | 'editeur' | 'correspondances'
+type View = 'presentation' | 'diagnostics' | 'editeur' | 'analyse' | 'correspondances'
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: 'presentation',   label: 'Présentation',   icon: '📋' },
   { id: 'diagnostics',    label: 'Mes diagnostics', icon: '🏷️' },
   { id: 'editeur',        label: 'Éditeur',         icon: '✏️' },
+  { id: 'analyse',        label: 'Analyse IA',      icon: '🤖' },
   { id: 'correspondances', label: 'Correspondances', icon: '🔗' },
 ]
 
@@ -810,7 +1012,7 @@ export default function GreenClaimsApp({ ctx }: { ctx: RseContext }) {
     <div className="space-y-4">
       {/* Onglets */}
       <div className="flex overflow-x-auto gap-1 pb-1 border-b border-gray-200 dark:border-gray-700">
-        {VIEWS.filter(v => v.id !== 'editeur' || currentDiag !== null).map(v => (
+        {VIEWS.filter(v => (v.id !== 'editeur' && v.id !== 'analyse') || currentDiag !== null).map(v => (
           <button key={v.id} onClick={() => setView(v.id)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-lg whitespace-nowrap transition-colors ${
               view === v.id
@@ -859,6 +1061,8 @@ export default function GreenClaimsApp({ ctx }: { ctx: RseContext }) {
           />
         )
       )}
+
+      {view === 'analyse' && currentDiag && <AnalyseView diag={currentDiag} allegations={allegations} />}
 
       {view === 'correspondances' && <CorrespondancesView />}
     </div>
