@@ -45,10 +45,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     try { baseUrl = new URL(base) } catch { return NextResponse.json({ error: 'URL invalide' }, { status: 400 }) }
     const host = baseUrl.host
     const origin = baseUrl.origin
+    const norm = (h: string) => h.replace(/^www\./i, '')
+    const nhost = norm(host)
 
     const found = new Set<string>()
     const add = (u: URL) => {
-      if (u.host !== host) return
+      if (norm(u.host) !== nhost) return // www.x et x traités comme le même site
       if (ASSET_RE.test(u.pathname)) return
       found.add(u.origin + u.pathname)
     }
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         if (ct) Array.from(ct.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)).forEach(x => pageLocs.push(x[1].trim()))
       }
       for (const l of pageLocs) {
-        try { const u = new URL(l); if (u.host === host && !ASSET_RE.test(u.pathname)) { add(u); fromSitemap = true } } catch { /* ignore */ }
+        try { const u = new URL(l); if (norm(u.host) === nhost && !ASSET_RE.test(u.pathname)) { add(u); fromSitemap = true } } catch { /* ignore */ }
         if (found.size > 200) break
       }
     }
