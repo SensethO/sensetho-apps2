@@ -554,7 +554,8 @@ function EditeurView({
 
   async function handleScanImport(claims: ScannedClaim[]) {
     for (const c of claims) {
-      await onAddAllegation({ allegation_text: c.text, type: c.type, domain: c.domain, scope: c.scope, notes: c.source_context ? `Source (scan) : ${c.source_context}` : null })
+      const src = [c.sourceUrl, c.source_context ? `« ${c.source_context} »` : ''].filter(Boolean).join(' — ')
+      await onAddAllegation({ allegation_text: c.text, type: c.type, domain: c.domain, scope: c.scope, notes: src ? `Source (scan) : ${src}` : null })
     }
   }
   async function handleSuggest(a: Allegation) {
@@ -795,7 +796,7 @@ function CorrespondancesView() {
 
 // ─── Scan de site web (IA) ────────────────────────────────────────────────────
 
-interface ScannedClaim { text: string; type: string; domain: string; scope: string; source_context: string }
+interface ScannedClaim { text: string; type: string; domain: string; scope: string; source_context: string; sourceUrl?: string }
 
 function scanPreview(c: ScannedClaim) {
   return getStatut(computeScore({ type: c.type, evidence_method: 'aucune', third_party_verified: 'nsp', scope_clear: 'nsp', no_compensation_only: 'nsp', no_hidden_impact: 'nsp' }))
@@ -829,7 +830,7 @@ function PageRow({ diagId, url, onImport }: { diagId: string; url: string; onImp
   function toggle(i: number) { setSelected(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n }) }
   async function importSel() {
     setImporting(true)
-    const chosen = claims.filter((_, i) => selected.has(i))
+    const chosen = claims.filter((_, i) => selected.has(i)).map(c => ({ ...c, sourceUrl: url }))
     await onImport(chosen)
     setImporting(false); setImported(chosen.length); setOpen(false)
   }
