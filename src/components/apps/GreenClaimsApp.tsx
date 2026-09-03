@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import type { RseContext } from '@/components/rse/RseAppShell'
 
@@ -110,6 +110,70 @@ function card(extra = '') { return `bg-white dark:bg-gray-800 border border-gray
 function inputCls() { return 'w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500' }
 function btnP(extra = '') { return `px-3 py-2 rounded-lg bg-green-700 hover:bg-green-800 text-white text-sm font-medium transition-colors disabled:opacity-50 ${extra}` }
 function btnS(extra = '') { return `px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm transition-colors ${extra}` }
+
+// ─── Rendu Markdown minimal (sans dépendance) ────────────────────────────────
+function mdInline(text: string, kp: string): ReactNode[] {
+  const nodes: ReactNode[] = []
+  const re = /\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`/g
+  let last = 0, m: RegExpExecArray | null, i = 0
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index))
+    if (m[1] !== undefined) nodes.push(<strong key={kp + i}>{m[1]}</strong>)
+    else if (m[2] !== undefined) nodes.push(<em key={kp + i}>{m[2]}</em>)
+    else if (m[3] !== undefined) nodes.push(<code key={kp + i} className="px-1 rounded bg-gray-100 dark:bg-gray-700 text-[11px]">{m[3]}</code>)
+    last = m.index + m[0].length; i++
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes
+}
+
+function Markdown({ text }: { text: string }) {
+  const lines = text.replace(/\r/g, '').split('\n')
+  const blocks: ReactNode[] = []
+  let i = 0, key = 0
+  const isSep = (cells: string[]) => cells.every(c => /^:?-{2,}:?$/.test(c.replace(/\s/g, '')) || c === '')
+  while (i < lines.length) {
+    const t = lines[i].trim()
+    if (!t) { i++; continue }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { blocks.push(<hr key={key++} className="my-2 border-gray-200 dark:border-gray-700" />); i++; continue }
+    const h = t.match(/^(#{1,6})\s+(.*)$/)
+    if (h) {
+      const lvl = h[1].length
+      const cls = lvl <= 1 ? 'text-sm font-bold mt-2' : lvl === 2 ? 'text-[13px] font-bold mt-2' : 'text-xs font-semibold mt-1.5'
+      blocks.push(<div key={key++} className={cls} style={{ color: 'var(--text)' }}>{mdInline(h[2], 'h' + key)}</div>); i++; continue
+    }
+    if (t.startsWith('|')) {
+      const tbl: string[] = []
+      while (i < lines.length && lines[i].trim().startsWith('|')) { tbl.push(lines[i].trim()); i++ }
+      const rows = tbl.map(r => r.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim()))
+      const hasHead = rows[1] && isSep(rows[1])
+      const bodyStart = hasHead ? 2 : 0
+      blocks.push(
+        <div key={key++} className="overflow-x-auto my-2">
+          <table className="text-[11px] border-collapse">
+            {hasHead && <thead><tr>{rows[0].map((c, ci) => <th key={ci} className="border border-gray-200 dark:border-gray-700 px-2 py-1 text-left font-semibold" style={{ color: 'var(--text)' }}>{mdInline(c, 'th' + ci)}</th>)}</tr></thead>}
+            <tbody>{rows.slice(bodyStart).map((r, ri) => <tr key={ri}>{r.map((c, ci) => <td key={ci} className="border border-gray-200 dark:border-gray-700 px-2 py-1 align-top">{mdInline(c, `td${ri}-${ci}`)}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
+      )
+      continue
+    }
+    if (/^([-*•]|\d+\.)\s+/.test(t)) {
+      const items: string[] = []
+      while (i < lines.length && /^([-*•]|\d+\.)\s+/.test(lines[i].trim())) { items.push(lines[i].trim().replace(/^([-*•]|\d+\.)\s+/, '')); i++ }
+      blocks.push(<ul key={key++} className="list-disc pl-5 space-y-0.5 my-1">{items.map((it, ii) => <li key={ii}>{mdInline(it, `li${key}-${ii}`)}</li>)}</ul>)
+      continue
+    }
+    const para: string[] = []
+    while (i < lines.length) {
+      const lt = lines[i].trim()
+      if (!lt || /^(#{1,6}\s|[-*•]\s|\d+\.\s|\|)/.test(lt) || /^(-{3,}|\*{3,}|_{3,})$/.test(lt)) break
+      para.push(lt); i++
+    }
+    blocks.push(<p key={key++} className="my-1">{mdInline(para.join(' '), 'p' + key)}</p>)
+  }
+  return <div className="space-y-0.5 leading-relaxed">{blocks}</div>
+}
 
 // ─── Formulaire d'allégation ──────────────────────────────────────────────────
 
@@ -640,8 +704,8 @@ function EditeurView({
                       {loadingSuggest ? '💡 Génération…' : '💡 Suggérer un texte alternatif conforme'}
                     </button>
                     {suggestion && (
-                      <div className="mt-2 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">
-                        {suggestion}
+                      <div className="mt-2 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 text-xs text-gray-800 dark:text-gray-200">
+                        <Markdown text={suggestion} />
                         <div className="mt-2">
                           <button onClick={() => setReformDraft(suggestion)} className="text-[11px] px-2 py-1 rounded bg-green-700 text-white hover:bg-green-800 font-medium">→ Copier dans la reformulation</button>
                         </div>
@@ -887,7 +951,7 @@ function AnalyseView({ diag, allegations }: { diag: Diagnostic; allegations: All
         </div>
       ) : analysis ? (
         <div className={card('p-5')}>
-          <div className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{analysis}</div>
+          <div className="text-sm text-gray-800 dark:text-gray-200"><Markdown text={analysis} /></div>
         </div>
       ) : null}
     </div>
