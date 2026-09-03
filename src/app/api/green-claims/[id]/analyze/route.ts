@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Anthropic from '@anthropic-ai/sdk'
+import { aiErrorResponse } from '@/lib/aiError'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -84,13 +85,20 @@ Fournis une analyse structurée en 4 parties :
 
 Sois précis, pratique et orienté action. Référence les articles pertinents de la directive si possible. Réponds en français.`
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const msg = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    const analysis = (msg.content[0] as { text: string }).text
+    let analysis: string
+    try {
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const msg = await client.messages.create({
+        model: 'claude-opus-4-5',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }],
+      })
+      analysis = (msg.content[0] as { text: string }).text
+    } catch (err) {
+      console.error('[green-claims/analyze] AI', err)
+      const { message, status } = aiErrorResponse(err)
+      return NextResponse.json({ error: message }, { status })
+    }
     const now = new Date().toISOString()
 
     // Persistance résiliente : si les colonnes IA n'existent pas encore, l'update échoue sans bloquer la réponse.

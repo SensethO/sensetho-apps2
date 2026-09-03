@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Anthropic from '@anthropic-ai/sdk'
+import { aiErrorResponse } from '@/lib/aiError'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -74,14 +75,21 @@ Pour chaque version, explique en 1 phrase pourquoi elle est plus conforme.
 
 Sois concis et pratique. Réponds en français.`
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const msg = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 700,
-      temperature: 0.3,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    const suggestion = (msg.content[0] as { text: string }).text
+    let suggestion: string
+    try {
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const msg = await client.messages.create({
+        model: 'claude-opus-4-5',
+        max_tokens: 700,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }],
+      })
+      suggestion = (msg.content[0] as { text: string }).text
+    } catch (err) {
+      console.error('[green-claims/suggest-text] AI', err)
+      const { message, status } = aiErrorResponse(err)
+      return NextResponse.json({ error: message }, { status })
+    }
 
     return NextResponse.json({ data: { suggestion } })
   } catch (err) {

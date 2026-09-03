@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient as createUserClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Anthropic from '@anthropic-ai/sdk'
+import { aiErrorResponse } from '@/lib/aiError'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -82,13 +83,20 @@ Pour chaque allégation trouvée, retourne un objet JSON avec ces champs :
 Retourne UNIQUEMENT un tableau JSON valide. Si aucune allégation environnementale, retourne [].
 Exemple : [{"text":"...","type":"generique","domain":"general","scope":"entreprise-entiere","source_context":"..."}]`
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const msg = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    const raw = (msg.content[0] as { text: string }).text
+    let raw: string
+    try {
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const msg = await client.messages.create({
+        model: 'claude-opus-4-5',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }],
+      })
+      raw = (msg.content[0] as { text: string }).text
+    } catch (err) {
+      console.error('[green-claims/scan-website] AI', err)
+      const { message, status } = aiErrorResponse(err)
+      return NextResponse.json({ error: message }, { status })
+    }
 
     let parsed: unknown[] = []
     try { const m = raw.match(/\[[\s\S]*\]/); if (m) parsed = JSON.parse(m[0]) } catch { parsed = [] }
