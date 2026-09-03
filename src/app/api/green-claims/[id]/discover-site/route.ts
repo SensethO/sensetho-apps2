@@ -52,7 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const add = (u: URL) => {
       if (norm(u.host) !== nhost) return // www.x et x traités comme le même site
       if (ASSET_RE.test(u.pathname)) return
-      found.add(u.origin + u.pathname)
+      found.add(origin + u.pathname) // hôte canonique (base) → déduplique www / non-www et http / https
     }
     add(baseUrl)
 
