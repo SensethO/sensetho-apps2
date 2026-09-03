@@ -81,18 +81,19 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
     // ── Onglet 2 : Allégations
     const ws2 = wb.addWorksheet('Allégations', { properties: { tabColor: { argb: 'FF' + GREEN } } })
-    hdrRow(ws2, 1, [['N°', 6], ["Texte de l'allégation", 50], ['Type', 18], ['Domaine', 16], ['Portée', 20], ['Méthode de preuve', 22], ['Vérif. tierce', 14], ['Portée claire', 14], ['Sans offsets seuls', 16], ['Sans impact caché', 16], ['Score', 10], ['Statut', 14]])
+    hdrRow(ws2, 1, [['N°', 6], ["Texte de l'allégation", 50], ['Type', 18], ['Domaine', 16], ['Portée', 20], ['Méthode de preuve', 22], ['Vérif. tierce', 14], ['Portée claire', 14], ['Sans offsets seuls', 16], ['Sans impact caché', 16], ['Score', 10], ['Statut', 14], ['Reformulation conforme retenue', 55]])
     const TYPE_LABELS: Record<string, string> = { explicite: 'Explicite', generique: 'Générique', comparative: 'Comparative', 'label-certification': 'Label/Cert.' }
     const EV_LABELS: Record<string, string> = { 'acv-complete': 'ACV complète', 'mesure-directe': 'Mesure directe', 'certification-reconnue': 'Certification', 'declaration-fournisseur': 'Décl. fournisseur', aucune: 'Aucune' }
     all.forEach((a, i) => {
       const row = i + 2; const score = computeScore(a); const statut = getStatut(score)
       const r = ws2.getRow(row)
       ;[i + 1, a.allegation_text, TYPE_LABELS[a.type] ?? a.type, a.domain, a.scope, EV_LABELS[a.evidence_method] ?? a.evidence_method,
-        a.third_party_verified, a.scope_clear, a.no_compensation_only, a.no_hidden_impact, score, statut.label
+        a.third_party_verified, a.scope_clear, a.no_compensation_only, a.no_hidden_impact, score, statut.label, a.reformulation ?? '—'
       ].forEach((v, ci) => {
         const c = r.getCell(ci + 1); c.value = v; c.font = { size: 10 }; c.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } }
         if (ci === 1) { c.alignment = { wrapText: true, vertical: 'top' } }
         if (ci === 11) { c.font = { bold: true, size: 10, color: { argb: 'FF' + statut.color } } }
+        if (ci === 12) { c.alignment = { wrapText: true, vertical: 'top' }; c.font = { size: 10, italic: true, color: { argb: 'FF15803D' } } }
       })
       r.height = Math.max(18, Math.min(80, Math.ceil(String(a.allegation_text).length / 45) * 15))
     })
@@ -107,6 +108,21 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       ws3.getCell(row, 2).value = a.notes; ws3.getCell(row, 2).alignment = { wrapText: true, vertical: 'top' }; ws3.getCell(row, 2).font = { size: 10 }
       ws3.getRow(row).height = 30
     })
+
+    // ── Onglet 4 : Analyse IA (synthèse consolidée, si générée)
+    if (diag.ai_analysis) {
+      const ws4 = wb.addWorksheet('Analyse IA', { properties: { tabColor: { argb: 'FF6d28d9' } } })
+      ws4.getColumn(1).width = 110
+      const h = ws4.getCell('A1'); h.value = 'Analyse IA — Directive UE 2024/825/EU'
+      h.font = { bold: true, size: 13, color: { argb: 'FF6d28d9' } }; ws4.getRow(1).height = 26
+      if (diag.ai_generated_at) {
+        const d = ws4.getCell('A2'); d.value = 'Générée le ' + new Date(diag.ai_generated_at).toLocaleString('fr-FR')
+        d.font = { italic: true, size: 9, color: { argb: 'FF6b7280' } }
+      }
+      String(diag.ai_analysis).split('\n').forEach((line, i) => {
+        const c = ws4.getCell(i + 4, 1); c.value = line; c.font = { size: 10 }; c.alignment = { wrapText: true, vertical: 'top' }
+      })
+    }
 
     const buf = await wb.xlsx.writeBuffer()
     return new NextResponse(buf, {
