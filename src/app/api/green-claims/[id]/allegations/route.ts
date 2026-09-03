@@ -100,6 +100,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       no_hidden_impact: body.no_hidden_impact ?? 'nsp',
       is_comparative: body.is_comparative ?? false,
       notes: body.notes ?? null,
+      reformulation: body.reformulation ?? null,
     }).select().single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -122,7 +123,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (!body.allegation_id) return NextResponse.json({ error: 'allegation_id requis' }, { status: 400 })
 
     const { allegation_id, ...fields } = body
-    const allowed = ['allegation_text', 'type', 'domain', 'scope', 'evidence_method', 'third_party_verified', 'scope_clear', 'no_compensation_only', 'no_hidden_impact', 'is_comparative', 'notes']
+    const allowed = ['allegation_text', 'type', 'domain', 'scope', 'evidence_method', 'third_party_verified', 'scope_clear', 'no_compensation_only', 'no_hidden_impact', 'is_comparative', 'notes', 'reformulation']
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
     for (const k of allowed) { if (k in fields) update[k] = fields[k] }
 
