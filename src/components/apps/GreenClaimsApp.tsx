@@ -797,42 +797,113 @@ function CorrespondancesView() {
 
 interface ScannedClaim { text: string; type: string; domain: string; scope: string; source_context: string }
 
+function scanPreview(c: ScannedClaim) {
+  return getStatut(computeScore({ type: c.type, evidence_method: 'aucune', third_party_verified: 'nsp', scope_clear: 'nsp', no_compensation_only: 'nsp', no_hidden_impact: 'nsp' }))
+}
+
+// Une page découverte : bouton « Vérifier » autonome → scan IA de cette page → import
+function PageRow({ diagId, url, onImport }: { diagId: string; url: string; onImport: (claims: ScannedClaim[]) => Promise<void> }) {
+  const [status, setStatus] = useState<'idle' | 'scanning' | 'done' | 'error'>('idle')
+  const [claims, setClaims] = useState<ScannedClaim[]>([])
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [err, setErr] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [imported, setImported] = useState(0)
+  const [open, setOpen] = useState(false)
+
+  let path = url
+  try { const u = new URL(url); path = (u.pathname + u.search) || '/' } catch { /* garde url */ }
+
+  async function verify() {
+    setStatus('scanning'); setErr(null)
+    try {
+      const res = await fetch(`/api/green-claims/${diagId}/scan-website`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setErr(json.error || 'Échec'); setStatus('error'); return }
+      const c: ScannedClaim[] = json.data?.claims ?? []
+      setClaims(c); setSelected(new Set(c.map((_, i) => i))); setStatus('done'); setOpen(true)
+    } catch { setErr('Erreur réseau'); setStatus('error') }
+  }
+  function toggle(i: number) { setSelected(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n }) }
+  async function importSel() {
+    setImporting(true)
+    const chosen = claims.filter((_, i) => selected.has(i))
+    await onImport(chosen)
+    setImporting(false); setImported(chosen.length); setOpen(false)
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+      <div className="flex items-center gap-2 p-2.5">
+        <button onClick={() => (claims.length ? setOpen(o => !o) : verify())} className="flex-1 min-w-0 text-left">
+          <div className="text-xs text-gray-900 dark:text-white truncate">{path}</div>
+          <div className="text-[10px] text-gray-400 truncate">{url}</div>
+        </button>
+        {status === 'done' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 whitespace-nowrap">{claims.length} trouvée{claims.length > 1 ? 's' : ''}</span>}
+        {imported > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-700 text-white whitespace-nowrap">✓ {imported} importée{imported > 1 ? 's' : ''}</span>}
+        <button onClick={verify} disabled={status === 'scanning'} className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 whitespace-nowrap">
+          {status === 'scanning' ? 'Analyse…' : status === 'done' ? '↻ Revérifier' : '🔍 Vérifier'}
+        </button>
+      </div>
+      {err && <div className="px-2.5 pb-2 text-[11px] text-red-600 dark:text-red-400">{err}</div>}
+      {open && status === 'done' && (
+        <div className="px-2.5 pb-2.5 border-t border-gray-100 dark:border-gray-700/50 pt-2 space-y-1.5">
+          {claims.length === 0 ? (
+            <div className="text-[11px] text-gray-400 py-1">Aucune allégation environnementale détectée sur cette page.</div>
+          ) : (
+            <>
+              {claims.map((c, i) => {
+                const st = scanPreview(c)
+                return (
+                  <label key={i} className="flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} className="mt-0.5 w-4 h-4 rounded accent-green-600" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] text-gray-900 dark:text-white">&ldquo;{c.text}&rdquo;</div>
+                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ color: st.color, background: st.bg }}>{st.label} (est.)</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{c.type}</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{c.domain}</span>
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+              <button onClick={importSel} disabled={importing || selected.size === 0} className={btnP('mt-1')}>
+                {importing ? 'Import…' : `↓ Importer ${selected.size}`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function WebScanModal({ diagId, onImport, onClose }: {
   diagId: string
   onImport: (claims: ScannedClaim[]) => Promise<void>
   onClose: () => void
 }) {
   const [url, setUrl] = useState('')
-  const [scanning, setScanning] = useState(false)
+  const [discovering, setDiscovering] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [results, setResults] = useState<ScannedClaim[] | null>(null)
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [importing, setImporting] = useState(false)
+  const [pages, setPages] = useState<string[] | null>(null)
+  const [fromSitemap, setFromSitemap] = useState(false)
 
-  async function handleScan() {
+  async function discover() {
     if (!url.trim()) return
-    setScanning(true); setError(null); setResults(null)
+    setDiscovering(true); setError(null); setPages(null)
     try {
-      const res = await fetch(`/api/green-claims/${diagId}/scan-website`, {
+      const res = await fetch(`/api/green-claims/${diagId}/discover-site`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.trim() }),
       })
       const json = await res.json()
-      if (!res.ok) { setError(json.error || 'Échec du scan'); setScanning(false); return }
-      const claims: ScannedClaim[] = json.data?.claims ?? []
-      setResults(claims); setSelected(new Set(claims.map((_, i) => i)))
+      if (!res.ok) { setError(json.error || 'Échec de la découverte'); setDiscovering(false); return }
+      setPages(json.data?.pages ?? []); setFromSitemap(!!json.data?.fromSitemap)
     } catch { setError('Erreur réseau') }
-    setScanning(false)
-  }
-
-  async function handleImport() {
-    if (!results) return
-    setImporting(true)
-    await onImport(results.filter((_, i) => selected.has(i)))
-    setImporting(false); onClose()
-  }
-
-  function toggle(i: number) {
-    setSelected(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n })
+    setDiscovering(false)
   }
 
   return (
@@ -842,54 +913,28 @@ function WebScanModal({ diagId, onImport, onClose }: {
           <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">🌐 Scanner un site web</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">L&apos;IA analyse la page et détecte les allégations environnementales, prêtes à importer dans ce diagnostic.</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Saisissez une URL : les pages du même domaine sont découvertes (liens internes + sitemap). Vérifiez ensuite chaque page à la demande — l&apos;IA y détecte les allégations, prêtes à importer.</p>
         <div className="flex gap-2 mb-3">
-          <input className={inputCls()} placeholder="https://exemple.com/notre-engagement" value={url}
-            onChange={e => setUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleScan() }} />
-          <button onClick={handleScan} disabled={scanning || !url.trim()} className={btnP('whitespace-nowrap')}>
-            {scanning ? 'Analyse…' : '🔍 Scanner'}
+          <input className={inputCls()} placeholder="https://exemple.com" value={url}
+            onChange={e => setUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') discover() }} />
+          <button onClick={discover} disabled={discovering || !url.trim()} className={btnP('whitespace-nowrap')}>
+            {discovering ? 'Découverte…' : '🔎 Découvrir'}
           </button>
         </div>
         {error && <div className="text-xs text-red-600 dark:text-red-400 mb-2">{error}</div>}
 
-        {results && (
-          <div className="space-y-2">
-            {results.length === 0 ? (
-              <div className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Aucune allégation environnementale détectée sur cette page.</div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                  <span>{results.length} allégation{results.length > 1 ? 's' : ''} détectée{results.length > 1 ? 's' : ''} · {selected.size} sélectionnée{selected.size > 1 ? 's' : ''}</span>
-                  <button onClick={() => setSelected(selected.size === results.length ? new Set() : new Set(results.map((_, i) => i)))}
-                    className="underline hover:text-green-600">{selected.size === results.length ? 'Tout décocher' : 'Tout cocher'}</button>
-                </div>
-                {results.map((c, i) => {
-                  const preview = computeScore({ type: c.type, evidence_method: 'aucune', third_party_verified: 'nsp', scope_clear: 'nsp', no_compensation_only: 'nsp', no_hidden_impact: 'nsp' })
-                  const st = getStatut(preview)
-                  return (
-                    <label key={i} className="flex items-start gap-2 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40">
-                      <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} className="mt-0.5 w-4 h-4 rounded accent-green-600" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-gray-900 dark:text-white">&ldquo;{c.text}&rdquo;</div>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                          <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ color: st.color, background: st.bg }}>{st.label} (est.)</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{c.type}</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{c.domain}</span>
-                          {c.source_context && <span className="text-[9px] text-gray-400 truncate">— {c.source_context}</span>}
-                        </div>
-                      </div>
-                    </label>
-                  )
-                })}
-                <div className="flex gap-2 pt-2">
-                  <button onClick={handleImport} disabled={importing || selected.size === 0} className={btnP()}>
-                    {importing ? 'Import…' : `↓ Importer ${selected.size} allégation${selected.size > 1 ? 's' : ''}`}
-                  </button>
-                  <button onClick={onClose} className={btnS()}>Fermer</button>
-                </div>
-              </>
-            )}
-          </div>
+        {pages && (
+          pages.length === 0 ? (
+            <div className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Aucune page découverte sur ce domaine.</div>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {pages.length} page{pages.length > 1 ? 's' : ''} découverte{pages.length > 1 ? 's' : ''}{fromSitemap ? ' (liens internes + sitemap)' : ' (liens internes)'} — cliquez « Vérifier » sur celles à analyser.
+              </div>
+              {pages.map(p => <PageRow key={p} diagId={diagId} url={p} onImport={onImport} />)}
+              <div className="pt-1"><button onClick={onClose} className={btnS()}>Fermer</button></div>
+            </div>
+          )
         )}
       </div>
     </div>
