@@ -181,6 +181,8 @@ Helper central : `src/lib/sharepointMulti.ts` (`spGraphForApp`, `getConfigForApp
 | Dépôt DDS EUDR rejeté « use V3 » | V1/V2 désactivées côté Commission | Déjà géré : client V3 (`tracesV3.ts`) |
 | Analyse COA en erreur | `ANTHROPIC_API_KEY` absente/invalide en prod | Vérifier la variable Vercel |
 | Cron n'envoie pas | `CRON_SECRET` ou gate horaire | Tester `/api/cron/rse-actions-digest?dry=1` |
+| Search Console : « Indexée malgré le blocage par robots.txt » | `Disallow` **et** `noindex` sur la même URL : bloquée, elle n'est pas explorée, donc son `noindex` n'est jamais lu | **Laisser explorer** ce qu'on veut désindexer (`src/app/robots.ts`) — le `noindex` de `/auth/login` fait le travail. Ne bloquer que ce qui ne doit jamais être exploré (`/api/`, liens à jeton) |
+| Search Console : « Exclue par la balise noindex » sur un sitemap | Le sitemap déclare une URL en `noindex` (ou qui redirige) | Un sitemap ne contient que des URLs canoniques, 200 et indexables. Retirer l'URL du sitemap, ou lui retirer son `noindex` |
 
 ## 9 bis. Indicateurs publiés sur `/hebergement-responsable`
 
