@@ -7,7 +7,12 @@ import { baseDe, versionDe, journaliser } from '@/lib/eudr/fichiers'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const DOC_TYPES = ['geojson', 'questionnaire', 'certificate', 'ddr', 'dds', 'other']
+// Doit rester aligné sur la contrainte eudr_attachments_doc_type_check (base).
+const DOC_TYPES = [
+  'geojson', 'questionnaire', 'certificate', 'ddr', 'dds', 'coa', 'client_demand',
+  'titre_propriete', 'droit_exploiter', 'autorisation', 'attestation_legalite', 'attestation_sociale', 'code_conduite',
+  'other',
+]
 
 /**
  * POST { org_id, entity_type, entity_id, spItemId, mime, size, doc_type }
@@ -44,6 +49,13 @@ export async function POST(req: NextRequest) {
       if (typeof item.size === 'number') tailleReelle = item.size
       // parentReference.path : « /drives/{id}/root:/Documents partages/EUDR-FOURNISSEURS/… »
       const dossier = (item.parentReference?.path ?? '').replace(/^.*root:\//, '')
+      // Défense en profondeur : le fichier doit vivre dans le dossier de CETTE entité
+      // ({root}/{org_id}/{entity_type}/{entity_id}), sinon on refuse — empêche d'attacher
+      // un spItemId pointant vers une autre organisation ou une autre entité.
+      const attendu = `/${body.org_id}/${entityType}/${body.entity_id}`
+      if (dossier && !('/' + dossier).includes(attendu)) {
+        return NextResponse.json({ error: 'Le fichier téléversé ne correspond pas au dossier de cette entité.' }, { status: 403 })
+      }
       if (dossier && item.name) spPath = `${dossier}/${item.name}`
     }
     if (!nomReel) return NextResponse.json({ error: 'Nom du fichier introuvable sur SharePoint' }, { status: 502 })

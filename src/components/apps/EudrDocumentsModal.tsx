@@ -10,12 +10,28 @@ interface Doc { id: string; name: string; base_name?: string | null; version_num
 const DOC_TYPES: { value: string; label: string }[] = [
   { value: 'geojson', label: 'Géolocalisation (GeoJSON)' },
   { value: 'questionnaire', label: 'Questionnaire fournisseur' },
+  { value: 'titre_propriete', label: 'Titre de propriété / foncier' },
+  { value: 'droit_exploiter', label: 'Droit d’exploiter / exploitation' },
+  { value: 'autorisation', label: 'Autorisation / permis' },
+  { value: 'attestation_legalite', label: 'Attestation de légalité' },
+  { value: 'attestation_sociale', label: 'Attestation sociale (travail / enfants)' },
+  { value: 'code_conduite', label: 'Code de conduite signé' },
   { value: 'certificate', label: 'Certificat' },
   { value: 'ddr', label: 'Diligence raisonnée (DDR)' },
   { value: 'dds', label: 'DDS / confirmation' },
   { value: 'other', label: 'Autre' },
 ]
 const typeLabel = (v: string) => DOC_TYPES.find(t => t.value === v)?.label ?? v
+
+// Pièces attendues d'un fournisseur au titre de l'EUDR (légalité + traçabilité).
+const REQUIRED_SUPPLIER: { value: string; label: string }[] = [
+  { value: 'geojson', label: 'Géolocalisation (GeoJSON)' },
+  { value: 'questionnaire', label: 'Questionnaire fournisseur' },
+  { value: 'titre_propriete', label: 'Titre de propriété / foncier' },
+  { value: 'droit_exploiter', label: 'Droit d’exploiter' },
+  { value: 'attestation_legalite', label: 'Attestation de légalité' },
+  { value: 'code_conduite', label: 'Code de conduite signé' },
+]
 
 const inputCls = 'rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500'
 
@@ -116,6 +132,23 @@ export default function EudrDocumentsModal({ orgId, entityType, entityId, entity
         </div>
         <div className="p-5 space-y-4">
           <p className="text-xs text-gray-400">Fichiers stockés dans SharePoint (aucun stockage sur Vercel/Supabase). Un GeoJSON peut être réutilisé au dépôt de la DDS.</p>
+
+          {entityType === 'supplier' && (
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Pièces EUDR attendues du fournisseur</p>
+              <ul className="grid gap-1 sm:grid-cols-2">
+                {REQUIRED_SUPPLIER.map(r => {
+                  const present = docs.some(d => d.doc_type === r.value)
+                  return (
+                    <li key={r.value} className="flex items-center gap-2 text-sm">
+                      <span className={present ? 'text-green-600' : 'text-gray-300 dark:text-gray-600'}>{present ? '✓' : '○'}</span>
+                      <span className={present ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500'}>{r.label}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
 
           {canEdit && (
             <div className="flex flex-wrap items-center gap-2">

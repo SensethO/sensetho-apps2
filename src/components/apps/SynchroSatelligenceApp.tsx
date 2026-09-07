@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { RseContext } from '@/components/rse/RseAppShell'
 import Icon from '@/components/ui/Icon'
+import EudrDocumentsModal from '@/components/apps/EudrDocumentsModal'
 
 const inputCls = 'w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500'
 const labelCls = 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1'
@@ -10,7 +11,7 @@ const cardCls = 'rounded-xl border border-gray-200 dark:border-gray-700 bg-white
 const btnPrimary = 'px-3 py-2 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50'
 const btnGhost = 'px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors disabled:opacity-50'
 
-type Tab = 'connexion' | 'risque' | 'parcelles' | 'juridictions'
+type Tab = 'connexion' | 'risque' | 'parcelles' | 'juridictions' | 'documents'
 type SatEnv = 'production' | 'mock'
 
 function Json({ value }: { value: unknown }) {
@@ -141,6 +142,24 @@ export default function SynchroSatelligenceApp({ ctx }: { ctx: RseContext }) {
     finally { setJurLoading(false) }
   }
 
+  // ── Documents fournisseurs (gestion documentaire EUDR, source partagée) ──────
+  const [suppliers, setSuppliers] = useState<{ id: string; company: string | null }[]>([])
+  const [supLoaded, setSupLoaded] = useState(false)
+  const [supId, setSupId] = useState('')
+  const [docModal, setDocModal] = useState<{ id: string; label: string } | null>(null)
+
+  const loadSuppliers = useCallback(async () => {
+    if (!orgId) return
+    try {
+      const r = await fetch(`/api/eudr-fournisseurs/suppliers?org_id=${orgId}`)
+      const j = await r.json()
+      if (r.ok) setSuppliers((j.data ?? []).map((s: { id: string; company: string | null }) => ({ id: s.id, company: s.company })))
+    } catch { /* ignore */ }
+    finally { setSupLoaded(true) }
+  }, [orgId])
+
+  useEffect(() => { if (tab === 'documents' && !supLoaded) loadSuppliers() }, [tab, supLoaded, loadSuppliers])
+
   if (!orgId) {
     return (
       <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
@@ -154,6 +173,7 @@ export default function SynchroSatelligenceApp({ ctx }: { ctx: RseContext }) {
     { id: 'risque', label: 'Risque à la volée' },
     { id: 'parcelles', label: 'Parcelles' },
     { id: 'juridictions', label: 'Juridictions' },
+    { id: 'documents', label: 'Documents' },
   ]
 
   return (
@@ -267,6 +287,27 @@ export default function SynchroSatelligenceApp({ ctx }: { ctx: RseContext }) {
             </div>
           )}
         </div>
+      )}
+
+      {tab === 'documents' && (
+        <div className={cardCls}>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Gestion documentaire EUDR des fournisseurs : attestations, titres de propriété, droit d&apos;exploiter, questionnaires, géolocalisation… Source unique partagée avec l&apos;app Gestion des fournisseurs (stockage SharePoint, conservation 5 ans).</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex-1 min-w-56">
+              <label className={labelCls}>Fournisseur</label>
+              <select className={inputCls} value={supId} onChange={e => setSupId(e.target.value)}>
+                <option value="">— Choisir un fournisseur —</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.company ?? '(sans nom)'}</option>)}
+              </select>
+            </div>
+            <button className={btnPrimary} disabled={!supId} onClick={() => { const s = suppliers.find(x => x.id === supId); if (s) setDocModal({ id: s.id, label: s.company ?? '(sans nom)' }) }}>Gérer les documents</button>
+          </div>
+          {supLoaded && suppliers.length === 0 && <p className="text-xs text-amber-600">Aucun fournisseur pour cette organisation — créez-les dans l&apos;app Gestion des fournisseurs.</p>}
+        </div>
+      )}
+
+      {docModal && (
+        <EudrDocumentsModal orgId={orgId} entityType="supplier" entityId={docModal.id} entityLabel={docModal.label} canEdit onClose={() => setDocModal(null)} />
       )}
     </div>
   )
