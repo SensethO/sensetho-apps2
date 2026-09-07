@@ -151,7 +151,7 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
   // ── Dépôt DDS (formulaire minimal V2) ────────────────────────────────────────
   const [dds, setDds] = useState({
     operatorType: 'OPERATOR', internalReferenceNumber: '', activityType: 'DOMESTIC',
-    countryOfActivity: 'FR', hsHeading: '', descriptionOfGoods: '', netWeight: '',
+    countryOfActivity: 'FR', borderCrossCountry: '', hsHeading: '', descriptionOfGoods: '', netWeight: '',
     percentageEstimation: '', speciesScientific: '', speciesCommon: '',
     producerCountry: '', producerName: '', geojson: '',
   })
@@ -321,6 +321,8 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
         internalReferenceNumber: dds.internalReferenceNumber,
         activityType: dds.activityType,
         countryOfActivity: dds.countryOfActivity,
+        // Pays d'entrée dans l'Union : requis pour Import/Export, interdit en Domestique/Négoce.
+        ...(!isDomesticOrTrade && dds.borderCrossCountry ? { borderCrossCountry: dds.borderCrossCountry } : {}),
         commodities: [{
           descriptors: { descriptionOfGoods: dds.descriptionOfGoods, goodsMeasure },
           hsHeading: dds.hsHeading,
@@ -616,6 +618,10 @@ export default function EudrTracesPanel({ orgId, canManage, suppliers = [], cont
           <div>
             <label className={labelCls}>Pays d&apos;activité (ISO)</label>
             <input className={inputCls} value={dds.countryOfActivity} onChange={e => setF('countryOfActivity', e.target.value)} placeholder="FR" maxLength={2} />
+          </div>
+          <div>
+            <label className={labelCls}>Pays d&apos;entrée UE (ISO) {(dds.activityType === 'IMPORT' || dds.activityType === 'EXPORT') ? '(obligatoire)' : '(Import/Export)'}</label>
+            <input className={inputCls} value={dds.borderCrossCountry} onChange={e => setF('borderCrossCountry', e.target.value)} placeholder="FR" maxLength={2} disabled={dds.activityType === 'DOMESTIC' || dds.activityType === 'TRADE'} />
           </div>
           <div>
             <label className={labelCls}>Code SH</label>
