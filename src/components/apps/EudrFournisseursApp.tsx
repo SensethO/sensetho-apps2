@@ -166,6 +166,17 @@ function supplierValidation(s: Supplier) {
   return { points, done, total: points.length, certs: certs.length, expiring, expired, complete: done === points.length }
 }
 
+// ── Pièces documentaires EUDR attendues d'un fournisseur (doit rester aligné avec
+//    REQUIRED_SUPPLIER dans EudrDocumentsModal). Sert à la complétude affichée dans la liste. ──
+const REQUIRED_DOCS: { value: string; label: string }[] = [
+  { value: 'geojson', label: 'Géolocalisation (GeoJSON)' },
+  { value: 'questionnaire', label: 'Questionnaire fournisseur' },
+  { value: 'titre_propriete', label: 'Titre de propriété / foncier' },
+  { value: 'droit_exploiter', label: 'Droit d’exploiter' },
+  { value: 'attestation_legalite', label: 'Attestation de légalité' },
+  { value: 'code_conduite', label: 'Code de conduite signé' },
+]
+
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(STATUS_OPTS.map(o => [o.value, o.label]))
 const RISK_LABEL: Record<string, string> = Object.fromEntries(RISK_OPTS.map(o => [o.value, o.label]))
 const PRIORITY_LABEL: Record<string, string> = Object.fromEntries(PRIORITY_OPTS.map(o => [o.value, o.label]))
@@ -490,6 +501,7 @@ export default function EudrFournisseursApp({ ctx }: { ctx: RseContext }) {
           )}
           {tab === 'suppliers' && (
             <SuppliersTab
+              orgId={orgId}
               suppliers={suppliers}
               onAdd={() => setEditing({ entity: 'suppliers', data: { priority: 'moyenne', eudr_risk_level: 'standard', geojson_status: 'unknown', farmer_questionnaire_status: 'unknown', ddr_status: 'unknown', certifications: [], relationship_status: 'nouveau', follow_ups: [] } })}
               onEdit={s => setEditing({ entity: 'suppliers', data: { ...s, certifications: s.certifications ?? [], follow_ups: s.follow_ups ?? [] } })}
@@ -848,7 +860,8 @@ function BuyersTab({ buyers, onAdd, onEdit, onDelete }: {
 
 // ─── Onglet Fournisseurs ──────────────────────────────────────────────────────
 
-function SuppliersTab({ suppliers, onAdd, onEdit, onDelete, onDocuments }: {
+function SuppliersTab({ orgId, suppliers, onAdd, onEdit, onDelete, onDocuments }: {
+  orgId: string
   suppliers: Supplier[]
   onAdd: () => void
   onEdit: (s: Supplier) => void
@@ -858,12 +871,31 @@ function SuppliersTab({ suppliers, onAdd, onEdit, onDelete, onDocuments }: {
   const [search, setSearch] = useState('')
   const [riskFilter, setRiskFilter] = useState('')
   const [geoFilter, setGeoFilter] = useState('')
+  const [docTypes, setDocTypes] = useState<Record<string, string[]>>({})
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    fetch(`/api/eudr-fournisseurs/documents/summary?org_id=${orgId}`)
+      .then(r => (r.ok ? r.json() : { data: {} }))
+      .then(j => { if (alive) setDocTypes(j.data ?? {}) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [orgId, suppliers.length])
+
   const filtered = suppliers.filter(s => {
     if (riskFilter && (s.eudr_risk_level ?? '') !== riskFilter) return false
     if (geoFilter && (s.geojson_status ?? 'unknown') !== geoFilter) return false
     if (search.trim() && ![s.company, s.country_origin, s.contact_person, s.email].some(v => v?.toLowerCase().includes(search.toLowerCase()))) return false
     return true
   })
+
+  const docCount = (id: string) => {
+    const present = new Set(docTypes[id] ?? [])
+    return REQUIRED_DOCS.filter(d => present.has(d.value)).length
+  }
+  const selected = suppliers.find(s => s.id === selectedId) ?? null
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
@@ -878,71 +910,192 @@ function SuppliersTab({ suppliers, onAdd, onEdit, onDelete, onDocuments }: {
         </select>
         <button onClick={onAdd} className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white whitespace-nowrap">+ Ajouter</button>
       </div>
+
       {filtered.length === 0 ? (
         <p className="text-center py-10 text-sm text-gray-400 dark:text-gray-500">Aucun fournisseur</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map(s => {
-            const v = supplierValidation(s)
-            const rel = RELATION_MAP[s.relationship_status ?? '']
-            const last = (s.follow_ups ?? []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
-            return (
-            <div key={s.id} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{s.company ?? '—'}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{s.country_origin ?? '—'}{s.contact_person ? ` · ${s.contact_person}` : ''}</p>
-                </div>
-                <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                  <RiskPill value={s.eudr_risk_level} />
-                  <PriorityPill value={s.priority} />
-                </div>
-              </div>
-
-              {/* Suivi de la relation */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {rel && <span className={`text-[11px] px-2 py-0.5 rounded-full ${rel.cls}`}>{rel.label}</span>}
-                {last && <span className="text-[11px] text-gray-400 dark:text-gray-500">Dernier échange : {last.date} · {FOLLOWUP_MAP[last.type] ?? last.type}</span>}
-              </div>
-
-              {/* Points de validation */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-gray-400 dark:text-gray-500">GeoJSON</span><StatusPill value={s.geojson_status} />
-                <span className="text-[11px] text-gray-400 dark:text-gray-500">Quest.</span><StatusPill value={s.farmer_questionnaire_status} />
-                <span className="text-[11px] text-gray-400 dark:text-gray-500">DDR</span><StatusPill value={s.ddr_status} />
-                <span className={`text-[11px] px-2 py-0.5 rounded-full ${v.complete ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{v.done}/{v.total} validés</span>
-              </div>
-
-              {(s.certifications?.length ?? 0) > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {s.certifications!.map((c, i) => {
-                    const val = certValidity(c)
-                    const cls = val === 'expire' ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
-                      : val === 'expire_bientot' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'
-                      : val === 'valide' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                    return (
-                      <span key={i} className={`text-[11px] px-2 py-0.5 rounded ${cls}`} title={c.valid_until ? `Valide jusqu'au ${c.valid_until}` : ''}>
-                        {c.type}{val === 'expire' ? ' · expiré' : val === 'expire_bientot' ? ' · expire bientôt' : c.valid_until ? ` · ${c.valid_until}` : ''}
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
-              {(v.expired > 0 || v.expiring > 0) && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400">⚠️ {v.expired > 0 ? `${v.expired} certif. expirée(s)` : ''}{v.expired > 0 && v.expiring > 0 ? ' · ' : ''}{v.expiring > 0 ? `${v.expiring} expire(nt) bientôt` : ''}</p>
-              )}
-
-              <div className="flex justify-end gap-3 pt-1">
-                <button onClick={() => onDocuments(s)} className="text-xs text-gray-500 dark:text-gray-400 hover:underline">📎 Documents</button>
-                <button onClick={() => onEdit(s)} className="text-xs text-green-600 dark:text-green-400 hover:underline">Modifier</button>
-                <button onClick={() => onDelete(s)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Supprimer</button>
-              </div>
-            </div>
-            )
-          })}
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-800/60">
+              <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                <th className="px-3 py-2">Fournisseur</th>
+                <th className="px-3 py-2">Contact</th>
+                <th className="px-3 py-2">Risque</th>
+                <th className="px-3 py-2">Priorité</th>
+                <th className="px-3 py-2">Relation</th>
+                <th className="px-3 py-2">Pièces EUDR</th>
+                <th className="px-3 py-2">Dernier échange</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(s => {
+                const rel = RELATION_MAP[s.relationship_status ?? '']
+                const last = (s.follow_ups ?? []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
+                const dc = docCount(s.id)
+                const dcCls = dc === REQUIRED_DOCS.length ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
+                  : dc > 0 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+                return (
+                  <tr key={s.id} onClick={() => setSelectedId(s.id)}
+                    className="border-t border-gray-100 dark:border-gray-700/60 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer">
+                    <Td>
+                      <div className="font-medium text-gray-900 dark:text-white">{s.company ?? '—'}</div>
+                      <div className="text-xs text-gray-400">{s.country_origin ?? '—'}{s.commodity ? ` · ${s.commodity}` : ''}</div>
+                    </Td>
+                    <Td>
+                      <div>{s.contact_person ?? '—'}</div>
+                      {s.email && <div className="text-xs text-gray-400 truncate max-w-[180px]">{s.email}</div>}
+                    </Td>
+                    <Td><RiskPill value={s.eudr_risk_level} /></Td>
+                    <Td><PriorityPill value={s.priority} /></Td>
+                    <Td>{rel ? <span className={`text-[11px] px-2 py-0.5 rounded-full ${rel.cls}`}>{rel.label}</span> : '—'}</Td>
+                    <Td><span className={`text-xs px-2 py-0.5 rounded-full ${dcCls}`}>{dc}/{REQUIRED_DOCS.length}</span></Td>
+                    <Td>{last ? <span className="text-xs">{last.date} · {FOLLOWUP_MAP[last.type] ?? last.type}</span> : <span className="text-gray-400">—</span>}</Td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => onDocuments(s)} title="Documents" className="text-gray-500 hover:text-green-600 mr-2">📎</button>
+                      <button onClick={() => onEdit(s)} title="Modifier" className="text-green-600 dark:text-green-400 hover:underline text-xs mr-2">Modifier</button>
+                      <button onClick={() => onDelete(s)} title="Supprimer" className="text-red-600 dark:text-red-400 hover:underline text-xs">Supprimer</button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
+
+      {selected && (
+        <SupplierDrawer
+          supplier={selected}
+          docTypes={docTypes[selected.id] ?? []}
+          onClose={() => setSelectedId(null)}
+          onEdit={() => onEdit(selected)}
+          onDocuments={() => onDocuments(selected)}
+          onDelete={() => onDelete(selected)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Fiche détail fournisseur (drawer latéral) ───────────────────────────────
+function SupplierDrawer({ supplier: s, docTypes, onClose, onEdit, onDocuments, onDelete }: {
+  supplier: Supplier
+  docTypes: string[]
+  onClose: () => void
+  onEdit: () => void
+  onDocuments: () => void
+  onDelete: () => void
+}) {
+  const present = new Set(docTypes)
+  const rel = RELATION_MAP[s.relationship_status ?? '']
+  const followUps = (s.follow_ups ?? []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  const line = (label: string, value: React.ReactNode) => (
+    <div className="flex justify-between gap-3 py-1 text-sm">
+      <span className="text-gray-500 dark:text-gray-400">{label}</span>
+      <span className="text-right text-gray-800 dark:text-gray-100">{value || '—'}</span>
+    </div>
+  )
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <div className="h-full w-full max-w-md bg-white dark:bg-gray-800 shadow-2xl overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white dark:bg-gray-800 flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700 z-10">
+          <div className="min-w-0">
+            <h2 className="font-bold text-gray-900 dark:text-white truncate">{s.company ?? 'Fournisseur'}</h2>
+            <p className="text-xs text-gray-400">{s.country_origin ?? '—'}{s.commodity ? ` · ${s.commodity}` : ''}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <div className="flex flex-wrap gap-2">
+            <RiskPill value={s.eudr_risk_level} />
+            <PriorityPill value={s.priority} />
+            {rel && <span className={`text-[11px] px-2 py-0.5 rounded-full ${rel.cls}`}>{rel.label}</span>}
+          </div>
+
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">Pièces EUDR</p>
+              <button onClick={onDocuments} className="text-xs text-green-600 dark:text-green-400 hover:underline">📎 Gérer les documents</button>
+            </div>
+            <ul className="grid gap-1 sm:grid-cols-2">
+              {REQUIRED_DOCS.map(d => {
+                const ok = present.has(d.value)
+                return (
+                  <li key={d.value} className="flex items-center gap-2 text-sm">
+                    <span className={ok ? 'text-green-600' : 'text-gray-300 dark:text-gray-600'}>{ok ? '✓' : '○'}</span>
+                    <span className={ok ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500'}>{d.label}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Coordonnées</p>
+            {line('Contact', s.contact_person)}
+            {line('E-mail', s.email)}
+            {line('Pays d’origine', s.country_origin)}
+            {line('Produit', s.commodity)}
+            {line('Responsable interne', s.owner)}
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Statuts</p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-gray-400">GeoJSON</span><StatusPill value={s.geojson_status} />
+              <span className="text-[11px] text-gray-400">Quest.</span><StatusPill value={s.farmer_questionnaire_status} />
+              <span className="text-[11px] text-gray-400">DDR</span><StatusPill value={s.ddr_status} />
+            </div>
+          </div>
+
+          {(s.certifications?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Certifications</p>
+              <div className="flex flex-wrap gap-1">
+                {s.certifications!.map((c, i) => {
+                  const val = certValidity(c)
+                  const cls = val === 'expire' ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
+                    : val === 'expire_bientot' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'
+                    : val === 'valide' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                  return <span key={i} className={`text-[11px] px-2 py-0.5 rounded ${cls}`}>{c.type}{c.valid_until ? ` · ${c.valid_until}` : ''}</span>
+                })}
+              </div>
+            </div>
+          )}
+
+          {followUps.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Échanges récents</p>
+              <div className="space-y-1">
+                {followUps.slice(0, 5).map((f, i) => (
+                  <div key={i} className="text-xs text-gray-600 dark:text-gray-300">
+                    <span className="text-gray-400">{f.date} · {FOLLOWUP_MAP[f.type] ?? f.type}</span>{f.text ? ` — ${f.text}` : ''}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {s.notes && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Notes</p>
+              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{s.notes}</p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <button onClick={onEdit} className="px-3 py-2 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white">Modifier</button>
+            <button onClick={onDocuments} className="px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200">📎 Documents</button>
+            <button disabled title="Portail fournisseur — activation au Lot 2"
+              className="px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed">✉ Inviter le fournisseur</button>
+            <button onClick={onDelete} className="px-3 py-2 text-sm font-medium rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 ml-auto">Supprimer</button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
